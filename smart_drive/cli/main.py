@@ -45,9 +45,11 @@ from smart_drive.cli.cmd_audit import cmd_audit
 from smart_drive.cli.cmd_backup import cmd_backup
 from smart_drive.cli.cmd_classify import cmd_classify
 from smart_drive.cli.cmd_clean import cmd_clean
+from smart_drive.cli.cmd_health import cmd_health
 from smart_drive.cli.cmd_init import cmd_init
 from smart_drive.cli.cmd_mcp import cmd_mcp
 from smart_drive.cli.cmd_mcp_config import cmd_mcp_config
+from smart_drive.cli.cmd_offload import cmd_offload
 from smart_drive.cli.cmd_organize import cmd_organize
 from smart_drive.cli.cmd_search import cmd_search
 from smart_drive.cli.cmd_sentinel import cmd_sentinel
@@ -173,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument(
         "--profile",
         default="general-workspace",
-        choices=["general-workspace", "ai-developer", "data-science"],
+        choices=["general-workspace", "ai-developer", "data-science", "internal-developer-vault"],
         help="Preset profile configuration",
     )
     p_init.add_argument("--force", action="store_true", help="Force overwrite existing manifests")
@@ -325,6 +327,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_cls.add_argument("--json", action="store_true", help="Output classification report in JSON format")
     p_cls.add_argument("--no-recursive", action="store_true", help="Do not scan subdirectories recursively")
 
+    # 17. offload
+    p_off = subparsers.add_parser(
+        "offload",
+        help="C-Drive developer cache discovery and transactional NTFS junction offloading",
+    )
+    p_off.add_argument("--scan", "-s", action="store_true", help="Scan C-drive for known heavy developer and AI caches")
+    p_off.add_argument("--move", "-m", help="Name of cache to offload to secondary drive (e.g. huggingface, uv, ollama)")
+    p_off.add_argument("--target", "-t", help="Target secondary drive or directory (e.g. 'D:', 'D:\\', or path)")
+    p_off.add_argument("--revert", "-r", help="Name of cache to revert back to native C-drive directory")
+    p_off.add_argument("--dry-run", action="store_true", help="Simulate offload/revert operation without moving files")
+    p_off.add_argument("--force", "-f", action="store_true", help="Force offload even if warnings exist")
+    p_off.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    # 18. health
+    p_health = subparsers.add_parser(
+        "health",
+        help="SSD health, TRIM verification, partition geometry, and storage utilization monitor",
+    )
+    p_health.add_argument("drive", nargs="?", default=None, help="Target drive letter (e.g. 'D:', 'D:\\', or path)")
+    p_health.add_argument("--root", help="Alias for target drive root")
+    p_health.add_argument("--json", action="store_true", help="Output health report in structured JSON format")
+
     return parser
 
 
@@ -356,6 +380,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         "snapshot": cmd_snapshot,
         "backup": cmd_backup,
         "classify": cmd_classify,
+        "offload": cmd_offload,
+        "health": cmd_health,
     }
 
     handler = dispatch.get(args.subcommand)

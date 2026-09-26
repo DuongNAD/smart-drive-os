@@ -7,9 +7,13 @@
 [![MCP Protocol](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
 [![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 100% Pass](https://img.shields.io/badge/tests-314%2F314%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 100% Pass](https://img.shields.io/badge/tests-436%2F436%20passed%20(100%25)-brightgreen.svg)](#)
+[![NTFS 4KB Native](https://img.shields.io/badge/filesystem-NTFS%204KB%20Native-blueviolet.svg)](#)
+[![Branch: internal-secondary-drive](https://img.shields.io/badge/branch-internal--secondary--drive-purple.svg)](https://github.com/DuongNAD/smart-drive-os/tree/internal-secondary-drive)
 
 > **High-Performance Autonomous Drive Operating Suite, Visual Web Dashboard, Snapshot Integrity Engine & SQLite FTS5 Instant Search for External SSDs (exFAT) & AI Coding Agents.**
+> 
+> 🚀 **Internal Secondary Drive Architect & C-Drive Cache Offloader**: Looking to optimize internal secondary NVMe/SATA SSDs (`D:`, `E:`), offload massive AI/developer caches via NTFS Directory Junctions (`mklink /J`), or monitor SSD TRIM health? See the comprehensive [README_INTERNAL.md](README_INTERNAL.md) documentation!
 
 ---
 
@@ -104,6 +108,13 @@ $$\text{Cluster Allocation} = \left\lceil \frac{\text{File Size}}{524,288} \righ
 - **Autonomous Auto-Routing**: Suggests or moves loose files into canonical sub-taxonomies safely without overwrite or collision.
 - **Commands**: `smart-drive classify [dir] --suggest --dry-run --apply --json`.
 
+### 4. Internal Secondary Drive Architect & C-Drive Cache Offloader (`smart-drive offload` / `health`)
+- **C-Drive Cache Offloader**: Scans and identifies massive developer and AI caches (HuggingFace, Ollama, PyTorch, Docker WSL2, pip, uv, npm, Conda, Gradle, Cargo) on the Windows system drive (`C:`), migrating them via a 7-phase zero-data-loss transactional move to a secondary drive (`D:\04_System_Offload_Caches\<name>`).
+- **NTFS Directory Junction Engine (`mklink /J`)**: Creates transparent Windows hardware reparse points without requiring Administrator elevation or Developer Mode, keeping all tools working seamlessly while reclaiming tens of gigabytes on `C:`.
+- **Workstation Profile (`internal-developer-vault`)**: 6-partition structure (`01_AI_Models`, `02_Development_Workspaces`, `03_Data_Vault`, `04_System_Offload_Caches`, `05_Dev_Toolbox`, `06_Archives_Storage`) with permanent junk cleaner protection.
+- **SSD TRIM & Health Diagnostic Monitor**: Directly inspects Windows TRIM behavior (`fsutil behavior query DisableDeleteNotify`), volume cluster geometry (4KB NTFS vs 512KB exFAT), and storage capacity thresholds.
+- **Dedicated Documentation**: Full guide available at [README_INTERNAL.md](README_INTERNAL.md).
+
 ---
 
 ## 3-Step Quickstart
@@ -133,6 +144,7 @@ Initialize standard taxonomy directories, install anti-indexing shields, generat
 1. `ai-developer`: Checkpoints, GGUF/safetensors trees, `.noindex` developer environments, and agent workspaces.
 2. `data-science`: EDA notebooks, pipelines, parquet vs small-CSV storage guidelines, and raw data archives.
 3. `general-workspace` (Default): Universal active/archive code, docs, learning notes, and utilities.
+4. `internal-developer-vault`: High-performance 6-partition workstation vault for internal NVMe/SATA secondary drives (`D:`, `E:`), receiving offloaded caches, datasets, and AI checkpoints.
 
 ### Step 3: Launch Visual Dashboard or Connect AI Agents
 Start the local Web Dashboard in your browser:
@@ -173,7 +185,9 @@ Execute via `smart-drive <command>` or `python -m smart_drive <command>`:
 | `snapshot verify` | `<name>`, `--no-untracked`, `--root <path>`, `--json` | Validates data integrity of files against snapshot manifest to detect tampering or corruption. |
 | `backup` | `--target <path>`, `--dry-run`, `--no-skip-junk`, `--hash`, `--partitions <list>`, `--json` | Performs safe incremental backup copying only modified/new files to target directory. |
 | `classify` | `[dir]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Deep content inspection (magic bytes & markers) for AI models, datasets, docs, and code repos. |
-| `init` | `--profile {ai-developer, data-science, general-workspace}`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
+| `offload` | `--scan`, `--move <name>`, `--target <drive>`, `--revert <name>`, `--dry-run`, `--force`, `--json` | C-Drive developer cache discovery and transactional NTFS junction offloading to secondary drive. |
+| `health` | `[drive]`, `--root <path>`, `--json` | SSD health, TRIM verification, partition geometry, and storage utilization monitor. |
+| `init` | `--profile {ai-developer, data-science, general-workspace, internal-developer-vault}`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
 | `status` | `--root <path>`, `--json` | Inspect SSD mount point, geometry, shield health, and taxonomy status. |
 | `audit` | `--root <path>`, `--json`, `--markdown`, `--export <file>` | Detailed storage breakdown and 512KB cluster slack metrics. |
 | `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run safeguard and inviolable whitelist protection. |
@@ -249,15 +263,15 @@ smart-drive mcp-config
 
 ## Verification & Testing
 
-SmartDrive-OS is tested across 314 automated unit, integration, and adversarial test cases using **100% pure standard library `unittest`**:
+SmartDrive-OS is tested across 436 automated unit, integration, and adversarial test cases using **100% pure standard library `unittest`**:
 
 ```bash
-python -m unittest discover tests
+python -m unittest discover tests -v
 ```
 
 Output:
 ```text
-Ran 314 tests in ~37.9s
+Ran 436 tests in ~47.6s
 OK
 ```
 

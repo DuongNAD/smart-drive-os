@@ -19,9 +19,24 @@ def detect_default_root() -> str:
     return os.getcwd()
 
 
+def normalize_drive_path(path_spec: Optional[str]) -> str:
+    """Normalizes drive letters and root paths to canonical form (e.g. 'D:' -> 'D:\\')."""
+    if not path_spec:
+        return detect_default_root()
+    s = path_spec.strip()
+    if len(s) == 2 and s[1] == ":" and s[0].isalpha():
+        return f"{s[0].upper()}:\\"
+    if len(s) == 1 and s.isalpha():
+        return f"{s.upper()}:\\"
+    if len(s) == 3 and s[1] == ":" and s[0].isalpha() and s[2] in ("\\", "/"):
+        return f"{s[0].upper()}:\\"
+    return s
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     """Handles the `init` subcommand."""
-    target_path = getattr(args, "path", None) or getattr(args, "root", None) or detect_default_root()
+    raw_path = getattr(args, "path", None) or getattr(args, "root", None)
+    target_path = normalize_drive_path(raw_path)
     profile = getattr(args, "profile", "general-workspace")
     force = getattr(args, "force", False)
 

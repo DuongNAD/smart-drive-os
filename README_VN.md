@@ -7,9 +7,13 @@
 [![MCP Protocol](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
 [![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 100% Pass](https://img.shields.io/badge/tests-314%2F314%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 100% Pass](https://img.shields.io/badge/tests-436%2F436%20passed%20(100%25)-brightgreen.svg)](#)
+[![NTFS 4KB Native](https://img.shields.io/badge/filesystem-NTFS%204KB%20Native-blueviolet.svg)](#)
+[![Branch: internal-secondary-drive](https://img.shields.io/badge/branch-internal--secondary--drive-purple.svg)](https://github.com/DuongNAD/smart-drive-os/tree/internal-secondary-drive)
 
 > **Hệ điều phối & Quản trị ổ cứng SSD di động (exFAT), Giao diện Web Dashboard trực quan, Hệ thống Snapshot SHA-256 bảo vệ dữ liệu và Công cụ tìm kiếm tức thì SQLite FTS5 cho AI Coding Agents và lập trình viên.**
+> 
+> 🚀 **Kiến trúc ổ phụ gắn trong & Di chuyển Cache ổ C:**: Bạn muốn quy hoạch ổ SSD phụ trong máy trạm (`D:`, `E:`), di chuyển cache khổng lồ (HuggingFace, Ollama, Docker) bằng NTFS Directory Junctions (`mklink /J`) hoặc kiểm tra sức khỏe SSD TRIM? Xem ngay tài liệu chuyên sâu [README_INTERNAL.md](README_INTERNAL.md)!
 
 ---
 
@@ -104,6 +108,13 @@ $$\text{Cluster Allocation} = \left\lceil \frac{\text{File Size}}{524.288} \righ
 - **Tự động đề xuất & Gom file an toàn**: Đề xuất di chuyển file tự do vào đúng nhóm taxonomy với cơ chế đặt tên chống trùng lặp và ghi đè.
 - **Lệnh**: `smart-drive classify [thư_mục] --suggest --dry-run --apply --json`.
 
+### 4. Kiến trúc quy hoạch ổ cứng phụ gắn trong & Di chuyển Cache ổ C: (`smart-drive offload` / `health`)
+- **Di chuyển Cache ổ C: an toàn tuyệt đối**: Quét và tự động phát hiện các cache dung lượng khổng lồ trên ổ Windows C: (HuggingFace, Ollama, PyTorch, Docker WSL2, pip, uv, npm, Conda, Gradle, Cargo), di chuyển sang ổ phụ (`D:\04_System_Offload_Caches\<tên>`) qua quy trình chuyển giao 7 giai đoạn có cơ chế rollback hoàn tác tức thì nếu gặp sự cố.
+- **Động cơ liên kết NTFS Directory Junction (`mklink /J`)**: Tạo các điểm nối phần cứng trong suốt ở cấp hệ điều hành mà không cần cấp quyền Administrator hay kích hoạt Developer Mode, giải phóng hàng chục đến hàng trăm GB trên ổ C: mà phần mềm vẫn hoạt động bình thường.
+- **Cấu hình máy trạm chuyên sâu (`internal-developer-vault`)**: Cung cấp cấu trúc 6 phân vùng chuyên sâu (`01_AI_Models`, `02_Development_Workspaces`, `03_Data_Vault`, `04_System_Offload_Caches`, `05_Dev_Toolbox`, `06_Archives_Storage`) được bảo vệ vĩnh viễn bởi whitelist.
+- **Kiểm tra sức khỏe SSD TRIM & Cluster Geometry**: Kiểm tra trạng thái kích hoạt TRIM (`fsutil behavior query DisableDeleteNotify`), kích thước cluster phân bổ (4KB NTFS vs 512KB exFAT) và cảnh báo ngưỡng dung lượng trống.
+- **Tài liệu hướng dẫn chuyên sâu**: Xem chi tiết tại [README_INTERNAL.md](README_INTERNAL.md).
+
 ---
 
 ## 4. Khởi động nhanh trong 3 bước
@@ -129,10 +140,11 @@ Hoặc chạy lệnh từ terminal:
 python -m smart_drive init --profile ai-developer
 ```
 
-#### 3 Cấu hình mẫu có sẵn:
+#### Các cấu hình mẫu có sẵn:
 1. `ai-developer`: Phù hợp lập trình AI/LLM, chứa sẵn thư mục mô hình (`checkpoints`, `gguf`, `safetensors`), môi trường ảo có gắn shield `.noindex`, thư mục workspace cho AI agent.
 2. `data-science`: Phù hợp phân tích dữ liệu, sổ tay Jupyter notebook, pipeline dữ liệu, hướng dẫn lưu trữ định dạng Parquet thay cho CSV nhỏ.
 3. `general-workspace` (Mặc định): Cấu trúc tiêu chuẩn cho lập trình tổng quát, tài liệu học tập, sách và công cụ tiện ích.
+4. `internal-developer-vault`: Cấu trúc kho lưu trữ máy trạm 6 phân vùng cho ổ SSD phụ gắn trong (`D:`, `E:`), chuyên tiếp nhận các thư mục cache từ C:, dataset và mô hình AI.
 
 ### Bước 3: Mở Web Dashboard hoặc kết nối AI Agent (MCP)
 Khởi chạy giao diện Web trực quan:
@@ -173,6 +185,8 @@ Chạy qua lệnh `smart-drive <lệnh>` hoặc `python -m smart_drive <lệnh>`
 | `snapshot verify` | `<tên>`, `--no-untracked`, `--root <đường_dẫn>`, `--json` | Kiểm toán tính toàn vẹn dữ liệu so với bản snapshot để phát hiện file lỗi/sửa đổi. |
 | `backup` | `--target <đích>`, `--dry-run`, `--no-skip-junk`, `--hash`, `--json` | Sao lưu tăng số an toàn sang ổ đĩa hoặc thư mục đích chỉ định. |
 | `classify` | `[thư_mục]`, `--suggest`, `--dry-run`, `--apply`, `--json` | Nhận diện sâu magic bytes và phân loại thông minh tệp AI, dữ liệu, tài liệu, dự án. |
+| `offload` | `--scan`, `--move <tên>`, `--target <ổ>`, `--revert <tên>`, `--dry-run`, `--json` | Quét và di chuyển cache khổng lồ từ ổ C: sang ổ phụ qua NTFS Directory Junctions. |
+| `health` | `[ổ_đĩa]`, `--root <đường_dẫn>`, `--json` | Kiểm tra sức khỏe SSD, trạng thái kích hoạt TRIM, cluster geometry và dung lượng trống. |
 | `init` | `--profile`, `--root`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo cấu trúc phân loại, cài khiên và cơ sở dữ liệu FTS5. |
 | `status` | `--root`, `--json` | Kiểm tra tình trạng điểm gắn ổ đĩa, khiên bảo vệ và các thư mục nghiệp vụ. |
 | `audit` | `--root`, `--json`, `--markdown`, `--export` | Kiểm toán chi tiết dung lượng và tỷ lệ lãng phí cluster slack 512KB. |
@@ -235,15 +249,15 @@ Hệ thống sẽ tự nhận diện và cập nhật cấu hình cho Antigravit
 
 ## 10. Kiểm thử tự động & Độ tin cậy
 
-Hệ thống được bảo vệ bởi bộ kiểm thử tự động toàn diện gồm **314 test case** (unit tests, integration tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
+Hệ thống được bảo vệ bởi bộ kiểm thử tự động toàn diện gồm **436 test case** (unit tests, integration tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
 
 ```bash
-python -m unittest discover tests
+python -m unittest discover tests -v
 ```
 
 Kết quả:
 ```text
-Ran 314 tests in ~37.9s
+Ran 436 tests in ~47.6s
 OK
 ```
 
