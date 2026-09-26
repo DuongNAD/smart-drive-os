@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smart-drive-os"
+version = "1.0.0"
+description = "Autonomous exFAT SSD Governance, 512KB Cluster Slack Optimization & SQLite FTS5 Instant Search Suite"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "SmartDrive Team" }
+]
+keywords = [
+    "ssd",
+    "exfat",
+    "cluster-slack",
+    "fts5",
+    "mcp",
+    "model-context-protocol",
+    "autonomous-agent",
+    "storage-audit",
+    "junk-cleaner",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Filesystems",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+smart-drive = "smart_drive.cli.main:main"
+smart_drive = "smart_drive.cli.main:main"
+smart-drive-manager = "smart_drive.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/example/smart-drive-os"
+Documentation = "https://github.com/example/smart-drive-os#readme"
+Issues = "https://github.com/example/smart-drive-os/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["smart_drive*"]
+exclude = ["tests*", "configs*", "launchers*"]
+
+[tool.setuptools.package-data]
+smart_drive = ["py.typed"]

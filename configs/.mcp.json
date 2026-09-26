@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "smart-drive": {
+      "command": "python",
+      "args": [
+        "-m",
+        "smart_drive",
+        "mcp"
+      ],
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1"
+      }
+    }
+  }
+}
