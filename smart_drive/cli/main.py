@@ -14,6 +14,9 @@ Provides subcommands:
 - dup: 3-phase SHA-256 duplicate file detection.
 - index: Full SQLite FTS5 search index creation.
 - update: Fast incremental search index synchronization.
+- ui: Launch zero-dependency web dashboard & visual UI.
+- snapshot: Point-in-time snapshot creation, listing, and SHA-256 verification.
+- backup: Safe incremental backup to target directory or drive.
 """
 
 from __future__ import annotations
@@ -39,6 +42,8 @@ if sys.platform == "win32":
             pass
 
 from smart_drive.cli.cmd_audit import cmd_audit
+from smart_drive.cli.cmd_backup import cmd_backup
+from smart_drive.cli.cmd_classify import cmd_classify
 from smart_drive.cli.cmd_clean import cmd_clean
 from smart_drive.cli.cmd_init import cmd_init
 from smart_drive.cli.cmd_mcp import cmd_mcp
@@ -46,7 +51,9 @@ from smart_drive.cli.cmd_mcp_config import cmd_mcp_config
 from smart_drive.cli.cmd_organize import cmd_organize
 from smart_drive.cli.cmd_search import cmd_search
 from smart_drive.cli.cmd_sentinel import cmd_sentinel
+from smart_drive.cli.cmd_snapshot import cmd_snapshot
 from smart_drive.cli.cmd_status import cmd_status
+from smart_drive.cli.cmd_ui import cmd_ui
 from smart_drive.core.duplicates import DuplicateDetector
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
@@ -256,6 +263,68 @@ def build_parser() -> argparse.ArgumentParser:
     p_upd.add_argument("--db", help="Path to SQLite index database file")
     p_upd.add_argument("--json", action="store_true", help="Output update stats in JSON format")
 
+    # 13. ui
+    p_ui = subparsers.add_parser("ui", help="Launch zero-dependency web dashboard & visual UI")
+    p_ui.add_argument("--root", help="Root directory of the SSD")
+    p_ui.add_argument("--port", type=int, default=8765, help="HTTP port to listen on (default: 8765)")
+    p_ui.add_argument("--no-browser", action="store_true", help="Do not open web browser automatically")
+    p_ui.add_argument("--db", help="Path to SQLite search database file")
+
+    # 14. snapshot
+    p_snap = subparsers.add_parser(
+        "snapshot",
+        help="Point-in-time snapshot creation, listing, and SHA-256 verification",
+    )
+    p_snap.add_argument("--root", help="Root directory of the SSD")
+    p_snap.add_argument("--json", action="store_true", help="Output results in JSON format")
+
+    snap_sub = p_snap.add_subparsers(dest="action", help="Snapshot action (create, list, verify)")
+
+    # snapshot create
+    p_sc = snap_sub.add_parser("create", help="Create a point-in-time snapshot with streaming SHA-256")
+    p_sc.add_argument("name", nargs="?", default=None, help="Snapshot identifier name (optional)")
+    p_sc.add_argument("--root", help="Root directory of the SSD")
+    p_sc.add_argument("--partitions", help="Comma-separated list of partitions to snapshot")
+    p_sc.add_argument("--json", action="store_true", help="Output manifest in JSON format")
+
+    # snapshot list
+    p_sl = snap_sub.add_parser("list", help="List all stored snapshots")
+    p_sl.add_argument("--root", help="Root directory of the SSD")
+    p_sl.add_argument("--json", action="store_true", help="Output snapshot list in JSON format")
+
+    # snapshot verify
+    p_sv = snap_sub.add_parser("verify", help="Verify data integrity of files against snapshot manifest")
+    p_sv.add_argument("name", help="Snapshot identifier name to verify")
+    p_sv.add_argument("--root", help="Root directory of the SSD")
+    p_sv.add_argument("--no-untracked", action="store_true", help="Do not check for untracked files")
+    p_sv.add_argument("--json", action="store_true", help="Output verification report in JSON format")
+
+    # 15. backup
+    p_bak = subparsers.add_parser(
+        "backup",
+        help="Safe incremental backup to target directory or drive",
+    )
+    p_bak.add_argument("--target", required=True, help="Destination directory path for backup")
+    p_bak.add_argument("--root", help="Root directory of the SSD")
+    p_bak.add_argument("--partitions", help="Comma-separated list of partitions to backup")
+    p_bak.add_argument("--dry-run", action="store_true", help="Simulate backup without copying files")
+    p_bak.add_argument("--no-skip-junk", action="store_true", help="Include junk files in backup")
+    p_bak.add_argument("--hash", action="store_true", help="Use SHA-256 checksum comparison instead of size/mtime")
+    p_bak.add_argument("--json", action="store_true", help="Output backup report in JSON format")
+
+    # 16. classify
+    p_cls = subparsers.add_parser(
+        "classify",
+        help="Deep file format recognition, taxonomy auto-tagging, and safe relocation",
+    )
+    p_cls.add_argument("path", nargs="?", default=None, help="Target file or directory to inspect/classify")
+    p_cls.add_argument("--root", help="Root directory of the SSD / workspace")
+    p_cls.add_argument("--suggest", action="store_true", help="Display classification recommendations (default)")
+    p_cls.add_argument("--dry-run", action="store_true", help="Simulate relocation and collision handling without moving files")
+    p_cls.add_argument("--apply", action="store_true", help="Safely move files into recommended taxonomy directories")
+    p_cls.add_argument("--json", action="store_true", help="Output classification report in JSON format")
+    p_cls.add_argument("--no-recursive", action="store_true", help="Do not scan subdirectories recursively")
+
     return parser
 
 
@@ -283,6 +352,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         "dup": cmd_dup,
         "index": cmd_index,
         "update": cmd_update,
+        "ui": cmd_ui,
+        "snapshot": cmd_snapshot,
+        "backup": cmd_backup,
+        "classify": cmd_classify,
     }
 
     handler = dispatch.get(args.subcommand)

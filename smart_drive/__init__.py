@@ -5,7 +5,7 @@ Zero-dependency Python package (100% standard library) tailored for external SSD
 """
 from __future__ import annotations
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "SmartDrive Team"
 
 from smart_drive.core.config import (

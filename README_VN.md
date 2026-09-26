@@ -3,10 +3,13 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
 [![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](#)
 [![exFAT 512KB Optimized](https://img.shields.io/badge/filesystem-exFAT%20512KB%20Guard-orange.svg)](#)
+[![Web Dashboard](https://img.shields.io/badge/UI-Embedded%20Dark%20SPA-blueviolet.svg)](#)
 [![MCP Protocol](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
+[![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Tests: 100% Pass](https://img.shields.io/badge/tests-314%2F314%20passed%20(100%25)-brightgreen.svg)](#)
 
-> **Hệ điều phối & Quản trị ổ cứng SSD di động (exFAT) tối ưu hóa cho AI Coding Agents và lập trình viên.**
+> **Hệ điều phối & Quản trị ổ cứng SSD di động (exFAT), Giao diện Web Dashboard trực quan, Hệ thống Snapshot SHA-256 bảo vệ dữ liệu và Công cụ tìm kiếm tức thì SQLite FTS5 cho AI Coding Agents và lập trình viên.**
 
 ---
 
@@ -14,22 +17,106 @@
 
 Các dòng ổ cứng SSD di động dung lượng lớn (như **Kingston XS2000 2TB**) khi định dạng theo chuẩn **exFAT** thường mặc định kích thước đơn vị phân bổ (cluster size) lên đến **512 KB (524.288 bytes)**.
 
-Điều này gây lãng phí dung lượng nghiêm trọng đối với lập trình viên:
-- Một file mã nguồn hoặc tệp cấu hình chỉ nặng **1 byte** vẫn chiếm trọn **512 KB** trên ổ đĩa (**lãng phí 99.999%**).
-- Một file JSON hoặc markdown nặng **10 KB** vẫn ngốn **512 KB** (**lãng phí 98.05%**).
-- Một thư mục dự án chứa **10.000 file nhỏ** (tổng dung lượng thực chỉ **15 MB**) khi sao chép sang SSD exFAT sẽ chiếm dụng hơn **5.12 GB** dung lượng vật lý!
-- Trình lập chỉ mục của hệ điều hành (macOS Spotlight `mds`, Windows Search) liên tục quét và ghi đè các file rác nhỏ (`.DS_Store`, `Thumbs.db`), gây nóng ổ, hao pin và giảm tuổi thọ chip nhớ.
+$$\text{Cluster Allocation} = \left\lceil \frac{\text{File Size}}{524.288} \right\rceil \times 524.288 \text{ bytes}$$
 
-**SmartDrive-OS** giải quyết triệt để vấn đề này với triết lý **Zero-Dependency** (100% Python Standard Library, không cần cài bất kỳ thư viện ngoài nào), tự động cài đặt khiên chống quét rác, tích hợp công cụ tìm kiếm SQLite FTS5 siêu tốc (<10ms) và giao thức Model Context Protocol (MCP) chuẩn hóa cho AI Coding Agents.
+| Kích thước danh nghĩa file | Dung lượng vật lý chiếm dụng | Cluster Slack lãng phí | Tỷ lệ lãng phí |
+|---|---|---|---|
+| **0 bytes** | 0 bytes (chỉ ghi metadata) | 0 bytes | 0.0% |
+| **1 byte** | **524.288 bytes** (512 KB) | **524.287 bytes** | **99.9998%** |
+| **10 KB** (code / config) | **524.288 bytes** (512 KB) | **514.048 bytes** | **98.05%** |
+| **100 KB** (JSON / docs) | **524.288 bytes** (512 KB) | **421.888 bytes** | **80.47%** |
+| **524.289 bytes** (512 KB + 1B) | **1.048.576 bytes** (1.024 KB) | **524.287 bytes** | **50.00%** |
+
+### Tác động thực tế:
+- Một dự án lập trình chứa **10.000 file nhỏ** (tổng dung lượng thực chỉ **15 MB**) khi sao chép sang SSD exFAT sẽ chiếm dụng hơn **5.12 GB** dung lượng vật lý — **lãng phí >99%** ổ đĩa!
+- Trình lập chỉ mục của hệ điều hành (macOS Spotlight `mds`, Windows Search) liên tục quét và ghi đè các file rác nhỏ (`.DS_Store`, `Thumbs.db`, `.fseventsd`), gây nóng ổ, hao pin và giảm tuổi thọ chip nhớ SSD.
+- Khi các AI coding agents (Antigravity, Claude, Cursor) khám phá các cây thư mục sâu, việc quét file đệ quy làm tràn cửa sổ ngữ cảnh (context window) và cạn kiệt token.
+
+**SmartDrive-OS** giải quyết triệt để vấn đề này với triết lý **Zero-Dependency** (100% Python Standard Library: `http.server`, `hashlib`, `json`, `sqlite3`, `urllib`, `shutil`, `pathlib`), tự động cài đặt khiên chống quét rác, tích hợp công cụ tìm kiếm SQLite FTS5 siêu tốc (<10ms), giao diện Web trực quan nhúng sẵn và hệ thống bảo vệ toàn vẹn dữ liệu bằng Snapshot SHA-256.
 
 ---
 
-## 2. Khởi động nhanh trong 3 bước
+## 2. Kiến trúc hệ thống
+
+```
++-------------------------------------------------------------------------------------------------+
+|                               Giao diện Người dùng & AI Agents                                  |
+|   +-----------------------+    +-----------------------+    +---------------+    +----------+   |
+|   |  Khởi chạy 1-chạm     |    |   Python CLI & TUI    |    |  AI Agents    |    |  Web UI  |   |
+|   |  (.bat / .command)    |    |   (smart-drive CLI)   |    |  (MCP Clients)|    | (SPA App)|   |
+|   +-----------+-----------+    +-----------+-----------+    +-------+-------+    +----+-----+   |
++---------------|----------------------------|------------------------|-----------------|---------+
+                |                            |                        |                 |
+                +----------------------------+                        |                 |
+                                             |                        | JSON-RPC 2.0    | HTTP 8765
+                                             v                        v                 v
++-------------------------------------------------------------------------------------------------+
+|                                    Nhân điều hành SmartDrive-OS                                 |
+|  +--------------------+  +--------------------+  +--------------------+  +-------------------+  |
+|  | Drive Initializer  |  |  Storage Auditor   |  |   MCP Server       |  | Web UI Không Thư  |  |
+|  | - Preset Profiles  |  |  - Hình học 512KB  |  |   - stdio RPC 2.0  |  |   Viện Ngoài      |  |
+|  | - Cài khiên bảo vệ |  |  - Phân tích Slack |  |   - 8 Agent Tools  |  | - ThreadingHTTP   |  |
+|  +--------------------+  +--------------------+  +--------------------+  +-------------------+  |
+|  +--------------------+  +--------------------+  +--------------------+  +-------------------+  |
+|  | Purge / Dọn Rác    |  | Tìm kiếm FTS5      |  | Snapshot & Backup  |  | Bộ phân loại sâu  |  |
+|  | - Quy tắc 3 tầng   |  | - unicode61 BM25   |  | - Băm SHA-256 dòng |  | - Kiểm tra Magic  |  |
+|  | - Khiên Whitelist  |  | - Phản hồi <10ms   |  | - Chống hỏng tệp   |  |   Bytes & Cấu trúc|  |
+|  +--------------------+  +--------------------+  +--------------------+  +-------------------+  |
++-------------------------------------------------------------------------------------------------+
+                                             |
+                                             v
++-------------------------------------------------------------------------------------------------+
+|                          Phân vùng Ổ cứng đích (Kingston XS2000 2TB exFAT)                      |
+|   01_AI_Models/           02_Learning_Knowledge/        03_Development_Projects/                |
+|   04_System_Workspaces/   05_Dev_Toolbox/               06_Archives_Storage/                    |
+|   .metadata_never_index   .fseventsd/no_log             .smart_drive/index.db                   |
+|   .smart_drive/snapshots/<tên>.json                     <đích>/backup_manifest.json             |
++-------------------------------------------------------------------------------------------------+
+```
+
+---
+
+## 3. Các tính năng mới nổi bật trên v1.1.0
+
+### 1. Giao diện Web Dashboard trực quan (`smart-drive ui`)
+- **Zero-Dependency Web SPA**: Hoạt động hoàn toàn trên `http.server.ThreadingHTTPServer` của Python Standard Library, không cần cài Flask, FastAPI, Node.js hay npm.
+- **Dark Mode hiện đại & Responsive**: Hiển thị biểu đồ phân bổ dung lượng 6 nhóm taxonomy và trực quan hóa chi tiết dung lượng cluster slack 512KB bị lãng phí.
+- **Tìm kiếm FTS5 tương tác tức thì (<10ms)**: Tìm kiếm file thời gian thực kết hợp bộ lọc phân loại, phần mở rộng tệp và khoảng dung lượng.
+- **Bảng điều khiển dọn rác 3 tầng an toàn**: Cho phép xem trước danh sách file rác (Dry-run preview) và thực hiện dọn dẹp an toàn bằng 1-chạm có hộp thoại xác nhận.
+- **Cờ lệnh**: `smart-drive ui --port 8765 --no-browser --root <đường_dẫn> --db <đường_dẫn>`.
+
+### 2. Hệ thống Snapshot & Backup bảo vệ toàn vẹn dữ liệu (`smart-drive snapshot` / `backup`)
+- **Tạo Snapshot điểm phục hồi**: Ghi nhận trạng thái cho các phân vùng trọng yếu (`02_Learning_Knowledge`, `03_Development_Projects`, `05_Dev_Toolbox`).
+- **Mã băm SHA-256 dạng dòng (Streaming SHA-256)**: Chia file thành các khối 64KB băm liên tục với bộ nhớ hằng số $O(1)$, kiểm tra chính xác hiện tượng suy thoái dữ liệu (bit rot) hoặc sửa đổi trái phép.
+- **Sao lưu tăng số (Incremental Backup)**: Tự động phát hiện và chỉ sao chép các tệp mới hoặc có thay đổi sang ổ cứng đích, tự động loại trừ rác hệ thống và lưu bản kê khai `backup_manifest.json`.
+- **Các lệnh**:
+  - `smart-drive snapshot create [tên]`: Ghi lại toàn bộ trạng thái file và checksum SHA-256.
+  - `smart-drive snapshot list`: Liệt kê tất cả các bản snapshot đã lưu cùng số lượng tệp và dung lượng.
+  - `smart-drive snapshot verify <tên>`: Kiểm toán tính toàn vẹn, phát hiện file bị sửa đổi, bị xóa hoặc file lạ chưa theo dõi.
+  - `smart-drive backup --target <thư_mục_đích>`: Sao lưu tăng số thông minh (hỗ trợ cờ `--dry-run`, `--hash`, `--partitions`).
+
+### 3. Bộ phân loại thông minh & Auto-Tagger (`smart-drive classify`)
+- **Nhận diện sâu định dạng tệp qua Magic Bytes & Cấu trúc**:
+  - **Mô hình AI & Trọng số**: GGUF (`GGUF` magic), Safetensors (đọc JSON header), ONNX (protobuf header), PyTorch (`.pt`/`.pth`), cấu hình HuggingFace (`config.json`, `tokenizer.json`).
+  - **Bộ dữ liệu (Datasets)**: Apache Parquet (`PAR1`), Apache Arrow (`ARROW1`), JSONL, CSV, HDF5 (`\x89HDF\r\n\x1a\n`).
+  - **Nghiên cứu & Tài liệu**: PDF (`%PDF-`), ePub (PK container chứa `application/epub+zip`), ghi chú Markdown.
+  - **Kho mã nguồn**: Tự nhận diện dự án Git (`.git`), Node.js (`package.json`), Python (`pyproject.toml`, `setup.py`), Rust (`Cargo.toml`).
+- **Tự động đề xuất & Gom file an toàn**: Đề xuất di chuyển file tự do vào đúng nhóm taxonomy với cơ chế đặt tên chống trùng lặp và ghi đè.
+- **Lệnh**: `smart-drive classify [thư_mục] --suggest --dry-run --apply --json`.
+
+---
+
+## 4. Khởi động nhanh trong 3 bước
 
 ### Bước 1: Chuẩn bị môi trường
-Dự án chỉ yêu cầu máy tính có sẵn **Python 3.9+** (không cần cài thêm bất kỳ thư viện pip nào):
+Dự án chỉ yêu cầu máy tính có sẵn **Python 3.9+** (sử dụng 100% Python Standard Library):
 ```bash
-python --version
+python -m smart_drive --help
+```
+
+Hoặc cài đặt chế độ phát triển:
+```bash
+pip install -e .
 ```
 
 ### Bước 2: Khởi tạo ổ đĩa 1-chạm
@@ -37,7 +124,7 @@ Bạn có thể nhấp đúp chuột vào tệp khởi chạy nhanh:
 - **Windows**: Nhấp đúp vào `Setup_SSD.bat`
 - **macOS / Linux**: Nhấp đúp vào `Setup_SSD.command`
 
-Hoặc chạy lệnh từ dòng lệnh:
+Hoặc chạy lệnh từ terminal:
 ```bash
 python -m smart_drive init --profile ai-developer
 ```
@@ -47,8 +134,13 @@ python -m smart_drive init --profile ai-developer
 2. `data-science`: Phù hợp phân tích dữ liệu, sổ tay Jupyter notebook, pipeline dữ liệu, hướng dẫn lưu trữ định dạng Parquet thay cho CSV nhỏ.
 3. `general-workspace` (Mặc định): Cấu trúc tiêu chuẩn cho lập trình tổng quát, tài liệu học tập, sách và công cụ tiện ích.
 
-### Bước 3: Kết nối với AI Coding Agent (MCP)
-Tự động thêm cấu hình MCP Server vào IDE của bạn bằng một lệnh duy nhất:
+### Bước 3: Mở Web Dashboard hoặc kết nối AI Agent (MCP)
+Khởi chạy giao diện Web trực quan:
+```bash
+smart-drive ui
+```
+
+Hoặc tự động cấu hình SmartDrive-OS làm MCP Server cho các trợ lý AI:
 ```bash
 python -m smart_drive mcp-config
 ```
@@ -56,7 +148,7 @@ Hỗ trợ trực tiếp: **Google Antigravity 2.0**, **Claude Desktop / Claude 
 
 ---
 
-## 3. Bộ khởi chạy 1-chạm (Cross-Platform Launchers)
+## 5. Bộ khởi chạy 1-chạm (Cross-Platform Launchers)
 
 Các tệp khởi chạy có sẵn ở cả thư mục gốc và thư mục `launchers/` để bạn sử dụng ngay:
 
@@ -69,40 +161,49 @@ Các tệp khởi chạy có sẵn ở cả thư mục gốc và thư mục `lau
 
 ---
 
-## 4. Bảng tra cứu các lệnh CLI
+## 6. Bảng tra cứu các lệnh CLI
 
 Chạy qua lệnh `smart-drive <lệnh>` hoặc `python -m smart_drive <lệnh>`:
 
 | Lệnh | Tham số chính | Mô tả chi tiết |
 |---|---|---|
+| `ui` | `--port <cổng>`, `--no-browser`, `--root <đường_dẫn>`, `--db <đường_dẫn>` | Khởi chạy Web Dashboard giao diện Dark Mode trực quan cục bộ. |
+| `snapshot create` | `[tên]`, `--partitions <danh_sách>`, `--root <đường_dẫn>`, `--json` | Tạo snapshot ghi lại trạng thái và băm SHA-256 dạng dòng cho các phân vùng. |
+| `snapshot list` | `--root <đường_dẫn>`, `--json` | Liệt kê tất cả các bản snapshot kèm số tệp và dung lượng chi tiết. |
+| `snapshot verify` | `<tên>`, `--no-untracked`, `--root <đường_dẫn>`, `--json` | Kiểm toán tính toàn vẹn dữ liệu so với bản snapshot để phát hiện file lỗi/sửa đổi. |
+| `backup` | `--target <đích>`, `--dry-run`, `--no-skip-junk`, `--hash`, `--json` | Sao lưu tăng số an toàn sang ổ đĩa hoặc thư mục đích chỉ định. |
+| `classify` | `[thư_mục]`, `--suggest`, `--dry-run`, `--apply`, `--json` | Nhận diện sâu magic bytes và phân loại thông minh tệp AI, dữ liệu, tài liệu, dự án. |
 | `init` | `--profile`, `--root`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo cấu trúc phân loại, cài khiên và cơ sở dữ liệu FTS5. |
 | `status` | `--root`, `--json` | Kiểm tra tình trạng điểm gắn ổ đĩa, khiên bảo vệ và các thư mục nghiệp vụ. |
 | `audit` | `--root`, `--json`, `--markdown`, `--export` | Kiểm toán chi tiết dung lượng và tỷ lệ lãng phí cluster slack 512KB. |
-| `clean` | `--dry-run`, `--apply`, `--tier {1,2,3}` | Dọn dẹp rác hệ thống (mặc định luôn chạy mô phỏng trước, bảo vệ whitelist). |
-| `search` | `<từ_khóa>`, `--ext`, `--size`, `--category` | Tìm kiếm siêu tốc (<10ms) với bộ lọc đa tiêu chí và thuật toán BM25. |
-| `organize` | `--dry-run`, `--apply`, `--clean` | Tự động phân loại file tự do vào đúng thư mục nghiệp vụ để giảm slack. |
-| `sentinel` | `--root`, `--auto-heal`, `--json` | Kiểm tra sức khỏe ổ cứng, phục hồi khiên bảo vệ bị thiếu (alias: `agent-check`). |
+| `clean` | `--dry-run`, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Dọn dẹp rác hệ thống (mặc định luôn chạy mô phỏng trước, bảo vệ whitelist). |
+| `search` | `<từ_khóa>`, `--ext`, `--size`, `--category`, `--dir`, `--limit` | Tìm kiếm siêu tốc (<10ms) với bộ lọc đa tiêu chí và thuật toán BM25. |
+| `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Tự động phân loại file tự do vào đúng thư mục nghiệp vụ để giảm slack. |
+| `sentinel` | `--root`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng, phục hồi khiên bảo vệ bị thiếu (alias: `agent-check`). |
 | `mcp` | `--root` | Khởi chạy máy chủ MCP Server stdio chuẩn JSON-RPC 2.0 cho AI Agent. |
 | `mcp-config`| `--target-dir`, `--antigravity`, `--claude`, v.v. | Tự động cấu hình MCP vào file thiết lập của các IDE. |
 | `dup` | `--root`, `--json` | Tìm file trùng lặp qua 3 giai đoạn (kích thước -> băm nhanh 8KB -> SHA-256). |
+| `index` | `--root`, `--db`, `--batch <n>` | Lập chỉ mục toàn bộ ổ đĩa với SQLite FTS5 (>15.000 tệp/giây). |
+| `update` | `--root`, `--db`, `--json` | Đồng bộ chỉ mục tìm kiếm tăng số siêu nhanh (<2 giây). |
 
 ---
 
-## 5. Cú pháp tìm kiếm nâng cao
+## 7. Cú pháp tìm kiếm nâng cao
 
-Công cụ tìm kiếm hỗ trợ lọc linh hoạt:
+Công cụ tìm kiếm FTS5 hỗ trợ lọc linh hoạt:
 - Tìm theo từ khóa: `smart-drive search "deep learning"`
 - Lọc theo đuôi mở rộng: `smart-drive search "weights ext:gguf"`
 - Lọc theo kích thước: `smart-drive search "dataset size:>50MB"` (hoặc `size:<500KB`)
 - Lọc theo danh mục: `smart-drive search "transformer cat:ai_models"`
 - Lọc theo thư mục con: `smart-drive search "setup dir:03_Development_Projects"`
+- Truy vấn kết hợp: `smart-drive search "resnet ext:safetensors size:>50MB"`
 
 ---
 
-## 6. Cơ chế dọn dẹp rác an toàn tuyệt đối (Safe Cleaner)
+## 8. Cơ chế dọn dẹp rác an toàn tuyệt đối (Safe Cleaner)
 
 Hệ thống phân tầng rác làm 3 cấp độ:
-- **Tier 1 (An toàn 100%)**: File rác hệ điều hành macOS `.DS_Store`, `._*` AppleDouble; Windows `Thumbs.db`, `desktop.ini`, `.Spotlight-V100`.
+- **Tier 1 (An toàn 100%)**: File rác hệ điều hành macOS `.DS_Store`, `._*` AppleDouble; Windows `Thumbs.db`, `desktop.ini`, `.Spotlight-V100`, `.Trashes`.
 - **Tier 2 (Cache phát triển)**: Python `__pycache__`, `*.pyc`, `.pytest_cache`, Node cache, Rust build artifacts.
 - **Tier 3 (File tạm thời)**: `*.log`, `*.tmp`, crash dumps.
 
@@ -110,7 +211,45 @@ Hệ thống phân tầng rác làm 3 cấp độ:
 
 ---
 
-## 7. Đóng góp mã nguồn mở (Contributing)
+## 9. Máy chủ Model Context Protocol (MCP) Server
+
+SmartDrive-OS tích hợp sẵn máy chủ MCP stdio chuẩn JSON-RPC 2.0, cung cấp 8 công cụ chuyên dụng cho AI Agents:
+
+1. `ssd_search`: Tìm kiếm FTS5 tức thì trả về token rút gọn (<2.000 tokens/lần truy vấn).
+2. `ssd_audit`: Thống kê dung lượng và phân tích lãng phí cluster slack.
+3. `ssd_clean`: Dọn rác an toàn có khiên bảo vệ whitelist và hỗ trợ dry-run.
+4. `ssd_find_duplicates`: Tìm file trùng lặp qua 3 giai đoạn SHA-256.
+5. `ssd_update_index`: Đồng bộ chỉ mục tìm kiếm tăng số (<2s).
+6. `ssd_check_safety`: Kiểm tra tính tương thích exFAT (quét 9 ký tự cấm Win32, 22 từ khóa DOS, và phát hiện symlink).
+7. `ssd_status`: Kiểm tra trạng thái gắn kết SSD, khiên bảo vệ và phân vùng.
+8. `ssd_auto_organize`: Tự động phân luồng và gom file giảm thiểu lãng phí slack.
+
+### Cấu hình tự động cho IDE
+Chạy lệnh:
+```bash
+smart-drive mcp-config
+```
+Hệ thống sẽ tự nhận diện và cập nhật cấu hình cho Antigravity, Claude Desktop, Cursor và Windsurf.
+
+---
+
+## 10. Kiểm thử tự động & Độ tin cậy
+
+Hệ thống được bảo vệ bởi bộ kiểm thử tự động toàn diện gồm **314 test case** (unit tests, integration tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
+
+```bash
+python -m unittest discover tests
+```
+
+Kết quả:
+```text
+Ran 314 tests in ~37.9s
+OK
+```
+
+---
+
+## 11. Đóng góp mã nguồn mở (Contributing)
 
 SmartDrive-OS là dự án **hoàn toàn mở** và chào đón mọi sự đóng góp từ cộng đồng:
 - 🌟 **Star & Fork** repository trên GitHub: [DuongNAD/smart-drive-os](https://github.com/DuongNAD/smart-drive-os)
@@ -120,7 +259,7 @@ SmartDrive-OS là dự án **hoàn toàn mở** và chào đón mọi sự đón
 
 ---
 
-## 8. Giấy phép mã nguồn mở (License)
+## 12. Giấy phép mã nguồn mở (License)
 
 Dự án được phát hành tự do 100% theo **Giấy phép MIT** (xem chi tiết tại tệp [LICENSE](LICENSE)).  
 Bạn và bất kỳ ai trong cộng đồng đều có toàn quyền **sử dụng, sao chép, chỉnh sửa, ghép nối, phân phối hoặc dùng cho mục đích thương mại** hoàn toàn miễn phí và không bị ràng buộc.
