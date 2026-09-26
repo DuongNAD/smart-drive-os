@@ -1,5 +1,11 @@
 # SmartDrive-OS
 
+> [!TIP]
+> ### 🚀 Internal Secondary Drive Architect & C-Drive Cache Offloader
+> Looking to optimize internal secondary NVMe/SATA SSDs (`D:`, `E:`), offload massive C-drive caches (HuggingFace, Ollama, Docker, uv, pip, npm) via non-elevated NTFS Directory Junctions (`mklink /J`), or monitor SSD TRIM health?
+> 
+> 🔗 **Active Branch**: [`internal-secondary-drive`](https://github.com/DuongNAD/smart-drive-os/tree/internal-secondary-drive) &nbsp;|&nbsp; 📖 **Documentation Guide**: [`README_INTERNAL.md`](https://github.com/DuongNAD/smart-drive-os/blob/internal-secondary-drive/README_INTERNAL.md)
+
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
 [![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](#)
 [![exFAT 512KB Optimized](https://img.shields.io/badge/filesystem-exFAT%20512KB%20Guard-orange.svg)](#)

@@ -1,5 +1,11 @@
 # SmartDrive-OS — Hướng Dẫn Sử Dụng (Tiếng Việt)
 
+> [!TIP]
+> ### 🚀 Nhánh tính năng chuyên biệt: Quy hoạch Ổ cứng phụ gắn trong & Di chuyển Cache ổ C:
+> Bạn đang tìm giải pháp tối ưu hóa ổ SSD phụ trong máy trạm (`D:`, `E:`), di chuyển các bộ cache khổng lồ (HuggingFace, Ollama, Docker, uv, pip, npm) bằng liên kết NTFS Directory Junctions (`mklink /J`) hoặc kiểm tra sức khỏe SSD TRIM?
+> 
+> 🔗 **Nhánh Git chuyên biệt**: [`internal-secondary-drive`](https://github.com/DuongNAD/smart-drive-os/tree/internal-secondary-drive) &nbsp;|&nbsp; 📖 **Tài liệu hướng dẫn chi tiết**: [`README_INTERNAL.md`](https://github.com/DuongNAD/smart-drive-os/blob/internal-secondary-drive/README_INTERNAL.md)
+
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
 [![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](#)
 [![exFAT 512KB Optimized](https://img.shields.io/badge/filesystem-exFAT%20512KB%20Guard-orange.svg)](#)
