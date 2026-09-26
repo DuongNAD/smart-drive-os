@@ -50,47 +50,12 @@ SmartDrive-OS is a high-performance, zero-dependency storage operating system an
 | M1 | Web Dashboard & Visual UI | Features F01-F11: `smart_drive/ui/`, `cmd_ui.py`, `tests/test_ui.py` | none | DONE |
 | M2 | Snapshot & Backup Engine | Features F12-F18: `smart_drive/core/snapshot.py`, `cmd_snapshot.py`, `tests/test_snapshot.py` | none | DONE |
 | M3 | Classifier & Auto-Tagger | Features F19-F24: `smart_drive/core/classifier.py`, `cmd_classify.py`, `tests/test_classifier.py` | none | DONE |
-| M4 | QA, Docs & GitHub Release v1.1.0 | Feature F25: Full test suite, docs update, version bump to 1.1.0, git commit & tag push | M1, M2, M3 | IN_PROGRESS |
+| M4 | QA, Docs & GitHub Release v1.1.0 | Feature F25: Full test suite, docs update, version bump to 1.1.0, git commit & tag push | M1, M2, M3 | DONE |
 
-## Interface Contracts
-
-### M1 (UI) ↔ CLI & Core (DONE)
-- `smart_drive.ui.server.run_server(root_path: Path, port: int = 8765, open_browser: bool = True) -> None`
-- HTTP endpoints:
-  - `GET /` -> Embedded HTML/CSS/JS Single Page Application
-  - `GET /api/status` -> JSON `{ "root": str, "version": "1.1.0", "index_exists": bool }`
-  - `GET /api/audit` -> JSON output from `StorageAuditor.run_audit()`
-  - `GET /api/search?q=...&category=...&ext=...&limit=...` -> JSON `{ "results": [...], "latency_ms": float, "total": int }`
-  - `GET /api/junk` -> JSON `{ "tier1": [...], "tier2": [...], "tier3": [...], "total_bytes": int, "total_slack_bytes": int }`
-  - `POST /api/junk/clean` -> Body `{ "tiers": [1], "dry_run": false }` -> JSON `{ "purged": [...], "reclaimed_bytes": int }`
-
-### M2 (Snapshot) ↔ CLI & Core (DONE)
-- `SnapshotManager(root_path: Path, snapshot_dir: Optional[Path] = None)`
-  - `create_snapshot(name: str, partitions: Optional[List[str]] = None) -> SnapshotManifest`
-  - `list_snapshots() -> List[SnapshotSummary]`
-  - `verify_snapshot(name: str) -> VerificationReport`
-  - `incremental_backup(target_dir: Path, partitions: Optional[List[str]] = None) -> BackupReport`
-- Manifest schema: JSON with `name`, `timestamp`, `root`, `partitions`, `file_count`, `total_bytes`, `files: { relative_path: { "size": int, "mtime": float, "sha256": str } }`.
-
-### M3 (Classifier) ↔ CLI & Core (DONE)
-- `ClassifierEngine(root_path: Path)`
-  - `classify_file(filepath: Path) -> ClassificationResult(category: str, subcategory: str, confidence: float, recommended_path: str, reason: str)`
-  - `scan_and_classify(target_dir: Path, suggest_only: bool = True) -> List[ClassificationResult]`
-  - `apply_organization(results: List[ClassificationResult], dry_run: bool = True) -> OrganizationReport`
-
-## Code Layout
-- `smart_drive/ui/`: UI package (DONE)
-- `smart_drive/core/snapshot.py`: Snapshot, verification, and incremental backup engine (DONE)
-- `smart_drive/core/classifier.py`: Deep file recognition and auto-tagging engine (DONE)
-- `smart_drive/cli/`:
-  - `cmd_ui.py`: Subcommand handler for `smart-drive ui` (DONE)
-  - `cmd_snapshot.py`: Subcommand handler for `smart-drive snapshot` (DONE)
-  - `cmd_backup.py`: Subcommand handler for `smart-drive backup` (DONE)
-  - `cmd_classify.py`: Subcommand handler for `smart-drive classify` (DONE)
-  - `main.py`: Registering subparsers and CLI dispatch (DONE)
-- `tests/`:
-  - `test_ui.py`: Unit tests for UI server and REST endpoints (DONE)
-  - `test_snapshot.py`: Unit tests for snapshot creation, listing, SHA-256 verification, and backup (DONE)
-  - `test_adversarial_snapshot.py`: Adversarial integrity tests (DONE)
-  - `test_classifier.py`: Unit tests for deep file classification and auto-tagging (DONE)
-  - `test_adversarial_m3.py`: Adversarial classifier tests (DONE)
+## Release Information
+- Version: `1.1.0`
+- Release Commit: `a27af551a49aae2b13698bacedb86f1ab0749fc6`
+- Release Tag: `v1.1.0`
+- GitHub Repository: `https://github.com/DuongNAD/smart-drive-os`
+- Test Pass Rate: 314 / 314 (100%)
+- Dependency Footprint: Zero external dependencies (100% Python Standard Library)
