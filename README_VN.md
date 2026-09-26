@@ -110,13 +110,17 @@ Hệ thống phân tầng rác làm 3 cấp độ:
 
 ---
 
-## 7. Đẩy mã nguồn lên GitHub cá nhân
+## 7. Đóng góp mã nguồn mở (Contributing)
 
-Để kết nối và đẩy mã nguồn SmartDrive-OS lên kho lưu trữ GitHub cá nhân của bạn, xem hướng dẫn chi tiết tại:
-👉 [docs/PUSH_GUIDE.md](docs/PUSH_GUIDE.md)
+SmartDrive-OS là dự án **hoàn toàn mở** và chào đón mọi sự đóng góp từ cộng đồng:
+- 🌟 **Star & Fork** repository trên GitHub: [DuongNAD/smart-drive-os](https://github.com/DuongNAD/smart-drive-os)
+- 🐛 Báo lỗi hoặc đề xuất ý tưởng mới tại [GitHub Issues](https://github.com/DuongNAD/smart-drive-os/issues)
+- 🔀 Gửi code cải tiến qua [Pull Requests](https://github.com/DuongNAD/smart-drive-os/pulls)
+- 📖 Xem hướng dẫn quy trình đóng góp tại [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
-## 8. Giấy phép bản quyền
+## 8. Giấy phép mã nguồn mở (License)
 
-Dự án được phân phối theo giấy phép mã nguồn mở **MIT License** — xem chi tiết tại [LICENSE](LICENSE).
+Dự án được phát hành tự do 100% theo **Giấy phép MIT** (xem chi tiết tại tệp [LICENSE](LICENSE)).  
+Bạn và bất kỳ ai trong cộng đồng đều có toàn quyền **sử dụng, sao chép, chỉnh sửa, ghép nối, phân phối hoặc dùng cho mục đích thương mại** hoàn toàn miễn phí và không bị ràng buộc.

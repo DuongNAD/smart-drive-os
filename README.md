@@ -232,13 +232,17 @@ OK
 
 ---
 
-## Contributing & Git Push
+## Contributing
 
-To publish this project to your personal GitHub account, follow our concise 1-page guide:
-👉 [docs/PUSH_GUIDE.md](docs/PUSH_GUIDE.md)
+SmartDrive-OS is an open-source project and welcomes all community contributions!
+- 🌟 **Star & Fork** the repository on GitHub: [DuongNAD/smart-drive-os](https://github.com/DuongNAD/smart-drive-os)
+- 🐛 Report bugs or suggest new features via [GitHub Issues](https://github.com/DuongNAD/smart-drive-os/issues)
+- 🔀 Submit improvements via [Pull Requests](https://github.com/DuongNAD/smart-drive-os/pulls)
+- 📖 Read our full guidelines in [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
 ## License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+This project is open-source software licensed under the permissive **MIT License** — see the [LICENSE](LICENSE) file for details.  
+You are free to use, modify, distribute, and integrate it into personal and commercial projects without restrictions.
