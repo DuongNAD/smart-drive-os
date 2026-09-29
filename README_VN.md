@@ -9,7 +9,7 @@
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 100% Pass](https://img.shields.io/badge/tests-436%2F436%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 100% Pass](https://img.shields.io/badge/tests-523%2F523%20passed%20(100%25)-brightgreen.svg)](#)
 [![NTFS 4KB Native](https://img.shields.io/badge/filesystem-NTFS%204KB%20Native-blueviolet.svg)](#)
 [![Branch: internal-secondary-drive](https://img.shields.io/badge/branch-internal--secondary--drive-purple.svg)](https://github.com/DuongNAD/smart-drive-os/tree/internal-secondary-drive)
 
@@ -116,6 +116,13 @@ $$\text{Cluster Allocation} = \left\lceil \frac{\text{File Size}}{524.288} \righ
 - **Cấu hình máy trạm chuyên sâu (`internal-developer-vault`)**: Cung cấp cấu trúc 6 phân vùng chuyên sâu (`01_AI_Models`, `02_Development_Workspaces`, `03_Data_Vault`, `04_System_Offload_Caches`, `05_Dev_Toolbox`, `06_Archives_Storage`) được bảo vệ vĩnh viễn bởi whitelist.
 - **Kiểm tra sức khỏe SSD TRIM & Cluster Geometry**: Kiểm tra trạng thái kích hoạt TRIM (`fsutil behavior query DisableDeleteNotify`), kích thước cluster phân bổ (4KB NTFS vs 512KB exFAT) và cảnh báo ngưỡng dung lượng trống.
 - **Tài liệu hướng dẫn chuyên sâu**: Xem chi tiết tại [README_INTERNAL.md](README_INTERNAL.md).
+
+### 5. Tiêu chuẩn Thư mục Quốc tế & Phòng thủ Máy chủ MCP (v1.2.0)
+- **Hiến chương Bảo mật Chính thức ([PRIVACY.md](PRIVACY.md))**: Cam kết minh bạch 100% xử lý dữ liệu cục bộ, hoàn toàn không thu thập dữ liệu (Zero Telemetry, Zero PII Logging) và tương thích hoàn hảo môi trường Air-Gap theo tiêu chuẩn của OpenAI, Claude và M8ven. Được bảo vệ vĩnh viễn trong danh sách Whitelist.
+- **Kiến trúc Phòng thủ Máy chủ MCP**: Tích hợp bộ điều tiết tần suất trượt `SlidingWindowRateLimiter` (Thread-safe) chống tấn công dồn dập (DoS) và các bộ lọc đường dẫn an toàn (`_resolve_safe_path`) chống Path Traversal (`../`) và Null-byte injection (`\0`).
+- **Gợi ý Hành vi Công cụ (Tool Annotations)**: Khai báo tường minh 4 giá trị boolean (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) cho toàn bộ 8 công cụ MCP, hỗ trợ hiển thị cảnh báo chính xác cho Claude Code, Cursor và OpenAI.
+- **Tính Nhất quán Tên miền**: Hoàn thiện metadata chính chủ trên `pyproject.toml` (`DuongNAD/smart-drive-os`).
+- **Mở rộng Bộ Kiểm thử 523 Tests**: Bổ sung 87 test case mới bao phủ tuân thủ bảo mật, cơ chế Rate Limiting và kiểm thử đối kháng với tỷ lệ vượt qua 100%.
 
 ---
 
@@ -231,14 +238,19 @@ Hệ thống phân tầng rác làm 3 cấp độ:
 
 SmartDrive-OS tích hợp sẵn máy chủ MCP stdio chuẩn JSON-RPC 2.0, cung cấp 8 công cụ chuyên dụng cho AI Agents:
 
-1. `ssd_search`: Tìm kiếm FTS5 tức thì trả về token rút gọn (<2.000 tokens/lần truy vấn).
-2. `ssd_audit`: Thống kê dung lượng và phân tích lãng phí cluster slack.
-3. `ssd_clean`: Dọn rác an toàn có khiên bảo vệ whitelist và hỗ trợ dry-run.
-4. `ssd_find_duplicates`: Tìm file trùng lặp qua 3 giai đoạn SHA-256.
-5. `ssd_update_index`: Đồng bộ chỉ mục tìm kiếm tăng số (<2s).
-6. `ssd_check_safety`: Kiểm tra tính tương thích exFAT (quét 9 ký tự cấm Win32, 22 từ khóa DOS, và phát hiện symlink).
-7. `ssd_status`: Kiểm tra trạng thái gắn kết SSD, khiên bảo vệ và phân vùng.
-8. `ssd_auto_organize`: Tự động phân luồng và gom file giảm thiểu lãng phí slack.
+1. `ssd_search`: Tìm kiếm FTS5 tức thì trả về token rút gọn (<2.000 tokens/lần truy vấn). *(chỉ đọc)*
+2. `ssd_audit`: Thống kê dung lượng và phân tích lãng phí cluster slack. *(chỉ đọc)*
+3. `ssd_clean`: Dọn rác an toàn có khiên bảo vệ whitelist và hỗ trợ dry-run. *(xóa rác)*
+4. `ssd_find_duplicates`: Tìm file trùng lặp qua 3 giai đoạn SHA-256. *(chỉ đọc)*
+5. `ssd_update_index`: Đồng bộ chỉ mục tìm kiếm tăng số (<2s). *(idempotent)*
+6. `ssd_check_safety`: Kiểm tra tính tương thích exFAT (quét 9 ký tự cấm Win32, 22 từ khóa DOS, và phát hiện symlink). *(chỉ đọc)*
+7. `ssd_status`: Kiểm tra trạng thái gắn kết SSD, khiên bảo vệ và phân vùng. *(chỉ đọc)*
+8. `ssd_auto_organize`: Tự động phân luồng và gom file giảm thiểu lãng phí slack. *(sắp xếp/xóa rác)*
+
+### Cơ chế Phòng thủ & Gợi ý An toàn (Tool Annotations)
+- **Giới hạn Tần suất Trượt (Sliding-Window Rate Limiting)**: Tích hợp sẵn `SlidingWindowRateLimiter` đa luồng, chống tình trạng Agent gửi request ồ ạt gây nghẽn máy chủ, trả về mã lỗi JSON-RPC `-32000` và header `Retry-After` chính xác tới millisecond.
+- **Rào chắn Lọc Đường dẫn Đầu vào**: Kiểm tra biên an toàn (`_resolve_safe_path`), ngăn chặn tấn công Path Traversal (`../`), Null-byte (`\0`) và chuyển đổi phân vùng ổ đĩa trái phép.
+- **Tool Hint Annotations**: Khai báo đủ 4 thuộc tính boolean (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) hỗ trợ cảnh báo cho Claude Code, Cursor và OpenAI.
 
 ### Cấu hình tự động cho IDE
 Chạy lệnh:
@@ -251,7 +263,7 @@ Hệ thống sẽ tự nhận diện và cập nhật cấu hình cho Antigravit
 
 ## 10. Kiểm thử tự động & Độ tin cậy
 
-Hệ thống được bảo vệ bởi bộ kiểm thử tự động toàn diện gồm **436 test case** (unit tests, integration tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
+Hệ thống được bảo vệ bởi bộ kiểm thử tự động toàn diện gồm **523 test case** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
 
 ```bash
 python -m unittest discover tests -v
@@ -259,8 +271,8 @@ python -m unittest discover tests -v
 
 Kết quả:
 ```text
-Ran 436 tests in ~47.6s
-OK
+Ran 523 tests in ~56s
+OK (55 subtests passed)
 ```
 
 ---

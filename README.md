@@ -9,7 +9,7 @@
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 100% Pass](https://img.shields.io/badge/tests-436%2F436%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 100% Pass](https://img.shields.io/badge/tests-523%2F523%20passed%20(100%25)-brightgreen.svg)](#)
 [![NTFS 4KB Native](https://img.shields.io/badge/filesystem-NTFS%204KB%20Native-blueviolet.svg)](#)
 [![Branch: internal-secondary-drive](https://img.shields.io/badge/branch-internal--secondary--drive-purple.svg)](https://github.com/DuongNAD/smart-drive-os/tree/internal-secondary-drive)
 
@@ -116,6 +116,13 @@ $$\text{Cluster Allocation} = \left\lceil \frac{\text{File Size}}{524,288} \righ
 - **Workstation Profile (`internal-developer-vault`)**: 6-partition structure (`01_AI_Models`, `02_Development_Workspaces`, `03_Data_Vault`, `04_System_Offload_Caches`, `05_Dev_Toolbox`, `06_Archives_Storage`) with permanent junk cleaner protection.
 - **SSD TRIM & Health Diagnostic Monitor**: Directly inspects Windows TRIM behavior (`fsutil behavior query DisableDeleteNotify`), volume cluster geometry (4KB NTFS vs 512KB exFAT), and storage capacity thresholds.
 - **Dedicated Documentation**: Full guide available at [README_INTERNAL.md](README_INTERNAL.md).
+
+### 5. Directory Trust, Privacy Charter & MCP Defensive Hardening (v1.2.0)
+- **Authoritative Privacy Charter ([PRIVACY.md](PRIVACY.md))**: Full declaration of 100% local-only operations, zero telemetry, zero PII logging, and air-gap readiness required by Claude, OpenAI, and M8ven directories. Immutably protected by root whitelist.
+- **Defensive MCP Architecture**: In-memory thread-safe `SlidingWindowRateLimiter` guarding against DoS traffic, plus path traversal and boundary sanitizers (`_resolve_safe_path`).
+- **Standardized Tool Annotations**: All 8 MCP tools declare explicit boolean values for `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint`.
+- **Domain Consistency & Packaging**: Complete canonical metadata, URLs, keywords, and classifiers in `pyproject.toml`.
+- **523 Test Suite**: 87 new tests covering compliance assertions, sliding-window rate limiting, and adversarial exploits with 100% pass rate.
 
 ---
 
@@ -236,16 +243,21 @@ The FTS5 search engine supports intuitive structured syntax:
 
 ## Model Context Protocol (MCP) Server
 
-SmartDrive-OS includes an MCP stdio server conforming to JSON-RPC 2.0. It exposes 8 specialized tools to AI Agents:
+SmartDrive-OS includes a hardened MCP stdio server conforming to JSON-RPC 2.0. It exposes 8 specialized tools to AI Agents:
 
-1. `ssd_search`: Instant FTS5 search returning compact tokens (<2,000 tokens per query).
-2. `ssd_audit`: Storage breakdown and cluster slack waste analytics.
-3. `ssd_clean`: Whitelist-protected safe junk cleaner with dry-run support.
-4. `ssd_find_duplicates`: 3-phase SHA-256 duplicate file detection.
-5. `ssd_update_index`: Fast incremental index synchronization (<2s).
-6. `ssd_check_safety`: exFAT compatibility validator (audits 9 Win32 forbidden chars, 22 DOS stems, and symlinks).
-7. `ssd_status`: SSD mount root status, shield health, and taxonomy status.
-8. `ssd_auto_organize`: Autonomous drive auto-zoning and anti-slack relocation.
+1. `ssd_search`: Instant FTS5 search returning compact tokens (<2,000 tokens per query). *(read-only)*
+2. `ssd_audit`: Storage breakdown and cluster slack waste analytics. *(read-only)*
+3. `ssd_clean`: Whitelist-protected safe junk cleaner with dry-run support. *(destructive)*
+4. `ssd_find_duplicates`: 3-phase SHA-256 duplicate file detection. *(read-only)*
+5. `ssd_update_index`: Fast incremental index synchronization (<2s). *(idempotent)*
+6. `ssd_check_safety`: exFAT compatibility validator (audits 9 Win32 forbidden chars, 22 DOS stems, and symlinks). *(read-only)*
+7. `ssd_status`: SSD mount root status, shield health, and taxonomy status. *(read-only)*
+8. `ssd_auto_organize`: Autonomous drive auto-zoning and anti-slack relocation. *(destructive)*
+
+### Defensive Hardening & Tool Annotations
+- **In-Memory Rate Limiting**: Built-in thread-safe `SlidingWindowRateLimiter` preventing agent DoS floods with millisecond-accurate `Retry-After` headers and JSON-RPC `-32000` error codes.
+- **Strict Input Boundary Sanitizers**: Parameter validation enforcing safe path resolution (`_resolve_safe_path`), preventing path traversal (`../`), null-byte injection (`\0`), and drive hopping.
+- **Tool Hint Annotations**: All 8 tools provide explicit boolean hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) matching actual handler behavior for OpenAI, Claude, and Cursor directories.
 
 ### IDE Integration
 
@@ -265,7 +277,7 @@ smart-drive mcp-config
 
 ## Verification & Testing
 
-SmartDrive-OS is tested across 436 automated unit, integration, and adversarial test cases using **100% pure standard library `unittest`**:
+SmartDrive-OS is tested across **523 automated unit, integration, stress, and adversarial test cases** using **100% pure standard library `unittest`**:
 
 ```bash
 python -m unittest discover tests -v
@@ -273,8 +285,8 @@ python -m unittest discover tests -v
 
 Output:
 ```text
-Ran 436 tests in ~47.6s
-OK
+Ran 523 tests in ~56s
+OK (55 subtests passed)
 ```
 
 ---
