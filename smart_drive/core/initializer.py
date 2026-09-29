@@ -71,6 +71,36 @@ PROFILES = {
             "05_Dev_Toolbox/visualizations",
         ],
     },
+    "internal-developer-vault": {
+        "description": "Internal secondary SSD workstation vault for AI models, workspaces, datasets & offloaded C-drive caches",
+        "taxonomies": [
+            "01_AI_Models",
+            "02_Development_Workspaces",
+            "03_Data_Vault",
+            "04_System_Offload_Caches",
+            "05_Dev_Toolbox",
+            "06_Archives_Storage",
+        ],
+        "subdirs": [
+            "01_AI_Models/checkpoints",
+            "01_AI_Models/gguf",
+            "01_AI_Models/safetensors",
+            "01_AI_Models/onnx",
+            "02_Development_Workspaces/active",
+            "02_Development_Workspaces/archive",
+            "03_Data_Vault/datasets",
+            "03_Data_Vault/databases",
+            "04_System_Offload_Caches/huggingface",
+            "04_System_Offload_Caches/ollama",
+            "04_System_Offload_Caches/pip",
+            "04_System_Offload_Caches/uv",
+            "04_System_Offload_Caches/npm",
+            "04_System_Offload_Caches/gradle",
+            "05_Dev_Toolbox/scripts",
+            "05_Dev_Toolbox/sdks",
+            "06_Archives_Storage/backups",
+        ],
+    },
 }
 
 AGENTS_MD_TEMPLATE = """# AGENTS.md - Autonomous AI Coding Agent Manifest

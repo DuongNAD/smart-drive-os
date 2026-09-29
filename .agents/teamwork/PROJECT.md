@@ -1,58 +1,43 @@
-# Project: SmartDrive-OS Comprehensive Trust & Defensive Hardening
+# Project: SmartDrive-OS MCP Grade A Upgrade & Trust Compliance
 
 ## Architecture
 - **Zero-Dependency Core**: 100% Python Standard Library. Zero runtime pip dependencies (`dependencies = []`).
-- **Directory Compliance Layer**: `PRIVACY.md`, `README.md`, `README_VN.md`, `pyproject.toml`, and root whitelist in `smart_drive/core/config.py`.
-- **MCP Defensive Hardening Layer**: `smart_drive/mcp/server.py` introducing thread-safe `SlidingWindowRateLimiter`, input sanitizers (`_resolve_safe_path`, `_parse_bool`, `_parse_int`), Windows cross-drive safety, and 8 hardened MCP tools.
-- **Verification Layer**: Comprehensive test suites (`tests/test_compliance.py`, `tests/test_mcp_hardening.py`, `tests/test_mcp_server.py`, `tests/test_mcp_stress.py`, `tests/test_mcp_adversarial_challenger2.py`) with 523 tests passing cleanly (100% pass rate) under both `pytest` and native standard library `unittest`.
+- **Static AST-Resolvable MCP Dispatch**: `SmartDriveMCPServer.TOOL_HANDLERS` dictionary and explicit static `if-elif` dispatch chain in `dispatch_tool` enabling 100% static AST call-graph coverage for all 8 MCP tools.
+- **MCP Tool Declaration & Schema Fidelity**: Synchronized schemas and execution logic across all 8 tools (`ssd_search`, `ssd_audit`, `ssd_clean`, `ssd_find_duplicates`, `ssd_update_index`, `ssd_check_safety`, `ssd_status`, `ssd_auto_organize`).
+- **Authentication Handshake Engine**: Pure stdlib token handshake (`auth/handshake`, `initialize` tokens) using `hmac.compare_digest`, JSON-RPC `-32001` protection, CLI flags (`--auth-token`, `--require-auth`), and transparent zero-friction stdio defaults for local IDE agents (Antigravity, Claude, Cursor, Windsurf).
+- **Network Loopback Isolation & CORS Hardening**: `ALLOWED_LOOPBACK_HOSTS = ("127.0.0.1", "localhost")` in `smart_drive/ui/server.py` with strict host validation, URL normalization, and CORS origin restriction.
+- **Domain Consistency & Packaging Metadata**: Author/maintainer aligned to `DuongNAD`, version `1.1.0` synchronized across `pyproject.toml`, `smart_drive/__init__.py`, and `smart_drive/mcp/server.py`, `Privacy` URL in project URLs, and updated documentation.
+- **Comprehensive Verification Layer**: 565 tests passing cleanly across 32 test modules (523 baseline + 42 new Grade A tests in `tests/test_mcp_grade_a.py`).
 
 ## Feature Inventory
-Every feature from the Survey phase appears here with its assigned milestone.
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| 1 | PRIVACY.md Creation | 100% local-only storage, zero telemetry, zero PII logging, air-gapped security | M1 | survey_r1 |
-| 2 | README Privacy References | Bilingual documentation updates (README.md, README_VN.md) with privacy shields and sections | M1 | survey_r1 |
-| 3 | pyproject.toml Marketplace Metadata | Homepage, documentation, repo, issues, changelog, author email, 22 keywords, 25 classifiers | M1 | survey_r1 |
-| 4 | Protected Root Whitelist | Add privacy.md to PROTECTED_ROOT_FILES in smart_drive/core/config.py | M1 | survey_r1 |
-| 5 | Sliding-Window Rate Limiter | Pure stdlib (deque, Lock, monotonic) rate limiter with burst, throttle, window reset | M2 | survey_r2 |
-| 6 | Rate Limiter Configuration | Configurable via params and SMART_DRIVE_MCP_RATE_LIMIT_* env vars, throttle error -32000 | M2 | survey_r2 |
-| 7 | Path Traversal Sanitization | _resolve_safe_path preventing root escape, null bytes across ssd_audit, clean, duplicates, index, search | M2 | survey_r2 |
-| 8 | Parameter & Type Sanitization | _parse_bool (handling 'false'/'0'), _parse_int clamping, dict arguments validation | M2 | survey_r2 |
-| 9 | Cross-Drive & OS Boundary Safety | Windows cross-drive ValueError handling in ssd_check_safety | M2 | survey_r2 |
-| 10 | MCP Tool Hint Annotations | Ensure and verify readOnlyHint, destructiveHint, idempotentHint, openWorldHint on all 8 tools | M2 | survey_r2 |
-| 11 | Compliance & Privacy Tests | Automated test suite for PRIVACY.md existence, contents, links, whitelist protection | M3 | survey_r3 |
-| 12 | Rate Limiting Test Suite | Unit tests for burst allowance, throttle trigger, window reset, concurrency, env vars | M3 | survey_r3 |
-| 13 | Boundary & Sanitization Tests | Adversarial tests for traversal, null bytes, bool trap, negative limits across all 8 tools | M3 | survey_r3 |
-| 14 | Tool Annotations Test Suite | Assertions for all 4 hint annotations on all 8 tools | M3 | survey_r3 |
-| 15 | Zero-Dependency & SSD Invariants | Automated verification of dependencies = [] and 100% test pass (523 tests) | M3 | survey_r3 |
+| 1 | AST Handler Isolation | Class-level `TOOL_HANDLERS` mapping and explicit static `if-elif` chain in `dispatch_tool` | M1 | explorer_1 |
+| 2 | Tool Schema Alignment (`ssd_find_duplicates`) | Add `min_size` to inputSchema and document exact 512KB physical savings | M1 | explorer_1 |
+| 3 | Tool Behavior Alignment (`ssd_check_safety`) | Add symlink check and intermediate path segment audit to `handle_ssd_check_safety` | M1 | explorer_1 |
+| 4 | Tool Description Accuracy (`ssd_status`) | Clarify description to SQLite DB, exFAT safety, and Git status | M1 | explorer_1 |
+| 5 | Tool Behavior Alignment (`ssd_auto_organize`) | Enforce shield creation and `IndexManager.incremental_update()` on apply | M1 | explorer_1 |
+| 6 | Tool Schema Alignment (`ssd_audit`) | Support `directory` and `sub_dir`, document 6 taxonomies and slack directories | M1 | explorer_1 |
+| 7 | Pure Stdlib Auth Engine | Token handshake supporting `auth/handshake` and `initialize` tokens with `hmac.compare_digest` | M2 | explorer_2 |
+| 8 | Zero-Friction Stdio Access | Default `require_auth=False` when token unset for local AI agents | M2 | explorer_2 |
+| 9 | CLI Auth Options | Support `--auth-token` and `--require-auth` flags and `SMART_DRIVE_MCP_AUTH_TOKEN` env var | M2 | explorer_2 |
+| 10 | Network Loopback Binding Guard | Strict loopback validation (`127.0.0.1`, `localhost`) in `smart_drive/ui/server.py` | M2 | explorer_2 |
+| 11 | Safe URL & CORS Hardening | Normalize loopback URLs and restrict CORS origins away from wildcard `*` | M2 | explorer_2 |
+| 12 | Packaging Domain Consistency | Align author/maintainer with `DuongNAD` and add `Privacy` URL in `pyproject.toml` | M3 | explorer_3 |
+| 13 | Version & Descriptor Sync | Sync `SERVER_VERSION = "1.1.0"` in `server.py`, `__author__` in `__init__.py`, and `LICENSE` | M3 | explorer_3 |
+| 14 | Documentation Metrics Update | Update test counts and compliance citations in `PRIVACY.md` | M3 | explorer_3 |
+| 15 | Dedicated Grade A Test Suite | New automated tests in `tests/test_mcp_grade_a.py` for AST resolution, auth, loopback, metadata | M4 | explorer_3 |
+| 16 | Zero Regression & Invariants | 100% pass across all 565 tests, zero external dependencies (`dependencies = []`) | M4 | survey |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Directory & Marketplace Compliance | PRIVACY.md, README.md, README_VN.md, pyproject.toml, smart_drive/core/config.py | none | DONE |
-| M2 | MCP Defensive Hardening & Rate Limiter | smart_drive/mcp/server.py (SlidingWindowRateLimiter, sanitizers, 8 tools) | none | DONE |
-| M3 | Comprehensive Test Verification & Invariants | tests/test_compliance.py, tests/test_mcp_hardening.py, 523 tests pass | M1, M2 | DONE |
-
-## Interface Contracts
-### SlidingWindowRateLimiter
-- `class SlidingWindowRateLimiter(max_requests: int = 120, window_seconds: float = 60.0, enabled: bool = True)`
-- `acquire(now: Optional[float] = None) -> Tuple[bool, float]`: Returns `(allowed, retry_after)`.
-- `reset() -> None`: Clears timestamp history.
-- `current_load -> int`: Returns active requests in window (supports property and callable).
-
-### Sanitization Helpers
-- `_resolve_safe_path(self, sub_path: Optional[str], must_exist: bool = False) -> str`: Resolves canonical path, verifies containment within `self.root`, rejects null bytes and directory escapes.
-- `_parse_bool(val: Any, default: bool = False) -> bool`: Safe boolean parsing preventing `"false"` or `"0"` being truthy.
-- `_parse_int(val: Any, default: int, min_val: Optional[int] = None, max_val: Optional[int] = None) -> int`: Safe integer parsing and bounds clamping with `OverflowError` handling.
-
-### Tool Hint Annotations
-All 8 MCP tools declare:
-- `readOnlyHint`: bool
-- `destructiveHint`: bool
-- `idempotentHint`: bool (True for all)
-- `openWorldHint`: bool (False for all)
+| M1 | AST Handler Isolation & Tool Description Accuracy | `smart_drive/mcp/server.py` | none | DONE |
+| M2 | Authentication Handshake & Network Loopback Isolation | `smart_drive/mcp/server.py`, `smart_drive/cli/`, `smart_drive/ui/server.py` | M1 | DONE |
+| M3 | Packaging Metadata & Domain Consistency | `pyproject.toml`, `smart_drive/__init__.py`, `server.py`, `LICENSE`, `PRIVACY.md` | M1, M2 | DONE |
+| M4 | Comprehensive Test Verification & Final Gate | `tests/test_mcp_grade_a.py`, regression runs on all 565 tests, reviewer & auditor gates | M1, M2, M3 | DONE |
 
 ## Gate Result
-- Gate Status: **PASS** (Reviewer 1 APPROVE, Reviewer 2 APPROVE, Challenger 1 v2 APPROVE, Challenger 2 APPROVE, Forensic Auditor CLEAN).
-- Total Tests: **523 passed** across all 32 test modules.
+- Gate Status: **PASS** (Reviewer 1 APPROVE, Reviewer 2 APPROVE, Challenger 1 APPROVE, Challenger 2 APPROVE, Forensic Auditor CLEAN).
+- Total Tests: **565 passed** across all 32 test modules.
 - Runtime Dependencies: strictly `dependencies = []` (100% Python Standard Library).

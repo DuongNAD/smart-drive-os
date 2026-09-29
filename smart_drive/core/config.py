@@ -124,10 +124,13 @@ STANDARD_TAXONOMIES = TAXONOMY_ROOT_DIRS
 PROTECTED_CORE_TAXONOMIES: Tuple[str, ...] = (
     "01_AI_Models",
     "02_Learning_Knowledge",
+    "02_Development_Workspaces",
     "03_Personal_Documents",
     "03_Development_Projects",
+    "03_Data_Vault",
     "04_Creative_Assets",
     "04_System_Workspaces",
+    "04_System_Offload_Caches",
     "05_Dev_Toolbox",
     "06_Archives_Storage",
 )
@@ -138,10 +141,13 @@ PROTECTED_ROOT_DIRS: FrozenSet[str] = frozenset({
     # Business Taxonomies (both on-disk and standard manifest names)
     "01_ai_models",
     "02_learning_knowledge",
+    "02_development_workspaces",
     "03_personal_documents",
     "03_development_projects",
+    "03_data_vault",
     "04_creative_assets",
     "04_system_workspaces",
+    "04_system_offload_caches",
     "05_dev_toolbox",
     "06_archives_storage",
     # Workspaces & Agent Infrastructure
