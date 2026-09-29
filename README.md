@@ -2,6 +2,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
 [![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](#)
+[![Privacy: 100% Local](https://img.shields.io/badge/Privacy-100%25%20Local-success?style=flat-square&logo=shield)](PRIVACY.md)
 [![exFAT 512KB Optimized](https://img.shields.io/badge/filesystem-exFAT%20512KB%20Guard-orange.svg)](#)
 [![Web Dashboard](https://img.shields.io/badge/UI-Embedded%20Dark%20SPA-blueviolet.svg)](#)
 [![MCP Protocol](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
@@ -275,6 +276,20 @@ Output:
 Ran 436 tests in ~47.6s
 OK
 ```
+
+---
+
+## Privacy, Security & Data Isolation
+
+SmartDrive-OS is engineered from the ground up with a strict **local-first, zero-trust** architecture:
+
+- **100% Local-Only Operations**: All filesystem scanning, SQLite FTS5 search indexing, and SHA-256 snapshotting occur exclusively on your local storage. No data is ever transmitted to the cloud.
+- **Zero Telemetry & Phone-Home**: Zero analytics, zero usage trackers, and zero background network beacons.
+- **Zero PII Logging**: File contents, credentials, and source secrets are never parsed or harvested; only basic filesystem metadata is stored in local `.smart_drive/index.db`.
+- **Air-Gap Ready**: Zero external pip dependencies (`dependencies = []`). The embedded Web Dashboard binds exclusively to `127.0.0.1` (`localhost`), and the MCP Server operates solely over local `stdio`.
+- **Defensive Safeguards**: Inviolable whitelist protecting critical files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`), mandatory dry-run defaults for cleanup, and strict input boundary validation.
+
+For full architectural details, security models, and directory compliance specifications, please read our authoritative [PRIVACY.md](PRIVACY.md).
 
 ---
 

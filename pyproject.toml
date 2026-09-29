@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
-    { name = "SmartDrive Team" }
+    { name = "SmartDrive Team", email = "smartdrive.os@proton.me" }
 ]
 keywords = [
     "ssd",
@@ -20,8 +20,21 @@ keywords = [
     "mcp",
     "model-context-protocol",
     "autonomous-agent",
+    "ai-agents",
+    "claude-code",
+    "antigravity",
+    "cursor-ide",
     "storage-audit",
     "junk-cleaner",
+    "privacy",
+    "zero-telemetry",
+    "zero-dependency",
+    "local-first",
+    "air-gapped",
+    "sha256-snapshot",
+    "ntfs-junction",
+    "cache-offload",
+    "ssd-health",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -33,6 +46,7 @@ classifiers = [
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -40,7 +54,14 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: System :: Filesystems",
+    "Topic :: System :: Archiving",
+    "Topic :: System :: Hardware",
     "Topic :: Utilities",
+    "Topic :: Security",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Natural Language :: English",
+    "Natural Language :: Vietnamese",
 ]
 dependencies = []
 
@@ -55,9 +76,11 @@ smart_drive = "smart_drive.cli.main:main"
 smart-drive-manager = "smart_drive.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/example/smart-drive-os"
-Documentation = "https://github.com/example/smart-drive-os#readme"
-Issues = "https://github.com/example/smart-drive-os/issues"
+Homepage = "https://github.com/DuongNAD/smart-drive-os"
+Documentation = "https://github.com/DuongNAD/smart-drive-os#readme"
+Repository = "https://github.com/DuongNAD/smart-drive-os"
+Issues = "https://github.com/DuongNAD/smart-drive-os/issues"
+Changelog = "https://github.com/DuongNAD/smart-drive-os/releases"
 
 [tool.setuptools.packages.find]
 where = ["."]

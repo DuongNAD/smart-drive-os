@@ -92,6 +92,50 @@ class TestMCPToolDispatching(SmartDriveTestCase):
         self.assertFalse(bad_res["is_safe"])
         self.assertGreater(len(bad_res["forbidden_character_violations"]), 0)
 
+    def test_dispatch_ssd_clean(self) -> None:
+        """ssd_clean runs safe junk detection and returns preview report."""
+        data = self.server.dispatch_tool("ssd_clean", {"dry_run": True})
+        self.assertIsInstance(data, dict)
+        self.assertTrue(data["dry_run"])
+        self.assertIn("detected_count", data)
+        self.assertIn("tier", data)
+
+    def test_dispatch_ssd_find_duplicates(self) -> None:
+        """ssd_find_duplicates detects mock drive duplicates and computes reclaimable space."""
+        data = self.server.dispatch_tool("ssd_find_duplicates", {})
+        self.assertIsInstance(data, dict)
+        self.assertIn("duplicate_group_count", data)
+        self.assertGreater(data["duplicate_group_count"], 0)
+        self.assertIn("total_reclaimable_bytes", data)
+
+    def test_dispatch_ssd_auto_organize(self) -> None:
+        """ssd_auto_organize produces auto-zoning action plan in simulation mode."""
+        data = self.server.dispatch_tool("ssd_auto_organize", {"apply": False})
+        self.assertIsInstance(data, dict)
+        self.assertEqual(data["status"], "dry_run")
+        self.assertIn("actions", data)
+
+    def test_dispatch_ssd_update_index_and_search(self) -> None:
+        """ssd_update_index populates FTS5 database and ssd_search queries it."""
+        from smart_drive.indexer.db import DatabaseManager
+
+        # Ensure schema is initialized
+        db_path = self.server.get_db_path()
+        db = DatabaseManager(db_path)
+        db.initialize_schema()
+        db.close()
+
+        # Update index
+        update_res = self.server.dispatch_tool("ssd_update_index", {})
+        self.assertIsInstance(update_res, dict)
+        self.assertGreater(update_res.get("added", 0), 0)
+
+        # Search
+        search_res = self.server.dispatch_tool("ssd_search", {"query": "llama", "limit": 10})
+        self.assertIsInstance(search_res, dict)
+        self.assertGreater(search_res.get("total_count", 0), 0)
+        self.assertGreater(len(search_res.get("matches", [])), 0)
+
     def test_dispatch_unknown_tool_raises_value_error(self) -> None:
         """Dispatching an unregistered tool name raises ValueError."""
         with self.assertRaises(ValueError):
@@ -154,6 +198,34 @@ class TestMCPProtocolJSONRPC(SmartDriveTestCase):
         self.assertEqual(resp["id"], 3)
         self.assertIn("tools", resp["result"])
         self.assertEqual(len(resp["result"]["tools"]), 8)
+
+    def test_protocol_tools_call_success(self) -> None:
+        """tools/call executes tool and formats result as JSON-RPC content array."""
+        req = {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {"name": "ssd_status", "arguments": {}},
+        }
+        self.server.handle_request(req)
+        resp = self._get_last_response()
+
+        self.assertEqual(resp["id"], 4)
+        self.assertIn("result", resp)
+        self.assertIn("content", resp["result"])
+        content_item = resp["result"]["content"][0]
+        self.assertEqual(content_item["type"], "text")
+        parsed_payload = json.loads(content_item["text"])
+        self.assertIn("mount", parsed_payload)
+
+    def test_protocol_content_length_mode(self) -> None:
+        """Server supports optional Content-Length prefixed framing."""
+        self.server.use_content_length_mode = True
+        req = {"jsonrpc": "2.0", "id": 5, "method": "ping", "params": {}}
+        self.server.handle_request(req)
+        raw_output = self._stdout_capture.getvalue()
+        self.assertIn("Content-Length:", raw_output)
+        self.assertIn("\r\n\r\n", raw_output)
 
     def test_protocol_unhandled_method_returns_error_32601(self) -> None:
         """Unknown JSON-RPC method returns standard error code -32601."""
