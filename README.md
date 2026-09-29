@@ -1,11 +1,5 @@
 # SmartDrive-OS
 
-> [!TIP]
-> ### 🚀 Internal Secondary Drive Architect & C-Drive Cache Offloader
-> Looking to optimize internal secondary NVMe/SATA SSDs (`D:`, `E:`), offload massive C-drive caches (HuggingFace, Ollama, Docker, uv, pip, npm) via non-elevated NTFS Directory Junctions (`mklink /J`), or monitor SSD TRIM health?
-> 
-> 🔗 **Active Branch**: [`internal-secondary-drive`](https://github.com/DuongNAD/smart-drive-os/tree/internal-secondary-drive) &nbsp;|&nbsp; 📖 **Documentation Guide**: [`README_INTERNAL.md`](https://github.com/DuongNAD/smart-drive-os/blob/internal-secondary-drive/README_INTERNAL.md)
-
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
 [![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](#)
 [![Privacy: 100% Local](https://img.shields.io/badge/Privacy-100%25%20Local-success?style=flat-square&logo=shield)](PRIVACY.md)
@@ -15,9 +9,13 @@
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 100% Pass](https://img.shields.io/badge/tests-314%2F314%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 100% Pass](https://img.shields.io/badge/tests-523%2F523%20passed%20(100%25)-brightgreen.svg)](#)
+[![NTFS 4KB Native](https://img.shields.io/badge/filesystem-NTFS%204KB%20Native-blueviolet.svg)](#)
+[![Branch: internal-secondary-drive](https://img.shields.io/badge/branch-internal--secondary--drive-purple.svg)](https://github.com/DuongNAD/smart-drive-os/tree/internal-secondary-drive)
 
 > **High-Performance Autonomous Drive Operating Suite, Visual Web Dashboard, Snapshot Integrity Engine & SQLite FTS5 Instant Search for External SSDs (exFAT) & AI Coding Agents.**
+> 
+> 🚀 **Internal Secondary Drive Architect & C-Drive Cache Offloader**: Looking to optimize internal secondary NVMe/SATA SSDs (`D:`, `E:`), offload massive AI/developer caches via NTFS Directory Junctions (`mklink /J`), or monitor SSD TRIM health? See the comprehensive [README_INTERNAL.md](README_INTERNAL.md) documentation!
 
 ---
 
@@ -112,6 +110,20 @@ $$\text{Cluster Allocation} = \left\lceil \frac{\text{File Size}}{524,288} \righ
 - **Autonomous Auto-Routing**: Suggests or moves loose files into canonical sub-taxonomies safely without overwrite or collision.
 - **Commands**: `smart-drive classify [dir] --suggest --dry-run --apply --json`.
 
+### 4. Internal Secondary Drive Architect & C-Drive Cache Offloader (`smart-drive offload` / `health`)
+- **C-Drive Cache Offloader**: Scans and identifies massive developer and AI caches (HuggingFace, Ollama, PyTorch, Docker WSL2, pip, uv, npm, Conda, Gradle, Cargo) on the Windows system drive (`C:`), migrating them via a 7-phase zero-data-loss transactional move to a secondary drive (`D:\04_System_Offload_Caches\<name>`).
+- **NTFS Directory Junction Engine (`mklink /J`)**: Creates transparent Windows hardware reparse points without requiring Administrator elevation or Developer Mode, keeping all tools working seamlessly while reclaiming tens of gigabytes on `C:`.
+- **Workstation Profile (`internal-developer-vault`)**: 6-partition structure (`01_AI_Models`, `02_Development_Workspaces`, `03_Data_Vault`, `04_System_Offload_Caches`, `05_Dev_Toolbox`, `06_Archives_Storage`) with permanent junk cleaner protection.
+- **SSD TRIM & Health Diagnostic Monitor**: Directly inspects Windows TRIM behavior (`fsutil behavior query DisableDeleteNotify`), volume cluster geometry (4KB NTFS vs 512KB exFAT), and storage capacity thresholds.
+- **Dedicated Documentation**: Full guide available at [README_INTERNAL.md](README_INTERNAL.md).
+
+### 5. Directory Trust, Privacy Charter & MCP Defensive Hardening (v1.2.0)
+- **Authoritative Privacy Charter ([PRIVACY.md](PRIVACY.md))**: Full declaration of 100% local-only operations, zero telemetry, zero PII logging, and air-gap readiness required by Claude, OpenAI, and M8ven directories. Immutably protected by root whitelist.
+- **Defensive MCP Architecture**: In-memory thread-safe `SlidingWindowRateLimiter` guarding against DoS traffic, plus path traversal and boundary sanitizers (`_resolve_safe_path`).
+- **Standardized Tool Annotations**: All 8 MCP tools declare explicit boolean values for `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint`.
+- **Domain Consistency & Packaging**: Complete canonical metadata, URLs, keywords, and classifiers in `pyproject.toml`.
+- **523 Test Suite**: 87 new tests covering compliance assertions, sliding-window rate limiting, and adversarial exploits with 100% pass rate.
+
 ---
 
 ## 3-Step Quickstart
@@ -141,6 +153,7 @@ Initialize standard taxonomy directories, install anti-indexing shields, generat
 1. `ai-developer`: Checkpoints, GGUF/safetensors trees, `.noindex` developer environments, and agent workspaces.
 2. `data-science`: EDA notebooks, pipelines, parquet vs small-CSV storage guidelines, and raw data archives.
 3. `general-workspace` (Default): Universal active/archive code, docs, learning notes, and utilities.
+4. `internal-developer-vault`: High-performance 6-partition workstation vault for internal NVMe/SATA secondary drives (`D:`, `E:`), receiving offloaded caches, datasets, and AI checkpoints.
 
 ### Step 3: Launch Visual Dashboard or Connect AI Agents
 Start the local Web Dashboard in your browser:
@@ -181,7 +194,9 @@ Execute via `smart-drive <command>` or `python -m smart_drive <command>`:
 | `snapshot verify` | `<name>`, `--no-untracked`, `--root <path>`, `--json` | Validates data integrity of files against snapshot manifest to detect tampering or corruption. |
 | `backup` | `--target <path>`, `--dry-run`, `--no-skip-junk`, `--hash`, `--partitions <list>`, `--json` | Performs safe incremental backup copying only modified/new files to target directory. |
 | `classify` | `[dir]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Deep content inspection (magic bytes & markers) for AI models, datasets, docs, and code repos. |
-| `init` | `--profile {ai-developer, data-science, general-workspace}`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
+| `offload` | `--scan`, `--move <name>`, `--target <drive>`, `--revert <name>`, `--dry-run`, `--force`, `--json` | C-Drive developer cache discovery and transactional NTFS junction offloading to secondary drive. |
+| `health` | `[drive]`, `--root <path>`, `--json` | SSD health, TRIM verification, partition geometry, and storage utilization monitor. |
+| `init` | `--profile {ai-developer, data-science, general-workspace, internal-developer-vault}`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
 | `status` | `--root <path>`, `--json` | Inspect SSD mount point, geometry, shield health, and taxonomy status. |
 | `audit` | `--root <path>`, `--json`, `--markdown`, `--export <file>` | Detailed storage breakdown and 512KB cluster slack metrics. |
 | `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run safeguard and inviolable whitelist protection. |
@@ -228,16 +243,21 @@ The FTS5 search engine supports intuitive structured syntax:
 
 ## Model Context Protocol (MCP) Server
 
-SmartDrive-OS includes an MCP stdio server conforming to JSON-RPC 2.0. It exposes 8 specialized tools to AI Agents:
+SmartDrive-OS includes a hardened MCP stdio server conforming to JSON-RPC 2.0. It exposes 8 specialized tools to AI Agents:
 
-1. `ssd_search`: Instant FTS5 search returning compact tokens (<2,000 tokens per query).
-2. `ssd_audit`: Storage breakdown and cluster slack waste analytics.
-3. `ssd_clean`: Whitelist-protected safe junk cleaner with dry-run support.
-4. `ssd_find_duplicates`: 3-phase SHA-256 duplicate file detection.
-5. `ssd_update_index`: Fast incremental index synchronization (<2s).
-6. `ssd_check_safety`: exFAT compatibility validator (audits 9 Win32 forbidden chars, 22 DOS stems, and symlinks).
-7. `ssd_status`: SSD mount root status, shield health, and taxonomy status.
-8. `ssd_auto_organize`: Autonomous drive auto-zoning and anti-slack relocation.
+1. `ssd_search`: Instant FTS5 search returning compact tokens (<2,000 tokens per query). *(read-only)*
+2. `ssd_audit`: Storage breakdown and cluster slack waste analytics. *(read-only)*
+3. `ssd_clean`: Whitelist-protected safe junk cleaner with dry-run support. *(destructive)*
+4. `ssd_find_duplicates`: 3-phase SHA-256 duplicate file detection. *(read-only)*
+5. `ssd_update_index`: Fast incremental index synchronization (<2s). *(idempotent)*
+6. `ssd_check_safety`: exFAT compatibility validator (audits 9 Win32 forbidden chars, 22 DOS stems, and symlinks). *(read-only)*
+7. `ssd_status`: SSD mount root status, shield health, and taxonomy status. *(read-only)*
+8. `ssd_auto_organize`: Autonomous drive auto-zoning and anti-slack relocation. *(destructive)*
+
+### Defensive Hardening & Tool Annotations
+- **In-Memory Rate Limiting**: Built-in thread-safe `SlidingWindowRateLimiter` preventing agent DoS floods with millisecond-accurate `Retry-After` headers and JSON-RPC `-32000` error codes.
+- **Strict Input Boundary Sanitizers**: Parameter validation enforcing safe path resolution (`_resolve_safe_path`), preventing path traversal (`../`), null-byte injection (`\0`), and drive hopping.
+- **Tool Hint Annotations**: All 8 tools provide explicit boolean hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) matching actual handler behavior for OpenAI, Claude, and Cursor directories.
 
 ### IDE Integration
 
@@ -257,16 +277,16 @@ smart-drive mcp-config
 
 ## Verification & Testing
 
-SmartDrive-OS is tested across 314 automated unit, integration, and adversarial test cases using **100% pure standard library `unittest`**:
+SmartDrive-OS is tested across **523 automated unit, integration, stress, and adversarial test cases** using **100% pure standard library `unittest`**:
 
 ```bash
-python -m unittest discover tests
+python -m unittest discover tests -v
 ```
 
 Output:
 ```text
-Ran 314 tests in ~37.9s
-OK
+Ran 523 tests in ~56s
+OK (55 subtests passed)
 ```
 
 ---
