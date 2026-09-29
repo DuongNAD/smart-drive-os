@@ -10,7 +10,11 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
-    { name = "SmartDrive Team", email = "smartdrive.os@proton.me" }
+    { name = "DuongNAD", email = "smartdrive.os@proton.me" },
+    { name = "SmartDrive Team", email = "smartdrive.os@proton.me" },
+]
+maintainers = [
+    { name = "DuongNAD", email = "smartdrive.os@proton.me" },
 ]
 keywords = [
     "ssd",
@@ -18,7 +22,9 @@ keywords = [
     "cluster-slack",
     "fts5",
     "mcp",
+    "mcp-server",
     "model-context-protocol",
+    "duongnad",
     "autonomous-agent",
     "ai-agents",
     "claude-code",
@@ -81,6 +87,7 @@ Documentation = "https://github.com/DuongNAD/smart-drive-os#readme"
 Repository = "https://github.com/DuongNAD/smart-drive-os"
 Issues = "https://github.com/DuongNAD/smart-drive-os/issues"
 Changelog = "https://github.com/DuongNAD/smart-drive-os/releases"
+Privacy = "https://github.com/DuongNAD/smart-drive-os/blob/main/PRIVACY.md"
 
 [tool.setuptools.packages.find]
 where = ["."]

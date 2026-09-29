@@ -1,62 +1,51 @@
-## 2026-09-29T13:46:50Z
+## 2026-09-29T16:54:07Z
+You are the Worker agent for Milestone 2 (M2) of the SmartDrive-OS MCP Grade A upgrade.
+Identity: worker_m2_1
+Working directory: d:\teamwork_projects\smart_drive_os\.agents\teamwork\worker_m2_1
+Parent: orchestrator_mcp_1 (conversation ID: 09e9f6f6-cea0-43b3-ba73-105ef2f87c01)
 
-You are Worker M2 (MCP Server Defensive Hardening & In-Memory Rate Limiting) for SmartDrive-OS.
-Your working directory is: d:\teamwork_projects\smart_drive_os\.agents\teamwork\worker_m2_1
-You MUST read:
-1. ORIGINAL_REQUEST.md at: d:\teamwork_projects\smart_drive_os\.agents\teamwork\ORIGINAL_REQUEST.md
-2. PROJECT.md at: d:\teamwork_projects\smart_drive_os\.agents\teamwork\PROJECT.md
-3. Survey Report at: d:\teamwork_projects\smart_drive_os\.agents\teamwork\explorer_survey_r2_1\report.md
-4. Survey Handoff at: d:\teamwork_projects\smart_drive_os\.agents\teamwork\explorer_survey_r2_1\handoff.md
+MANDATORY FIRST STEP:
+Read the authoritative request file at:
+d:\teamwork_projects\smart_drive_os\.agents\teamwork\ORIGINAL_REQUEST.md
+Specifically study the latest request under section ## 2026-09-29T16:34:33Z.
+
+Also read:
+- d:\teamwork_projects\smart_drive_os\.agents\teamwork\orchestrator_mcp_1\SCOPE.md
+- d:\teamwork_projects\smart_drive_os\.agents\teamwork\explorer_survey_mcp_2\handoff.md
 
 MANDATORY INTEGRITY WARNING:
 DO NOT CHEAT. All implementations must be genuine. DO NOT hardcode test results, create dummy/facade implementations, or circumvent the intended task. A teamwork_preview_auditor will independently verify your work. Integrity violations WILL be detected and your work WILL be rejected.
 
-File Ownership:
-You EXCLUSIVELY own:
+EXCLUSIVE WRITE OWNERSHIP:
+You own:
 - `smart_drive/mcp/server.py`
-DO NOT touch any other files (do NOT touch `pyproject.toml`, `PRIVACY.md`, `README.md`, or test files).
+- `smart_drive/cli/cmd_mcp.py`
+- `smart_drive/cli/main.py`
+- `smart_drive/ui/server.py`
+Do NOT touch files outside this scope.
 
-Tasks to implement in `smart_drive/mcp/server.py`:
-1. Implement `SlidingWindowRateLimiter`:
-   - Pure Python Standard Library: `time.monotonic`, `collections.deque`, `threading.Lock`. Zero external dependencies!
-   - Thread-safe sliding window algorithm.
-   - Configurable:
-     - `max_requests`: default 120 (reads `os.getenv("SMART_DRIVE_MCP_RATE_LIMIT_REQUESTS", "120")`)
-     - `window_seconds`: default 60.0 (reads `os.getenv("SMART_DRIVE_MCP_RATE_LIMIT_WINDOW", "60.0")`)
-     - `enabled`: default True (reads `os.getenv("SMART_DRIVE_MCP_RATE_LIMIT_ENABLED", "true").lower() in ("1", "true", "yes")`)
-   - Methods:
-     - `acquire(now=None) -> Tuple[bool, float]`: returns `(allowed, retry_after)`. If allowed, records timestamp and returns `(True, 0.0)`. If throttled, returns `(False, retry_after)`.
-     - `reset() -> None`: clears deque.
-     - `current_load -> int`: returns count of active requests in current window.
-2. Integrate Rate Limiter into `SmartDriveMCPServer`:
-   - Initialize `self.rate_limiter = SlidingWindowRateLimiter()` in `__init__`.
-   - In `handle_request(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]`:
-     - Check `self.rate_limiter.acquire()`. If not allowed:
-       return JSON-RPC error response with code `-32000` (Server error: Rate limit exceeded), message `"Rate limit exceeded. Try again in {retry_after:.2f} seconds."`, and `data={"retry_after": retry_after, "max_requests": ..., "window_seconds": ...}`.
-     - Ensure `arguments` field in tool calls is safely validated to be a `dict` (handling null or invalid types gracefully with `-32602` Invalid params).
-3. Defensive Input Sanitizers & Boundary Confining:
-   - Implement `_resolve_safe_path(self, sub_path: Optional[str], must_exist: bool = False) -> str`:
-     - If `sub_path` is empty or None, return `self.root`.
-     - Reject null bytes (`\x00`).
-     - Resolve canonical realpath: `target = os.path.realpath(os.path.abspath(os.path.join(self.root, sub_path.strip())))`
-     - Verify boundary containment: ensure `target` is within `self.root` (e.g. `os.path.commonpath([self.root, target]) == self.root`). If not, raise `ValueError("Access denied: path escapes storage root")`.
-     - If `must_exist` and `not os.path.exists(target)`, raise `FileNotFoundError`.
-   - Implement `_parse_bool(val: Any, default: bool = False) -> bool`:
-     - Prevents string `"false"` or `"0"` from being truthy!
-     - If already `bool`, return `val`. If `str`, check lowercased against `("true", "1", "yes", "on", "apply")`.
-   - Implement `_parse_int(val: Any, default: int, min_val: Optional[int] = None, max_val: Optional[int] = None) -> int`:
-     - Prevents negative limits or overflows. Clamps between `min_val` and `max_val`.
-4. Harden all 8 MCP Tool Handlers:
-   - `handle_ssd_audit`: use `_resolve_safe_path(args.get("sub_dir"))`.
-   - `handle_ssd_clean`: use `_resolve_safe_path(args.get("sub_dir"))`, use `_parse_bool` for `apply` / `dry_run`.
-   - `handle_ssd_find_duplicates`: use `_resolve_safe_path(args.get("sub_dir"))`, `_parse_int` for min_size.
-   - `handle_ssd_update_index`: use `_resolve_safe_path(args.get("target_dir"))`.
-   - `handle_ssd_search`: use `_parse_int` for `limit` (clamped 1 to 100), validate `directory` with `_resolve_safe_path`.
-   - `handle_ssd_check_safety`: catch `ValueError` from `os.path.relpath` (Windows cross-drive errors) and handle paths outside drive gracefully without throwing uncaught 500 exceptions.
-   - `handle_ssd_auto_organize`: use `_parse_bool` for `apply`.
-   - `handle_ssd_status`: robust exception handling.
-5. Tool Hint Annotations:
-   - Ensure all 8 tools have explicit boolean declarations for `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` in both tool schema dictionaries and annotations dicts.
-6. Verification:
-   - Run tests: `python -m pytest tests/test_mcp_server.py` and `python -m pytest`.
-   - Ensure all tests pass.
+YOUR MISSION (Milestone 2: Authentication Handshake & Network Loopback Isolation):
+Implement the architecture specified in Explorer 2's handoff report:
+1. Authentication Engine in `SmartDriveMCPServer`:
+   - Accept `auth_token: Optional[str] = None` and `require_auth: Optional[bool] = None` in `__init__`.
+   - Resolve `auth_token` from parameter > CLI > `SMART_DRIVE_MCP_AUTH_TOKEN` env var > None.
+   - Resolve `require_auth` from parameter > CLI > `SMART_DRIVE_MCP_REQUIRE_AUTH` env var > `bool(self.auth_token)`.
+   - In stdio mode, when neither token nor require_auth is provided, `require_auth = False` to guarantee zero-friction access for local AI agents (Antigravity, Claude, Cursor).
+   - Implement `verify_token(token: Optional[str]) -> bool` using standard library `hmac.compare_digest`.
+   - Support `auth/handshake` method with `params: {"token": "..."}`, returning `{"status": "authenticated", "authenticated": True}` and marking session authenticated.
+   - Support handshake during `initialize` via `params.get("_meta", {}).get("authToken")` or `params.get("authToken")` or `params.get("token")`.
+   - If `require_auth` is True and session is not authenticated, reject `tools/list` and `tools/call` with JSON-RPC error:
+     `{"code": -32001, "message": "Authentication required: Missing or invalid authentication token", "data": {"authenticated": False}}`.
+     Allow `initialize` and `auth/handshake` methods to be called before authentication.
+2. CLI Flag Integration:
+   - In `smart_drive/cli/main.py`, add `--auth-token` and `--require-auth` (flag or bool) to the `mcp` parser (`p_mcp`).
+   - In `smart_drive/cli/cmd_mcp.py`, pass `auth_token` and `require_auth` to `SmartDriveMCPServer`.
+3. Network Loopback Guard & Endpoint Isolation in `smart_drive/ui/server.py`:
+   - In `create_server` and `run_server`, validate `host`. If `host not in ("127.0.0.1", "localhost")`, raise `ValueError("Security restriction: Network listening sockets must bind strictly to '127.0.0.1' loopback. Binding to external interfaces is prohibited.")`.
+   - Normalize server URL generation to `url = f"http://127.0.0.1:{actual_port}"`.
+   - In `_set_cors_headers`, restrict `Access-Control-Allow-Origin` to loopback origins (`127.0.0.1`, `localhost`) instead of `*`.
+4. Verification:
+   - Run `python -m unittest discover tests` — all 523 existing tests must pass with 0 regressions.
+   - Ensure zero external pip dependencies (`dependencies = []`).
+5. Write your completion report to `d:\teamwork_projects\smart_drive_os\.agents\teamwork\worker_m2_1\handoff.md`.
+6. Send a concise completion message to parent using send_message.

@@ -68,9 +68,15 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def _set_cors_headers(self) -> None:
         """Set standard CORS headers for local API consumption."""
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "") if hasattr(self, "headers") and self.headers else ""
+        if origin and ("127.0.0.1" in origin or "localhost" in origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+        elif origin:
+            self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:8765")
+        else:
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-MCP-Auth-Token")
 
     def send_json_response(self, data: Any, status: int = 200) -> None:
         """Helper to serialize data as JSON response with correct headers."""
@@ -369,6 +375,9 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_json_response(response)
 
 
+ALLOWED_LOOPBACK_HOSTS = ("127.0.0.1", "localhost")
+
+
 def create_server(
     root_path: Union[str, Path],
     port: int = 8765,
@@ -377,6 +386,10 @@ def create_server(
     cluster_size: int = CLUSTER_SIZE_BYTES,
 ) -> ThreadingHTTPServer:
     """Instantiates a configured ThreadingHTTPServer ready for serve_forever()."""
+    if host not in ALLOWED_LOOPBACK_HOSTS:
+        raise ValueError(
+            "Security restriction: Network listening sockets must bind strictly to '127.0.0.1' loopback. Binding to external interfaces is prohibited."
+        )
     server_address = (host, port)
     return ThreadingHTTPServer(
         server_address=server_address,
@@ -395,9 +408,13 @@ def run_server(
     host: str = "127.0.0.1",
 ) -> None:
     """Runs the SmartDrive-OS HTTP server until interrupted."""
+    if host not in ALLOWED_LOOPBACK_HOSTS:
+        raise ValueError(
+            "Security restriction: Network listening sockets must bind strictly to '127.0.0.1' loopback. Binding to external interfaces is prohibited."
+        )
     server = create_server(root_path=root_path, port=port, db_path=db_path, host=host)
     actual_port = server.server_address[1]
-    url = f"http://{host}:{actual_port}"
+    url = f"http://127.0.0.1:{actual_port}"
 
     print("=" * 70)
     print("  SmartDrive-OS Web Dashboard (v1.1.0)")
@@ -426,6 +443,7 @@ def run_server(
 
 
 __all__ = [
+    "ALLOWED_LOOPBACK_HOSTS",
     "ThreadingHTTPServer",
     "SmartDriveRequestHandler",
     "create_server",

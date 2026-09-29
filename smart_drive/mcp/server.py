@@ -7,7 +7,7 @@ Provides autonomous AI coding agents with 8 high-performance tools:
 4. ssd_find_duplicates: 3-phase duplicate detection and space reclamation plan.
 5. ssd_update_index: Fast incremental mtime/size search index synchronization.
 6. ssd_check_safety: exFAT compatibility guard (illegal chars, symlinks, whitelist).
-7. ssd_status: Root discovery, anti-indexing shield status, and taxonomy health.
+7. ssd_status: Root discovery, anti-indexing shield status, SQLite search database integrity, exFAT safety, and Git multi-repository status.
 8. ssd_auto_organize: Autonomous drive auto-zoning, cleaning & rebalancing.
 """
 
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import collections
 import dataclasses
+import hmac
 import json
 import logging
 import os
@@ -26,7 +27,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from smart_drive.core.auditor import StorageAuditor
 from smart_drive.core.auto_zoner import AutoZoner
-from smart_drive.core.config import CLUSTER_SIZE_BYTES, JunkTier, is_protected_root_file, is_protected_root_dir
+from smart_drive.core.config import (
+    CLUSTER_SIZE_BYTES,
+    JunkTier,
+    ensure_anti_indexing_markers,
+    is_protected_root_file,
+    is_protected_root_dir,
+)
 from smart_drive.core.duplicates import DuplicateDetector
 from smart_drive.core.exfat_compat import ExFatEngine
 from smart_drive.core.junk_detector import JunkDetector
@@ -39,7 +46,7 @@ from smart_drive.search.parser import SearchParams, parse_search_query, parse_si
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "smart-drive"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
 
 logger = logging.getLogger("smart_drive.mcp.server")
 logger.setLevel(logging.INFO)
@@ -104,7 +111,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "ssd_audit",
-        "description": "Returns full storage allocation breakdown across standard taxonomies and calculates wasted 512KB exFAT cluster slack.",
+        "description": "Returns full storage allocation breakdown across 6 standard taxonomies and extension categories, and calculates wasted 512KB exFAT cluster slack and top slack directories.",
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -121,6 +128,10 @@ TOOLS: List[Dict[str, Any]] = [
                 "sub_dir": {
                     "type": "string",
                     "description": "Optional subdirectory to restrict audit scope.",
+                },
+                "directory": {
+                    "type": "string",
+                    "description": "Optional subdirectory to restrict audit scope (alias for sub_dir).",
                 },
             },
         },
@@ -165,7 +176,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "ssd_find_duplicates",
-        "description": "Detects identical duplicate files using 3-phase cascade (Size -> 8KB Hash -> Full SHA-256) and returns exact space savings.",
+        "description": "Detects identical duplicate files using 3-phase cascade (Size -> 8KB Hash -> Full SHA-256) and returns exact nominal and 512KB physical cluster space savings.",
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -182,6 +193,11 @@ TOOLS: List[Dict[str, Any]] = [
                 "sub_dir": {
                     "type": "string",
                     "description": "Optional subdirectory to inspect for duplicates.",
+                },
+                "min_size": {
+                    "type": "integer",
+                    "description": "Optional minimum file size in bytes to filter duplicates (default: 0).",
+                    "default": 0,
                 },
             },
         },
@@ -235,7 +251,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "ssd_status",
-        "description": "Inspects SSD mount status, anti-indexing shield integrity (.metadata_never_index, .fseventsd/no_log), and taxonomy health.",
+        "description": "Inspects SSD mount status, anti-indexing shield integrity (.metadata_never_index, .fseventsd/no_log), SQLite search database integrity, exFAT safety, and Git multi-repository status.",
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -384,12 +400,25 @@ class SlidingWindowRateLimiter:
 class SmartDriveMCPServer:
     """JSON-RPC 2.0 stdio MCP Server implementation."""
 
+    TOOL_HANDLERS: Dict[str, str] = {
+        "ssd_search": "handle_ssd_search",
+        "ssd_audit": "handle_ssd_audit",
+        "ssd_clean": "handle_ssd_clean",
+        "ssd_find_duplicates": "handle_ssd_find_duplicates",
+        "ssd_update_index": "handle_ssd_update_index",
+        "ssd_check_safety": "handle_ssd_check_safety",
+        "ssd_status": "handle_ssd_status",
+        "ssd_auto_organize": "handle_ssd_auto_organize",
+    }
+
     def __init__(
         self,
         root: Optional[str] = None,
         rate_limit_requests: Optional[int] = None,
         rate_limit_window: Optional[float] = None,
         rate_limit_enabled: Optional[bool] = None,
+        auth_token: Optional[str] = None,
+        require_auth: Optional[bool] = None,
     ) -> None:
         if root:
             self.root = os.path.abspath(root)
@@ -402,6 +431,40 @@ class SmartDriveMCPServer:
             window_seconds=rate_limit_window,
             enabled=rate_limit_enabled,
         )
+
+        # Authentication Engine
+        # Priority: parameter > SMART_DRIVE_MCP_AUTH_TOKEN env var > None
+        if auth_token is not None:
+            clean_token = str(auth_token).strip()
+            self.auth_token: Optional[str] = clean_token if clean_token else None
+        else:
+            env_token = os.environ.get("SMART_DRIVE_MCP_AUTH_TOKEN", "").strip()
+            self.auth_token = env_token if env_token else None
+
+        # Priority: parameter > SMART_DRIVE_MCP_REQUIRE_AUTH env var > bool(self.auth_token)
+        if require_auth is not None:
+            self.require_auth: bool = bool(require_auth)
+        else:
+            env_req = os.environ.get("SMART_DRIVE_MCP_REQUIRE_AUTH")
+            if env_req is not None:
+                self.require_auth = env_req.strip().lower() in ("1", "true", "yes", "on")
+            else:
+                self.require_auth = bool(self.auth_token)
+
+        # In stdio mode with no token and require_auth unconfigured, require_auth is False (zero-friction).
+        self._authenticated: bool = not self.require_auth
+
+    def verify_token(self, token: Optional[str]) -> bool:
+        """Verifies the provided token against self.auth_token using constant-time comparison."""
+        if not self.auth_token or token is None:
+            return False
+        try:
+            return hmac.compare_digest(
+                str(token).encode("utf-8"),
+                str(self.auth_token).encode("utf-8"),
+            )
+        except Exception:
+            return False
 
     def _resolve_safe_path(self, sub_path: Optional[str], must_exist: bool = False) -> str:
         """Validates and resolves sub_path strictly within self.root.
@@ -580,7 +643,7 @@ class SmartDriveMCPServer:
         }
 
     def handle_ssd_audit(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        sub_dir = args.get("sub_dir")
+        sub_dir = args.get("sub_dir") or args.get("directory")
         target_root = self._resolve_safe_path(sub_dir)
         auditor = StorageAuditor(target_root)
         report = auditor.run_audit()
@@ -659,6 +722,7 @@ class SmartDriveMCPServer:
             return {
                 "path": path_str,
                 "is_safe": False,
+                "is_symlink": False,
                 "forbidden_character_violations": ["\\x00"],
                 "is_protected_root_file": False,
                 "is_protected_root_dir": False,
@@ -667,13 +731,15 @@ class SmartDriveMCPServer:
 
         canonical_root = os.path.realpath(os.path.abspath(self.root))
         clean_path = path_str.strip()
-        normalized_target = os.path.realpath(os.path.abspath(os.path.join(canonical_root, clean_path)))
+        raw_target = os.path.join(canonical_root, clean_path)
+        normalized_target = os.path.realpath(os.path.abspath(raw_target))
         try:
             escapes_root = (os.path.commonpath([canonical_root, normalized_target]) != canonical_root)
         except ValueError:
             return {
                 "path": path_str,
                 "is_safe": False,
+                "is_symlink": False,
                 "forbidden_character_violations": [],
                 "is_protected_root_file": False,
                 "is_protected_root_dir": False,
@@ -689,11 +755,35 @@ class SmartDriveMCPServer:
                 escapes_root = True
                 rel_path = clean_path
 
-        forbidden_chars = ExFatEngine.audit_forbidden_characters(os.path.basename(path_str))
+        is_symlink = False
+        try:
+            if (
+                ExFatEngine.is_symlink(clean_path)
+                or ExFatEngine.is_symlink(raw_target)
+                or ExFatEngine.is_symlink(normalized_target)
+                or os.path.islink(clean_path)
+                or os.path.islink(raw_target)
+                or os.path.islink(normalized_target)
+            ):
+                is_symlink = True
+        except (OSError, ValueError):
+            is_symlink = False
+
+        _, path_no_drive = os.path.splitdrive(clean_path)
+        path_segments = [p for p in path_no_drive.replace("\\", "/").split("/") if p and p not in (".", "..")]
+        all_forbidden: List[str] = []
+        for seg in path_segments:
+            violations = ExFatEngine.audit_forbidden_characters(seg)
+            for v in violations:
+                v_str = str(v)
+                if v_str not in all_forbidden:
+                    all_forbidden.append(v_str)
+
         is_prot_file = is_protected_root_file(rel_path)
         is_prot_dir = is_protected_root_dir(rel_path)
         is_safe = (
-            len(forbidden_chars) == 0
+            len(all_forbidden) == 0
+            and not is_symlink
             and not is_prot_file
             and not is_prot_dir
             and not escapes_root
@@ -701,7 +791,8 @@ class SmartDriveMCPServer:
         res = {
             "path": path_str,
             "is_safe": is_safe,
-            "forbidden_character_violations": [str(c) for c in forbidden_chars],
+            "is_symlink": is_symlink,
+            "forbidden_character_violations": all_forbidden,
             "is_protected_root_file": is_prot_file,
             "is_protected_root_dir": is_prot_dir,
         }
@@ -740,25 +831,46 @@ class SmartDriveMCPServer:
             except Exception as e:
                 logger.warning("Error running clean in auto_organize: %s", e)
         if apply_mode:
+            created_shields = ensure_anti_indexing_markers(self.root)
             res = zoner.apply_plan(plan)
-            return {"status": "applied", "result": res}
+            db_path = self.get_db_path()
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            db = DatabaseManager(db_path)
+            try:
+                db.initialize_schema()
+                mgr = IndexManager(db, self.root)
+                inc_stats = mgr.incremental_update()
+            finally:
+                db.close()
+
+            return {
+                "status": "applied",
+                "result": res,
+                "shields_created": created_shields,
+                "index_sync": dataclasses.asdict(inc_stats),
+            }
         return {"status": "dry_run", "plan_count": len(plan), "actions": [a.to_dict() for a in plan]}
 
     def dispatch_tool(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        dispatch_table: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
-            "ssd_search": self.handle_ssd_search,
-            "ssd_audit": self.handle_ssd_audit,
-            "ssd_clean": self.handle_ssd_clean,
-            "ssd_find_duplicates": self.handle_ssd_find_duplicates,
-            "ssd_update_index": self.handle_ssd_update_index,
-            "ssd_check_safety": self.handle_ssd_check_safety,
-            "ssd_status": self.handle_ssd_status,
-            "ssd_auto_organize": self.handle_ssd_auto_organize,
-        }
-        handler = dispatch_table.get(name)
-        if not handler:
+        """Dispatches a tool call with 100% static AST-resolvable branching."""
+        if name == "ssd_search":
+            return self.handle_ssd_search(args)
+        elif name == "ssd_audit":
+            return self.handle_ssd_audit(args)
+        elif name == "ssd_clean":
+            return self.handle_ssd_clean(args)
+        elif name == "ssd_find_duplicates":
+            return self.handle_ssd_find_duplicates(args)
+        elif name == "ssd_update_index":
+            return self.handle_ssd_update_index(args)
+        elif name == "ssd_check_safety":
+            return self.handle_ssd_check_safety(args)
+        elif name == "ssd_status":
+            return self.handle_ssd_status(args)
+        elif name == "ssd_auto_organize":
+            return self.handle_ssd_auto_organize(args)
+        else:
             raise ValueError(f"Unknown tool '{name}'")
-        return handler(args)
 
     def send_response(self, response: Dict[str, Any]) -> None:
         body = json.dumps(response, ensure_ascii=False)
@@ -798,6 +910,15 @@ class SmartDriveMCPServer:
                     self.send_response(err_resp)
                 return err_resp
 
+        # Check for inline authentication token in params or _meta
+        meta_token = None
+        if isinstance(params.get("_meta"), dict):
+            meta_token = params["_meta"].get("authToken") or params["_meta"].get("token")
+        inline_token = meta_token or params.get("authToken") or params.get("token")
+
+        if inline_token and self.verify_token(inline_token):
+            self._authenticated = True
+
         if method == "initialize":
             resp = {
                 "jsonrpc": "2.0",
@@ -816,6 +937,45 @@ class SmartDriveMCPServer:
             self.send_response(resp)
             return resp
 
+        if method == "auth/handshake":
+            if not self.require_auth and not self.auth_token:
+                resp = {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {
+                        "status": "authenticated",
+                        "authenticated": True,
+                    },
+                }
+                self.send_response(resp)
+                return resp
+
+            if self.verify_token(inline_token):
+                self._authenticated = True
+                resp = {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {
+                        "status": "authenticated",
+                        "authenticated": True,
+                    },
+                }
+                self.send_response(resp)
+                return resp
+            else:
+                err_resp = {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {
+                        "code": -32001,
+                        "message": "Authentication required: Missing or invalid authentication token",
+                        "data": {"authenticated": False},
+                    },
+                }
+                if msg_id is not None:
+                    self.send_response(err_resp)
+                return err_resp
+
         if method == "ping":
             resp = {"jsonrpc": "2.0", "id": msg_id, "result": {}}
             self.send_response(resp)
@@ -823,6 +983,21 @@ class SmartDriveMCPServer:
 
         if method == "notifications/initialized":
             return None
+
+        # Authentication Enforcement for Protected Endpoints (tools/list, tools/call, etc.)
+        if self.require_auth and not self._authenticated:
+            err_resp = {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {
+                    "code": -32001,
+                    "message": "Authentication required: Missing or invalid authentication token",
+                    "data": {"authenticated": False},
+                },
+            }
+            if msg_id is not None:
+                self.send_response(err_resp)
+            return err_resp
 
         if method == "tools/list":
             resp = {

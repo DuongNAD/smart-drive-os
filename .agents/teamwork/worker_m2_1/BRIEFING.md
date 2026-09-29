@@ -1,56 +1,61 @@
-# BRIEFING — 2026-09-29T13:54:30Z
+# BRIEFING — 2026-09-29T17:05:00Z
 
 ## Mission
-Harden SmartDrive-OS MCP Server (`smart_drive/mcp/server.py`) defensively with an in-memory SlidingWindowRateLimiter, path confinement sanitizers, robust boolean/int parsing, error handling across all 8 tools, and tool hint annotations. [COMPLETE]
+Implement Milestone 2: Authentication Handshake & Network Loopback Isolation for SmartDrive-OS MCP Grade A upgrade.
 
 ## 🔒 My Identity
 - Archetype: worker
 - Roles: implementer, qa, specialist
 - Working directory: d:\teamwork_projects\smart_drive_os\.agents\teamwork\worker_m2_1
-- Original parent: 1d14542d-e227-4a07-85b6-3dfc78b9baaf
-- Milestone: M2
+- Original parent: 09e9f6f6-cea0-43b3-ba73-105ef2f87c01
+- Milestone: M2 - Authentication Handshake & Network Loopback Isolation
 
 ## 🔒 Key Constraints
-- EXCLUSIVELY own: `smart_drive/mcp/server.py`. DO NOT edit any other file.
-- Pure Python standard library for rate limiter (`time.monotonic`, `collections.deque`, `threading.Lock`). Zero external dependencies.
-- Defensive path confinement: canonical realpath, null byte check, verify boundary containment (`os.path.commonpath`).
-- Safe parameter parsing: `_parse_bool`, `_parse_int`.
-- JSON-RPC rate limit error response code `-32000`, invalid params `-32602`.
-- Explicit boolean declarations for `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` on all 8 tools.
-- All tests must pass: `python -m pytest tests/test_mcp_server.py` and `python -m pytest`.
-- No cheating, no fake/dummy implementations.
+- Exclusive write ownership: smart_drive/mcp/server.py, smart_drive/cli/cmd_mcp.py, smart_drive/cli/main.py, smart_drive/ui/server.py
+- Zero external pip dependencies (dependencies = [])
+- Zero test regressions on existing 523 unit tests
+- Genuine implementation: no hardcoding, no facades
 
 ## Current Parent
-- Conversation ID: 1d14542d-e227-4a07-85b6-3dfc78b9baaf
-- Updated: 2026-09-29T13:54:30Z
+- Conversation ID: 09e9f6f6-cea0-43b3-ba73-105ef2f87c01
+- Updated: 2026-09-29T17:05:00Z
 
 ## Task Summary
-- **What to build**: Implemented `SlidingWindowRateLimiter`, input sanitizers (`_resolve_safe_path`, `_parse_bool`, `_parse_int`), integrated into `handle_request`, hardened all 8 tool handlers, and confirmed all tool hint annotations.
-- **Success criteria**: MCP server resists path traversal, rate limiting enforces threshold, arguments safely validated, all tests pass (436/436).
-- **Interface contracts**: `d:\teamwork_projects\smart_drive_os\.agents\teamwork\PROJECT.md`
-- **Code layout**: `smart_drive/mcp/server.py`
+- **What to build**: Authentication handshake engine in SmartDriveMCPServer, CLI flags (--auth-token, --require-auth, --no-require-auth), network loopback guard and CORS restriction in UI server.
+- **Success criteria**: Token verification with hmac.compare_digest, auth/handshake & initialize token passing, JSON-RPC -32001 errors, CLI flags, host loopback check and CORS restriction, zero regressions across 523 tests.
+- **Interface contracts**: SCOPE.md and explorer_survey_mcp_2/handoff.md
+- **Code layout**: smart_drive/mcp/server.py, smart_drive/cli/, smart_drive/ui/
+
+## Key Decisions Made
+- Added `auth_token` and `require_auth` parameters to `SmartDriveMCPServer.__init__` with fallback resolution: parameter > CLI > environment variable (`SMART_DRIVE_MCP_AUTH_TOKEN`, `SMART_DRIVE_MCP_REQUIRE_AUTH`) > defaults.
+- Enforced zero-friction stdio mode: `require_auth` defaults to `False` when neither `auth_token` nor `require_auth` is configured.
+- Implemented `verify_token(token)` with standard library `hmac.compare_digest` over UTF-8 bytes to ensure constant-time verification.
+- Supported token handshake in `initialize` via `params._meta.authToken`, `params.authToken`, or `params.token`.
+- Implemented `auth/handshake` method with standardized -32001 error on invalid token, and `{"status": "authenticated", "authenticated": True}` on valid token.
+- Protected `tools/list` and `tools/call` with JSON-RPC error code `-32001` when `require_auth=True` and unauthenticated.
+- Added `--auth-token`, `--require-auth`, and `--no-require-auth` to CLI `mcp` parser and wired them through `cmd_mcp.py`.
+- Enforced strict loopback binding in `smart_drive/ui/server.py` (`create_server` and `run_server`) allowing only `127.0.0.1` and `localhost`.
+- Normalized dashboard URL to `http://127.0.0.1:{actual_port}`.
+- Hardened CORS header generation in `smart_drive/ui/server.py` to restrict cross-origin access to loopback origins.
+
+## Artifact Index
+- DISPATCH.md — Assignment instructions
+- progress.md — Liveness and progress tracking
+- handoff.md — M2 completion handoff report
 
 ## Change Tracker
-- **Files modified**: `smart_drive/mcp/server.py` (exclusive ownership respected)
-- **Build status**: PASS (`python -m pytest`: 436 passed in 42.04s, `tests/test_mcp_server.py`: 9 passed in 0.18s)
+- **Files modified**:
+  - `smart_drive/mcp/server.py`: Added authentication engine, token verification, initialize & auth/handshake handling, and -32001 error protection.
+  - `smart_drive/cli/main.py`: Added `--auth-token`, `--require-auth`, `--no-require-auth` to `mcp` subparser.
+  - `smart_drive/cli/cmd_mcp.py`: Passed `auth_token` and `require_auth` to `SmartDriveMCPServer`.
+  - `smart_drive/ui/server.py`: Enforced loopback host validation, normalized URL generation, and hardened CORS origin headers.
+- **Build status**: PASS — All 523 tests pass cleanly (100% pass rate).
 - **Pending issues**: None
 
 ## Quality Status
-- **Build/test result**: 100% PASS (436/436 tests passing)
-- **Lint status**: Clean, PEP-compliant, pure standard library
-- **Tests added/modified**: Exclusively owned file `smart_drive/mcp/server.py`
+- **Build/test result**: 523/523 passed in 53.086s (OK)
+- **Lint status**: 0 violations, clean AST compliance
+- **Tests added/modified**: Verified with full test runner and dedicated end-to-end flow checks
 
 ## Loaded Skills
-None required for this Python stdlib hardening task.
-
-## Key Decisions Made
-- Implemented `SlidingWindowRateLimiter` with support for simulated timestamps (`now=...`) to ensure deterministic unit testing.
-- Created `_LoadInt(int)` subclass supporting both `rl.current_load` (property) and `rl.current_load()` (callable).
-- Built centralized boundary confinement in `_resolve_safe_path` using `os.path.commonpath` with cross-drive exception handling.
-- Coerced boolean values safely in `_parse_bool` to prevent string `"false"` and `"0"` from triggering live deletion in destructive tools.
-
-## Artifact Index
-- `d:\teamwork_projects\smart_drive_os\.agents\teamwork\worker_m2_1\DISPATCH.md` — Assignment dispatch
-- `d:\teamwork_projects\smart_drive_os\.agents\teamwork\worker_m2_1\progress.md` — Heartbeat
-- `d:\teamwork_projects\smart_drive_os\.agents\teamwork\worker_m2_1\changes.md` — Changes report
-- `d:\teamwork_projects\smart_drive_os\.agents\teamwork\worker_m2_1\handoff.md` — Handoff report
+None

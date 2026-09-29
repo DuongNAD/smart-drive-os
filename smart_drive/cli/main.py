@@ -238,6 +238,19 @@ def build_parser() -> argparse.ArgumentParser:
     # 8. mcp
     p_mcp = subparsers.add_parser("mcp", help="Run JSON-RPC 2.0 stdio MCP server for AI Coding Agents")
     p_mcp.add_argument("--root", help="Root directory of the SSD")
+    p_mcp.add_argument("--auth-token", help="Shared secret authentication token for MCP server")
+    p_mcp.add_argument(
+        "--require-auth",
+        action="store_true",
+        default=None,
+        help="Explicitly require authentication for MCP server",
+    )
+    p_mcp.add_argument(
+        "--no-require-auth",
+        action="store_false",
+        dest="require_auth",
+        help="Explicitly disable authentication requirement for MCP server",
+    )
 
     # 9. mcp-config
     p_mcp_cfg = subparsers.add_parser("mcp-config", help="Register SmartDrive MCP server in AI IDE configurations")
