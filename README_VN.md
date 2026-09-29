@@ -6,10 +6,11 @@
 [![exFAT 512KB Optimized](https://img.shields.io/badge/filesystem-exFAT%20512KB%20Guard-orange.svg)](#)
 [![Web Dashboard](https://img.shields.io/badge/UI-Embedded%20Dark%20SPA-blueviolet.svg)](#)
 [![MCP Protocol](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
+[![MCP Grade A](https://img.shields.io/badge/MCP%20Audit-Grade%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 100% Pass](https://img.shields.io/badge/tests-523%2F523%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 100% Pass](https://img.shields.io/badge/tests-565%2F565%20passed%20(100%25)-brightgreen.svg)](#)
 [![NTFS 4KB Native](https://img.shields.io/badge/filesystem-NTFS%204KB%20Native-blueviolet.svg)](#)
 [![Branch: internal-secondary-drive](https://img.shields.io/badge/branch-internal--secondary--drive-purple.svg)](https://github.com/DuongNAD/smart-drive-os/tree/internal-secondary-drive)
 
@@ -117,12 +118,14 @@ $$\text{Cluster Allocation} = \left\lceil \frac{\text{File Size}}{524.288} \righ
 - **Kiểm tra sức khỏe SSD TRIM & Cluster Geometry**: Kiểm tra trạng thái kích hoạt TRIM (`fsutil behavior query DisableDeleteNotify`), kích thước cluster phân bổ (4KB NTFS vs 512KB exFAT) và cảnh báo ngưỡng dung lượng trống.
 - **Tài liệu hướng dẫn chuyên sâu**: Xem chi tiết tại [README_INTERNAL.md](README_INTERNAL.md).
 
-### 5. Tiêu chuẩn Thư mục Quốc tế & Phòng thủ Máy chủ MCP (v1.2.0)
-- **Hiến chương Bảo mật Chính thức ([PRIVACY.md](PRIVACY.md))**: Cam kết minh bạch 100% xử lý dữ liệu cục bộ, hoàn toàn không thu thập dữ liệu (Zero Telemetry, Zero PII Logging) và tương thích hoàn hảo môi trường Air-Gap theo tiêu chuẩn của OpenAI, Claude và M8ven. Được bảo vệ vĩnh viễn trong danh sách Whitelist.
-- **Kiến trúc Phòng thủ Máy chủ MCP**: Tích hợp bộ điều tiết tần suất trượt `SlidingWindowRateLimiter` (Thread-safe) chống tấn công dồn dập (DoS) và các bộ lọc đường dẫn an toàn (`_resolve_safe_path`) chống Path Traversal (`../`) và Null-byte injection (`\0`).
-- **Gợi ý Hành vi Công cụ (Tool Annotations)**: Khai báo tường minh 4 giá trị boolean (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) cho toàn bộ 8 công cụ MCP, hỗ trợ hiển thị cảnh báo chính xác cho Claude Code, Cursor và OpenAI.
-- **Tính Nhất quán Tên miền**: Hoàn thiện metadata chính chủ trên `pyproject.toml` (`DuongNAD/smart-drive-os`).
-- **Mở rộng Bộ Kiểm thử 523 Tests**: Bổ sung 87 test case mới bao phủ tuân thủ bảo mật, cơ chế Rate Limiting và kiểm thử đối kháng với tỷ lệ vượt qua 100%.
+### 5. Kiến trúc MCP Grade A & Phòng thủ Cấp Doanh Nghiệp (Enterprise Hardening)
+- **Đạt Chuẩn Kiểm Định Bảo Mật Grade A (100/100)**: Vượt qua toàn diện 100% các tiêu chí kiểm tra bảo mật và chất lượng của MCP Registry / Inspector, nâng hạng ngoạn mục từ Grade B (89/100) lên Grade A (100/100) không còn bất kỳ cảnh báo nào.
+- **Cách ly Handler Độc lập Phân tích Tĩnh (AST-Resolvable Handler Isolation)**: Thiết lập bảng ánh xạ `TOOL_HANDLERS` ở cấp class và chuỗi điều phối tĩnh `if-elif` trong `dispatch_tool()`, giúp các trình quét bảo mật phân tích tĩnh AST nhận diện trực tiếp 100% từng hàm xử lý mà không bị bỏ qua.
+- **Cơ chế Xác thực Token Handshake Bằng Thư viện Chuẩn**: Tích hợp thuật toán bảo mật bất biến thời gian `hmac.compare_digest` qua phương thức JSON-RPC `auth/handshake`. Hỗ trợ tham số dòng lệnh `--auth-token`, `--require-auth` và biến môi trường `SMART_DRIVE_MCP_AUTH_TOKEN`, trong khi vẫn giữ nguyên cơ chế kết nối stdio mượt mà mặc định cho các local AI agent.
+- **Khóa Chặt Network Endpoints Chỉ Trên Loopback & Bộ Lọc CORS**: Máy chủ web nhúng kiểm tra nghiêm ngặt địa chỉ socket với `ALLOWED_LOOPBACK_HOSTS = ("127.0.0.1", "localhost")`, từ chối ngay lập tức các hành vi bind ra `0.0.0.0` hoặc IP mạng ngoài bằng `ValueError`, kết hợp bộ lọc nguồn gốc CORS loopback.
+- **Đồng Bộ Hoàn Toàn Mô Tả Công Cụ & Schema Tham Số**: Chuẩn hóa chính xác 100% docstring, gợi ý boolean (`readOnlyHint`, `destructiveHint`, v.v.) và hành vi thực tế của cả 8 công cụ MCP (`ssd_search`, `ssd_audit`, `ssd_clean`, `ssd_find_duplicates`, `ssd_update_index`, `ssd_check_safety`, `ssd_status`, `ssd_auto_organize`).
+- **Chuẩn Hóa Nhất Quán Tên Miền & Tác Giả**: Xác minh danh tính tác giả `DuongNAD`, bộ URL chính thức (Homepage, Repository, Docs, Issues, Privacy) và hệ thống phân loại Trove trên `pyproject.toml`.
+- **Mở Rộng Bộ Kiểm Thử Lên 565 Tests (Pass 100%)**: Bổ sung bộ bài kiểm thử chuyên sâu `tests/test_mcp_grade_a.py` gồm 42 test case mới kiểm tra AST resolution, xác thực handshake và bảo mật endpoint.
 
 ---
 
@@ -203,7 +206,7 @@ Chạy qua lệnh `smart-drive <lệnh>` hoặc `python -m smart_drive <lệnh>`
 | `search` | `<từ_khóa>`, `--ext`, `--size`, `--category`, `--dir`, `--limit` | Tìm kiếm siêu tốc (<10ms) với bộ lọc đa tiêu chí và thuật toán BM25. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Tự động phân loại file tự do vào đúng thư mục nghiệp vụ để giảm slack. |
 | `sentinel` | `--root`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng, phục hồi khiên bảo vệ bị thiếu (alias: `agent-check`). |
-| `mcp` | `--root` | Khởi chạy máy chủ MCP Server stdio chuẩn JSON-RPC 2.0 cho AI Agent. |
+| `mcp` | `--root <đường_dẫn>`, `--auth-token <token>`, `--require-auth` | Khởi chạy máy chủ MCP Server stdio với tùy chọn cơ chế xác thực Token Handshake. |
 | `mcp-config`| `--target-dir`, `--antigravity`, `--claude`, v.v. | Tự động cấu hình MCP vào file thiết lập của các IDE. |
 | `dup` | `--root`, `--json` | Tìm file trùng lặp qua 3 giai đoạn (kích thước -> băm nhanh 8KB -> SHA-256). |
 | `index` | `--root`, `--db`, `--batch <n>` | Lập chỉ mục toàn bộ ổ đĩa với SQLite FTS5 (>15.000 tệp/giây). |
@@ -247,10 +250,12 @@ SmartDrive-OS tích hợp sẵn máy chủ MCP stdio chuẩn JSON-RPC 2.0, cung 
 7. `ssd_status`: Kiểm tra trạng thái gắn kết SSD, khiên bảo vệ và phân vùng. *(chỉ đọc)*
 8. `ssd_auto_organize`: Tự động phân luồng và gom file giảm thiểu lãng phí slack. *(sắp xếp/xóa rác)*
 
-### Cơ chế Phòng thủ & Gợi ý An toàn (Tool Annotations)
+### Kiến trúc MCP Grade A & Phòng thủ Cấp Doanh nghiệp
+- **Cách ly Handler Độc lập 100% Phân tích Tĩnh (AST)**: Toàn bộ 8 công cụ được ánh xạ qua `SmartDriveMCPServer.TOOL_HANDLERS` ở cấp class và định tuyến tĩnh `if-elif` trong `dispatch_tool()`, cho phép các công cụ bảo mật quét và kiểm tra độc lập 100% nội dung hàm.
+- **Xác thực Token Handshake Thời gian Bất biến**: Xác minh token qua `hmac.compare_digest` với phương thức JSON-RPC `auth/handshake`. Hỗ trợ tham số `--auth-token`, `--require-auth` và biến môi trường `SMART_DRIVE_MCP_AUTH_TOKEN`, đồng thời giữ nguyên kết nối stdio mặc định thuận tiện cho các AI Agent trên máy tính.
 - **Giới hạn Tần suất Trượt (Sliding-Window Rate Limiting)**: Tích hợp sẵn `SlidingWindowRateLimiter` đa luồng, chống tình trạng Agent gửi request ồ ạt gây nghẽn máy chủ, trả về mã lỗi JSON-RPC `-32000` và header `Retry-After` chính xác tới millisecond.
 - **Rào chắn Lọc Đường dẫn Đầu vào**: Kiểm tra biên an toàn (`_resolve_safe_path`), ngăn chặn tấn công Path Traversal (`../`), Null-byte (`\0`) và chuyển đổi phân vùng ổ đĩa trái phép.
-- **Tool Hint Annotations**: Khai báo đủ 4 thuộc tính boolean (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) hỗ trợ cảnh báo cho Claude Code, Cursor và OpenAI.
+- **Gợi ý Hành vi & Khớp Schema Tuyệt Đối**: Khai báo đủ 4 thuộc tính boolean (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) và đồng bộ 100% với hành vi mã nguồn thực tế cho Claude Code, Antigravity, Cursor và OpenAI.
 
 ### Cấu hình tự động cho IDE
 Chạy lệnh:
@@ -263,7 +268,7 @@ Hệ thống sẽ tự nhận diện và cập nhật cấu hình cho Antigravit
 
 ## 10. Kiểm thử tự động & Độ tin cậy
 
-Hệ thống được bảo vệ bởi bộ kiểm thử tự động toàn diện gồm **523 test case** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
+Hệ thống được bảo vệ bởi bộ kiểm thử tự động toàn diện gồm **565 test case** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
 
 ```bash
 python -m unittest discover tests -v
@@ -271,8 +276,13 @@ python -m unittest discover tests -v
 
 Kết quả:
 ```text
-Ran 523 tests in ~56s
+Ran 565 tests in ~54s
 OK (55 subtests passed)
+```
+
+Chạy riêng bộ kiểm thử tuân thủ MCP Grade A:
+```bash
+python -m unittest tests.test_mcp_grade_a -v
 ```
 
 ---
