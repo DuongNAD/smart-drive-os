@@ -48,6 +48,16 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "ssd_search",
         "description": "Instant high-speed search across 500,000+ files on the SSD (<10ms latency). Use this instead of running slow shell find or grep commands.",
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -92,6 +102,16 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "ssd_audit",
         "description": "Returns full storage allocation breakdown across standard taxonomies and calculates wasted 512KB exFAT cluster slack.",
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -105,6 +125,16 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "ssd_clean",
         "description": "Identifies and purges system junk files (.DS_Store, Thumbs.db, temp caches). Enforces mandatory whitelist protection.",
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": True,
+        "openWorldHint": False,
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -133,6 +163,16 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "ssd_find_duplicates",
         "description": "Detects identical duplicate files using 3-phase cascade (Size -> 8KB Hash -> Full SHA-256) and returns exact space savings.",
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -146,6 +186,16 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "ssd_update_index",
         "description": "Performs fast incremental synchronization of the SQLite FTS5 search index after creating, editing, or deleting files.",
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -159,6 +209,16 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "ssd_check_safety",
         "description": "Verifies whether a file path or operation complies with exFAT rules: checks for illegal Windows characters, symlink attempts, and whitelist.",
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -173,6 +233,16 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "ssd_status",
         "description": "Inspects SSD mount status, anti-indexing shield integrity (.metadata_never_index, .fseventsd/no_log), and taxonomy health.",
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -181,6 +251,16 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "ssd_auto_organize",
         "description": "Autonomous drive auto-zoning, anti-slack rebalancing, and organization. Classifies loose items into standard taxonomies, ensures shields, and syncs index.",
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": True,
+        "openWorldHint": False,
         "inputSchema": {
             "type": "object",
             "properties": {
