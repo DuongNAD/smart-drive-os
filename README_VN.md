@@ -8,6 +8,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
 [![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](#)
+[![Privacy: 100% Local](https://img.shields.io/badge/Privacy-100%25%20Local-success?style=flat-square&logo=shield)](PRIVACY.md)
 [![exFAT 512KB Optimized](https://img.shields.io/badge/filesystem-exFAT%20512KB%20Guard-orange.svg)](#)
 [![Web Dashboard](https://img.shields.io/badge/UI-Embedded%20Dark%20SPA-blueviolet.svg)](#)
 [![MCP Protocol](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
@@ -256,7 +257,21 @@ OK
 
 ---
 
-## 11. Đóng góp mã nguồn mở (Contributing)
+## 11. Bảo Mật & Quyền Riêng Tư Dữ Liệu (Privacy & Security)
+
+SmartDrive-OS tuân thủ triệt để nguyên tắc **Local-First & Quyền riêng tư tối đa**:
+
+- **Hoạt động 100% cục bộ (Local-Only)**: Mọi thao tác phân tích ổ đĩa, lập chỉ mục tìm kiếm SQLite FTS5 và xác thực snapshot SHA-256 đều thực thi trực tiếp trên máy và ổ cứng của bạn. Tuyệt đối không sao lưu hay đồng bộ dữ liệu lên đám mây.
+- **Zero Telemetry**: Hoàn toàn không chứa mã thu thập dữ liệu hành vi, không gửi telemetry hay pingback về bất kỳ máy chủ nào.
+- **Zero PII Logging**: Tuyệt đối không đọc, bóc tách hay thu thập nội dung tệp nhạy cảm (mã nguồn bí mật, khóa riêng tư, thông tin cá nhân); chỉ lưu trữ metadata cần thiết trong cơ sở dữ liệu nội bộ `.smart_drive/index.db`.
+- **Sẵn sàng cho môi trường Air-Gap**: Không phụ thuộc vào bất kỳ thư viện bên ngoài nào (`dependencies = []`). Giao diện Web nhúng chỉ lắng nghe trên `127.0.0.1` (`localhost`) và máy chủ MCP giao tiếp thuần túy qua luồng `stdio`.
+- **Bảo vệ Whitelist tuyệt đối**: Ngăn chặn hoàn toàn việc xóa nhầm các tệp cấu hình cốt lõi (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`) và các phân vùng dữ liệu chuẩn.
+
+Xem toàn văn cam kết bảo mật và quyền riêng tư tại tệp [PRIVACY.md](PRIVACY.md).
+
+---
+
+## 12. Đóng góp mã nguồn mở (Contributing)
 
 SmartDrive-OS là dự án **hoàn toàn mở** và chào đón mọi sự đóng góp từ cộng đồng:
 - 🌟 **Star & Fork** repository trên GitHub: [DuongNAD/smart-drive-os](https://github.com/DuongNAD/smart-drive-os)
@@ -266,7 +281,7 @@ SmartDrive-OS là dự án **hoàn toàn mở** và chào đón mọi sự đón
 
 ---
 
-## 12. Giấy phép mã nguồn mở (License)
+## 13. Giấy phép mã nguồn mở (License)
 
 Dự án được phát hành tự do 100% theo **Giấy phép MIT** (xem chi tiết tại tệp [LICENSE](LICENSE)).  
 Bạn và bất kỳ ai trong cộng đồng đều có toàn quyền **sử dụng, sao chép, chỉnh sửa, ghép nối, phân phối hoặc dùng cho mục đích thương mại** hoàn toàn miễn phí và không bị ràng buộc.

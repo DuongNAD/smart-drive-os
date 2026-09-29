@@ -13,13 +13,16 @@ Provides autonomous AI coding agents with 8 high-performance tools:
 
 from __future__ import annotations
 
+import collections
 import dataclasses
 import json
 import logging
 import os
 import sys
+import threading
+import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from smart_drive.core.auditor import StorageAuditor
 from smart_drive.core.auto_zoner import AutoZoner
@@ -278,16 +281,207 @@ TOOLS: List[Dict[str, Any]] = [
 ]
 
 
+class _LoadInt(int):
+    """Integer that can also be called as a method for dual property/method access."""
+
+    def __call__(self) -> int:
+        return int(self)
+
+
+class SlidingWindowRateLimiter:
+    """Thread-safe in-memory sliding-window rate limiter using Python standard library.
+
+    Enforces maximum requests within a rolling time window.
+    Pure Python Standard Library: time.monotonic, collections.deque, threading.Lock.
+    Zero external dependencies.
+    """
+
+    def __init__(
+        self,
+        max_requests: Optional[int] = None,
+        window_seconds: Optional[float] = None,
+        enabled: Optional[bool] = None,
+    ) -> None:
+        if max_requests is None:
+            env_req = os.environ.get("SMART_DRIVE_MCP_RATE_LIMIT_REQUESTS", "120")
+            try:
+                max_requests = int(env_req)
+            except (ValueError, TypeError):
+                max_requests = 120
+        self.max_requests = max(1, int(max_requests))
+
+        if window_seconds is None:
+            env_win = os.environ.get("SMART_DRIVE_MCP_RATE_LIMIT_WINDOW", "60.0")
+            try:
+                window_seconds = float(env_win)
+            except (ValueError, TypeError):
+                window_seconds = 60.0
+        self.window_seconds = max(0.001, float(window_seconds))
+
+        if enabled is None:
+            env_en = os.environ.get("SMART_DRIVE_MCP_RATE_LIMIT_ENABLED", "true")
+            enabled = env_en.strip().lower() in ("1", "true", "yes", "on")
+        self.enabled = bool(enabled)
+
+        self._timestamps: collections.deque[float] = collections.deque()
+        self._lock = threading.Lock()
+        self._last_simulated_time: Optional[float] = None
+
+    def acquire(self, now: Optional[float] = None) -> Tuple[bool, float]:
+        """Attempts to acquire a slot in the current sliding window.
+
+        Args:
+            now: Optional current timestamp in seconds (allows deterministic testing).
+
+        Returns:
+            Tuple[bool, float]: (allowed, retry_after).
+            If allowed is True: (True, 0.0).
+            If throttled: (False, retry_after_in_seconds).
+        """
+        if not self.enabled:
+            return True, 0.0
+
+        if now is not None:
+            current_time = float(now)
+            self._last_simulated_time = current_time
+        else:
+            current_time = time.monotonic()
+            self._last_simulated_time = None
+
+        with self._lock:
+            cutoff = current_time - self.window_seconds
+            while self._timestamps and self._timestamps[0] <= cutoff:
+                self._timestamps.popleft()
+
+            if len(self._timestamps) < self.max_requests:
+                self._timestamps.append(current_time)
+                return True, 0.0
+
+            oldest = self._timestamps[0]
+            retry_after = max(0.001, (oldest + self.window_seconds) - current_time)
+            return False, retry_after
+
+    def reset(self) -> None:
+        """Clears all recorded timestamps, resetting the window immediately."""
+        with self._lock:
+            self._timestamps.clear()
+            self._last_simulated_time = None
+
+    @property
+    def current_load(self) -> _LoadInt:
+        """Returns the number of active requests in the current window.
+
+        Usable both as property (rl.current_load) and method (rl.current_load()).
+        """
+        with self._lock:
+            now = self._last_simulated_time if self._last_simulated_time is not None else time.monotonic()
+            cutoff = now - self.window_seconds
+            while self._timestamps and self._timestamps[0] <= cutoff:
+                self._timestamps.popleft()
+            return _LoadInt(len(self._timestamps))
+
+
 class SmartDriveMCPServer:
     """JSON-RPC 2.0 stdio MCP Server implementation."""
 
-    def __init__(self, root: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        root: Optional[str] = None,
+        rate_limit_requests: Optional[int] = None,
+        rate_limit_window: Optional[float] = None,
+        rate_limit_enabled: Optional[bool] = None,
+    ) -> None:
         if root:
             self.root = os.path.abspath(root)
         else:
             detected = SmartDriveProxy.detect_mount_point()
             self.root = str(detected) if detected else os.getcwd()
         self.use_content_length_mode = False
+        self.rate_limiter = SlidingWindowRateLimiter(
+            max_requests=rate_limit_requests,
+            window_seconds=rate_limit_window,
+            enabled=rate_limit_enabled,
+        )
+
+    def _resolve_safe_path(self, sub_path: Optional[str], must_exist: bool = False) -> str:
+        """Validates and resolves sub_path strictly within self.root.
+
+        - If sub_path is empty or None, returns self.root.
+        - Rejects null bytes (\\x00).
+        - Resolves canonical realpath: os.path.realpath(os.path.abspath(os.path.join(self.root, sub_path.strip())))
+        - Verifies boundary containment: ensures target is within self.root.
+        - If must_exist and not os.path.exists(target), raises FileNotFoundError.
+
+        Raises:
+            ValueError: If path contains null bytes or escapes self.root.
+            FileNotFoundError: If must_exist is True and path does not exist.
+        """
+        canonical_root = os.path.realpath(os.path.abspath(self.root))
+        if sub_path is None:
+            target = canonical_root
+        else:
+            sub_path_str = str(sub_path).strip()
+            if not sub_path_str:
+                target = canonical_root
+            else:
+                if "\x00" in sub_path_str:
+                    raise ValueError("Access denied: path contains null byte")
+                target = os.path.realpath(os.path.abspath(os.path.join(canonical_root, sub_path_str)))
+
+        # Verify boundary containment
+        try:
+            common = os.path.commonpath([canonical_root, target])
+            if os.path.normcase(common) != os.path.normcase(canonical_root):
+                raise ValueError("Access denied: path escapes storage root")
+        except ValueError as err:
+            raise ValueError("Access denied: path escapes storage root") from err
+
+        if must_exist and not os.path.exists(target):
+            raise FileNotFoundError(f"Path does not exist: {target}")
+
+        return target
+
+    @staticmethod
+    def _parse_bool(val: Any, default: bool = False) -> bool:
+        """Safely parses boolean values from JSON-RPC parameters.
+
+        Prevents string 'false' or '0' from evaluating as truthy.
+        """
+        if val is None:
+            return default
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, (int, float)):
+            return bool(val)
+        if isinstance(val, str):
+            clean = val.strip().lower()
+            if clean in ("true", "1", "yes", "on", "apply"):
+                return True
+            if clean in ("false", "0", "no", "off", "dry_run"):
+                return False
+            return default
+        return bool(val)
+
+    @staticmethod
+    def _parse_int(
+        val: Any,
+        default: int,
+        min_val: Optional[int] = None,
+        max_val: Optional[int] = None,
+    ) -> int:
+        """Safely parses integer values with bounds clamping and fallback."""
+        if val is None:
+            res = default
+        else:
+            try:
+                res = int(val)
+            except (ValueError, TypeError, OverflowError):
+                res = default
+        if min_val is not None and res < min_val:
+            res = min_val
+        if max_val is not None and res > max_val:
+            res = max_val
+        return res
 
     def get_db_path(self) -> str:
         new_path = os.path.join(self.root, ".smart_drive", "index.db")
@@ -299,23 +493,29 @@ class SmartDriveMCPServer:
         return new_path
 
     def handle_ssd_search(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        query_str = args.get("query", "")
+        query_str = str(args.get("query") or "")[:1000]
         params = parse_search_query(query_str)
 
         if args.get("ext"):
-            for e in args["ext"].split(","):
+            for e in str(args["ext"]).split(","):
                 clean_e = e.strip().lstrip(".")
                 if clean_e:
                     params.extensions.add(clean_e)
 
         if args.get("category"):
-            params.category = args["category"]
+            params.category = str(args["category"])
 
         if args.get("directory"):
-            params.directory = args["directory"].strip().strip('"').strip("'")
+            raw_dir = str(args["directory"]).strip().strip('"').strip("'")
+            safe_dir = self._resolve_safe_path(raw_dir)
+            try:
+                rel_dir = os.path.relpath(safe_dir, self.root)
+                params.directory = "" if rel_dir == "." else rel_dir
+            except ValueError:
+                params.directory = safe_dir
 
         if args.get("size"):
-            op, b_val = parse_size_spec(args["size"])
+            op, b_val = parse_size_spec(str(args["size"]))
             if b_val is not None:
                 if op in (">", ">="):
                     params.min_size = b_val
@@ -325,9 +525,9 @@ class SmartDriveMCPServer:
                     params.min_size = b_val
                     params.max_size = b_val
 
-        params.limit = min(int(args.get("limit", 25)), 100)
-        params.offset = max(int(args.get("offset", 0)), 0)
-        compact_mode = bool(args.get("compact", True))
+        params.limit = self._parse_int(args.get("limit"), default=25, min_val=1, max_val=100)
+        params.offset = self._parse_int(args.get("offset"), default=0, min_val=0)
+        compact_mode = self._parse_bool(args.get("compact"), default=True)
 
         db_path = self.get_db_path()
         if not os.path.exists(db_path):
@@ -381,7 +581,7 @@ class SmartDriveMCPServer:
 
     def handle_ssd_audit(self, args: Dict[str, Any]) -> Dict[str, Any]:
         sub_dir = args.get("sub_dir")
-        target_root = os.path.join(self.root, sub_dir) if sub_dir else self.root
+        target_root = self._resolve_safe_path(sub_dir)
         auditor = StorageAuditor(target_root)
         report = auditor.run_audit()
         return {
@@ -398,13 +598,13 @@ class SmartDriveMCPServer:
         }
 
     def handle_ssd_clean(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        dry_run = args.get("dry_run", True)
+        dry_run = self._parse_bool(args.get("dry_run"), default=True)
         if "apply" in args:
-            dry_run = not bool(args["apply"])
+            dry_run = not self._parse_bool(args["apply"], default=False)
         sub_dir = args.get("sub_dir") or args.get("directory")
-        target_root = os.path.join(self.root, sub_dir) if sub_dir else self.root
+        target_root = self._resolve_safe_path(sub_dir)
 
-        tier_val = args.get("tier", 1)
+        tier_val = self._parse_int(args.get("tier"), default=1, min_val=1, max_val=3)
         tier_map = {1: JunkTier.TIER_1_SAFE, 2: JunkTier.TIER_2_DEV_CACHE, 3: JunkTier.TIER_3_SENSITIVE}
         max_tier = tier_map.get(tier_val, JunkTier.TIER_1_SAFE)
 
@@ -427,13 +627,23 @@ class SmartDriveMCPServer:
 
     def handle_ssd_find_duplicates(self, args: Dict[str, Any]) -> Dict[str, Any]:
         sub_dir = args.get("sub_dir")
-        target_root = os.path.join(self.root, sub_dir) if sub_dir else self.root
+        target_root = self._resolve_safe_path(sub_dir)
+        min_size = self._parse_int(args.get("min_size"), default=0, min_val=0)
         detector = DuplicateDetector(target_root)
-        return detector.generate_reclamation_plan()
+        plan = detector.generate_reclamation_plan()
+        if min_size > 0 and "duplicate_groups" in plan:
+            filtered = [g for g in plan["duplicate_groups"] if g.get("size", 0) >= min_size]
+            plan["duplicate_groups"] = filtered
+            plan["duplicate_group_count"] = len(filtered)
+            plan["duplicate_file_count"] = sum(len(g["files"]) for g in filtered)
+            plan["total_reclaimable_bytes"] = sum(g["reclaimable_bytes"] for g in filtered)
+            plan["total_reclaimable_slack"] = sum(g["reclaimable_slack"] for g in filtered)
+            plan["total_reclaimable_physical"] = plan["total_reclaimable_bytes"] + plan["total_reclaimable_slack"]
+        return plan
 
     def handle_ssd_update_index(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        target_dir = args.get("directory")
-        target_root = os.path.join(self.root, target_dir) if target_dir else self.root
+        target_dir = args.get("directory") or args.get("target_dir")
+        target_root = self._resolve_safe_path(target_dir)
         db_path = self.get_db_path()
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         db = DatabaseManager(db_path)
@@ -443,30 +653,92 @@ class SmartDriveMCPServer:
 
     def handle_ssd_check_safety(self, args: Dict[str, Any]) -> Dict[str, Any]:
         path_str = args.get("path", "")
-        if not path_str:
+        if not path_str or not isinstance(path_str, str):
             return {"error": "Missing required argument 'path'"}
-        rel_path = os.path.relpath(path_str, self.root) if os.path.isabs(path_str) else path_str
+        if "\x00" in path_str:
+            return {
+                "path": path_str,
+                "is_safe": False,
+                "forbidden_character_violations": ["\\x00"],
+                "is_protected_root_file": False,
+                "is_protected_root_dir": False,
+                "error": "Path contains null byte",
+            }
+
+        canonical_root = os.path.realpath(os.path.abspath(self.root))
+        clean_path = path_str.strip()
+        normalized_target = os.path.realpath(os.path.abspath(os.path.join(canonical_root, clean_path)))
+        try:
+            escapes_root = (os.path.commonpath([canonical_root, normalized_target]) != canonical_root)
+        except ValueError:
+            return {
+                "path": path_str,
+                "is_safe": False,
+                "forbidden_character_violations": [],
+                "is_protected_root_file": False,
+                "is_protected_root_dir": False,
+                "error": "Path is on a different drive mount or escapes drive root",
+            }
+
+        if escapes_root:
+            rel_path = clean_path
+        else:
+            try:
+                rel_path = os.path.relpath(normalized_target, canonical_root)
+            except ValueError:
+                escapes_root = True
+                rel_path = clean_path
+
         forbidden_chars = ExFatEngine.audit_forbidden_characters(os.path.basename(path_str))
         is_prot_file = is_protected_root_file(rel_path)
         is_prot_dir = is_protected_root_dir(rel_path)
-        return {
+        is_safe = (
+            len(forbidden_chars) == 0
+            and not is_prot_file
+            and not is_prot_dir
+            and not escapes_root
+        )
+        res = {
             "path": path_str,
-            "is_safe": len(forbidden_chars) == 0 and not is_prot_file and not is_prot_dir,
+            "is_safe": is_safe,
             "forbidden_character_violations": [str(c) for c in forbidden_chars],
             "is_protected_root_file": is_prot_file,
             "is_protected_root_dir": is_prot_dir,
         }
+        if escapes_root:
+            res["error"] = "Path escapes drive root"
+        return res
 
     def handle_ssd_status(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        from smart_drive.core.sentinel import SentinelEngine
-        engine = SentinelEngine(self.root)
-        report = engine.run_health_check(self.root, auto_heal=False)
-        return dict(report)
+        try:
+            from smart_drive.core.sentinel import SentinelEngine
+            engine = SentinelEngine(self.root)
+            report = engine.run_health_check(self.root, auto_heal=False)
+            return dict(report)
+        except Exception as e:
+            logger.exception("Error during ssd_status health check: %s", e)
+            return {
+                "mount": {"root": self.root, "accessible": os.path.exists(self.root)},
+                "anti_indexing_shields": {"status": "unknown"},
+                "taxonomies": {},
+                "integrity_status": "error",
+                "error": str(e),
+            }
 
     def handle_ssd_auto_organize(self, args: Dict[str, Any]) -> Dict[str, Any]:
         zoner = AutoZoner(self.root)
         plan = zoner.generate_plan()
-        apply_mode = bool(args.get("apply", False))
+        apply_mode = self._parse_bool(args.get("apply"), default=False)
+        clean_mode = self._parse_bool(args.get("clean"), default=False)
+        if clean_mode:
+            try:
+                detector = JunkDetector(self.root, max_tier=JunkTier.TIER_1_SAFE)
+                junk_items = detector.find_junk()
+                guard = SecurityGuard(drive_root=self.root)
+                purge_engine = PurgeEngine(guard, dry_run=not apply_mode)
+                purge_engine.purge_batch(junk_items, dry_run=not apply_mode)
+            except Exception as e:
+                logger.warning("Error running clean in auto_organize: %s", e)
         if apply_mode:
             res = zoner.apply_plan(plan)
             return {"status": "applied", "result": res}
@@ -496,13 +768,38 @@ class SmartDriveMCPServer:
             sys.stdout.write(body + "\n")
         sys.stdout.flush()
 
-    def handle_request(self, req: Dict[str, Any]) -> None:
+    def handle_request(self, req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         msg_id = req.get("id")
         method = req.get("method")
-        params = req.get("params", {})
+        params = req.get("params")
+        if not isinstance(params, dict):
+            params = {}
+
+        # Rate Limiting Check
+        if method != "notifications/initialized":
+            allowed, retry_after = self.rate_limiter.acquire()
+            if not allowed:
+                logger.warning("MCP rate limit exceeded. Retry after %.2fs", retry_after)
+                retry_after_display = max(0.01, round(retry_after, 2))
+                err_resp = {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {
+                        "code": -32000,
+                        "message": f"Rate limit exceeded. Try again in {retry_after_display:.2f} seconds.",
+                        "data": {
+                            "retry_after": retry_after_display,
+                            "max_requests": self.rate_limiter.max_requests,
+                            "window_seconds": self.rate_limiter.window_seconds,
+                        },
+                    },
+                }
+                if msg_id is not None:
+                    self.send_response(err_resp)
+                return err_resp
 
         if method == "initialize":
-            self.send_response({
+            resp = {
                 "jsonrpc": "2.0",
                 "id": msg_id,
                 "result": {
@@ -515,30 +812,51 @@ class SmartDriveMCPServer:
                         "tools": {},
                     },
                 },
-            })
-            return
+            }
+            self.send_response(resp)
+            return resp
 
         if method == "ping":
-            self.send_response({"jsonrpc": "2.0", "id": msg_id, "result": {}})
-            return
+            resp = {"jsonrpc": "2.0", "id": msg_id, "result": {}}
+            self.send_response(resp)
+            return resp
 
         if method == "notifications/initialized":
-            return
+            return None
 
         if method == "tools/list":
-            self.send_response({
+            resp = {
                 "jsonrpc": "2.0",
                 "id": msg_id,
                 "result": {"tools": TOOLS},
-            })
-            return
+            }
+            self.send_response(resp)
+            return resp
 
         if method == "tools/call":
             tool_name = params.get("name")
-            arguments = params.get("arguments", {})
+            raw_arguments = params.get("arguments")
+
+            if raw_arguments is None:
+                arguments: Dict[str, Any] = {}
+            elif isinstance(raw_arguments, dict):
+                arguments = raw_arguments
+            else:
+                err_resp = {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid params: 'arguments' must be a JSON object dictionary",
+                    },
+                }
+                if msg_id is not None:
+                    self.send_response(err_resp)
+                return err_resp
+
             try:
                 res_data = self.dispatch_tool(tool_name, arguments)
-                self.send_response({
+                resp = {
                     "jsonrpc": "2.0",
                     "id": msg_id,
                     "result": {
@@ -549,10 +867,12 @@ class SmartDriveMCPServer:
                             }
                         ],
                     },
-                })
+                }
+                self.send_response(resp)
+                return resp
             except Exception as e:
                 logger.exception("Error executing tool %s: %s", tool_name, e)
-                self.send_response({
+                err_tool_resp = {
                     "jsonrpc": "2.0",
                     "id": msg_id,
                     "result": {
@@ -564,18 +884,22 @@ class SmartDriveMCPServer:
                             }
                         ],
                     },
-                })
-            return
+                }
+                self.send_response(err_tool_resp)
+                return err_tool_resp
 
         if msg_id is not None:
-            self.send_response({
+            resp = {
                 "jsonrpc": "2.0",
                 "id": msg_id,
                 "error": {
                     "code": -32601,
                     "message": f"Unhandled method '{method}'",
                 },
-            })
+            }
+            self.send_response(resp)
+            return resp
+        return None
 
     def run_stdio(self) -> None:
         """Runs the JSON-RPC 2.0 stdio event loop."""
@@ -632,4 +956,11 @@ class SmartDriveMCPServer:
                 logger.error("Error in run_stdio: %s", e)
 
 
-__all__ = ["PROTOCOL_VERSION", "SERVER_NAME", "SERVER_VERSION", "SmartDriveMCPServer", "TOOLS"]
+__all__ = [
+    "PROTOCOL_VERSION",
+    "SERVER_NAME",
+    "SERVER_VERSION",
+    "SlidingWindowRateLimiter",
+    "SmartDriveMCPServer",
+    "TOOLS",
+]

@@ -175,6 +175,7 @@ PROTECTED_ROOT_FILES: FrozenSet[str] = frozenset({
     "claude.md",
     "agents.md",
     "readme.md",
+    "privacy.md",
     ".mcp.json",
     "clean_mac_junk.bat",
     "clean_mac_junk.command",
