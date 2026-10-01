@@ -21,7 +21,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 from smart_drive.core.exfat_compat import ExFatEngine
-from smart_drive.core.config import DEFAULT_EXCLUDE_DIRS
+from smart_drive.core.config import DEFAULT_EXCLUDE_DIRS, is_protected_root_dir
 
 
 def _normalize_rel_path(path: str, root_path: str) -> str:
@@ -166,7 +166,9 @@ class FastDirectoryScanner:
         if exclude_dirs is not None:
             self.exclude_dirs.update(exclude_dirs)
         # Pre-compute lowercase set for case-insensitive exFAT matching
-        self._exclude_dirs_lower: Set[str] = {d.lower() for d in self.exclude_dirs}
+        self._exclude_dirs_lower: Set[str] = {
+            d.lower().replace("\\", "/").strip("/") for d in self.exclude_dirs
+        }
 
         self.stats = ScanStats()
         self.errors: List[ScanError] = []
@@ -183,7 +185,41 @@ class FastDirectoryScanner:
                 self.on_error(path, exc)
             except Exception:
                 pass
-        logger.warning("Scanner error [%s] on %s: %s", error_type, path, msg)
+
+        # Downtune permission errors on system/proprietary directories or PermissionError to DEBUG
+        path_lower = path.replace("\\", "/").lower()
+        is_known_system = any(
+            sys_dir in path_lower
+            for sys_dir in (
+                "windowsapps",
+                "system volume information",
+                "wpsystem",
+                "deliveryoptimization",
+                "wudownloadcache",
+                "program files",
+                "steamlibrary",
+                "riot games",
+                "ldplayer",
+                "mssql",
+                "$recycle.bin",
+                ".trashes",
+                ".fseventsd",
+                ".spotlight-v100",
+            )
+        ) or is_protected_root_dir(path)
+
+        is_permission_error = (
+            isinstance(exc, PermissionError)
+            or getattr(exc, "winerror", None) == 5  # ERROR_ACCESS_DENIED on Windows
+            or getattr(exc, "errno", None) in (13, 1)  # EACCES, EPERM
+        )
+
+        if is_permission_error or (error_type == "PERMISSION_DENIED" and is_known_system) or (is_known_system and error_type in ("STAT_FAILED", "DIR_CHECK_FAILED")):
+            logger.debug("Scanner permission denied on %s: %s", path, msg)
+        elif error_type == "PERMISSION_DENIED":
+            logger.debug("Scanner permission denied on %s: %s", path, msg)
+        else:
+            logger.warning("Scanner error [%s] on %s: %s", error_type, path, msg)
 
     def scan_iter(self) -> Iterator[ScanEntry]:
         """Stream ScanEntry records iteratively using stack-based DFS.
@@ -220,6 +256,36 @@ class FastDirectoryScanner:
                     entries = scandir_it
 
                 for entry in entries:
+                    entry_name = entry.name
+                    entry_name_lower = entry_name.lower()
+
+                    # 0. Fast pre-probe exclusion check BEFORE any syscalls (zero filesystem I/O)
+                    if entry_name in self.exclude_dirs or entry_name_lower in self._exclude_dirs_lower:
+                        continue
+
+                    norm_path = os.path.normpath(entry.path)
+                    rel_path = _normalize_rel_path(norm_path, self.root_path)
+                    rel_path_lower = rel_path.lower().replace("\\", "/").strip("/")
+
+                    # Support compound paths and path segment exclusions
+                    if (
+                        rel_path in self.exclude_dirs
+                        or rel_path_lower in self._exclude_dirs_lower
+                    ):
+                        continue
+
+                    parts = rel_path_lower.split("/")
+                    is_excluded = False
+                    for i in range(len(parts)):
+                        for j in range(i + 1, len(parts) + 1):
+                            if "/".join(parts[i:j]) in self._exclude_dirs_lower:
+                                is_excluded = True
+                                break
+                        if is_excluded:
+                            break
+                    if is_excluded:
+                        continue
+
                     # 1. Symlink probe and safety guard
                     try:
                         is_sym = entry.is_symlink()
@@ -240,18 +306,11 @@ class FastDirectoryScanner:
                         self._record_error(entry.path, "DIR_CHECK_FAILED", e)
                         continue
 
-                    norm_path = os.path.normpath(entry.path)
-                    rel_path = _normalize_rel_path(norm_path, self.root_path)
-
                     item_depth = depth + 1
                     if self.max_depth is not None and item_depth > self.max_depth:
                         continue
 
                     if is_d:
-                        # Check case-sensitive and case-insensitive exclusion rules
-                        if entry.name in self.exclude_dirs or entry.name.lower() in self._exclude_dirs_lower:
-                            continue
-
                         # Add directory to DFS stack if item_depth allows further descent
                         if self.max_depth is None or item_depth < self.max_depth:
                             stack.append((norm_path, item_depth))

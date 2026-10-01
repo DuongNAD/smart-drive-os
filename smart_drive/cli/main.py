@@ -51,6 +51,7 @@ from smart_drive.cli.cmd_mcp import cmd_mcp
 from smart_drive.cli.cmd_mcp_config import cmd_mcp_config
 from smart_drive.cli.cmd_offload import cmd_offload
 from smart_drive.cli.cmd_organize import cmd_organize
+from smart_drive.cli.cmd_path_check import cmd_path_check
 from smart_drive.cli.cmd_search import cmd_search
 from smart_drive.cli.cmd_sentinel import cmd_sentinel
 from smart_drive.cli.cmd_snapshot import cmd_snapshot
@@ -381,6 +382,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_health.add_argument("--root", help="Alias for target drive root")
     p_health.add_argument("--json", action="store_true", help="Output health report in structured JSON format")
 
+    # self-path-check subcommand
+    p_path_check = subparsers.add_parser(
+        "self-path-check",
+        aliases=["path-check", "self_path_check"],
+        help="Verify Python CLI script paths on system PATH",
+    )
+
     return parser
 
 
@@ -414,6 +422,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         "classify": cmd_classify,
         "offload": cmd_offload,
         "health": cmd_health,
+        "self-path-check": cmd_path_check,
+        "path-check": cmd_path_check,
+        "self_path_check": cmd_path_check,
     }
 
     handler = dispatch.get(args.subcommand)

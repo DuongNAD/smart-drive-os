@@ -212,10 +212,10 @@ class SecurityGuard:
         if len(parts) >= 2 and parts[0].lower() == ANTI_INDEXING_FSEVENT_DIR.lower() and parts[1].lower() == "no_log":
             return True, "Anti-indexing marker protected: .fseventsd/no_log"
 
-        # Rule 4: Protected root directories
-        if is_protected_root_dir(root_segment):
-            if len(parts) == 1:
-                return True, f"Inviolable business directory: {root_segment}"
+        # Rule 4: Protected root directories or protected nested paths
+        if is_protected_root_dir(root_segment) or is_protected_root_dir(rel_path) or is_protected_root_dir(base_name):
+            if len(parts) == 1 or is_protected_root_dir(rel_path) or is_protected_root_dir(base_name):
+                return True, f"Inviolable business directory: {rel_path}"
             rule = match_junk_rule(base_name, is_dir=os.path.isdir(real_target), max_tier=JunkTier.TIER_3_SENSITIVE)
             if rule is None:
                 rule = match_junk_rule(base_name, is_dir=False, max_tier=JunkTier.TIER_3_SENSITIVE) or \

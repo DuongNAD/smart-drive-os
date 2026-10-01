@@ -1,13 +1,13 @@
-# BRIEFING — 2026-10-01T09:32:00Z
+# BRIEFING — 2026-10-01T10:10:00Z
 
 ## Mission
-Sentinel monitoring and lifecycle management for SmartDrive-OS MCP optimization, path security hardening, zero-dependency audit, and portable launcher implementation.
+Upgrade SmartDrive-OS architecture to Workstation Hybrid standard: resolve 7 real-world Windows D: drive (fixed NTFS) issues, AutoZoner self-defense, exclude sensitive service/game dirs, integrate AcademicClassifier (FPTU course regex & Vietnamese mojibake normalization), CLI self-path-check, and 100% multi-platform test pass.
 
 ## 🔒 My Identity
 - Archetype: sentinel
 - Working directory: /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/sentinel
-- Orchestrator: 49720693-a82c-49f8-8742-35eba7ba1b1f (Retired after victory claim)
-- Victory Auditor: 52027df7-6883-448f-8e3a-5a4377046051 (VICTORY CONFIRMED)
+- Orchestrator: 7b5524b5-f368-4c9e-9c61-3310d53f6752
+- Victory Auditor: to be spawned on victory claim
 
 ## 🔒 Key Constraints
 - No technical decisions — relay only
@@ -16,30 +16,25 @@ Sentinel monitoring and lifecycle management for SmartDrive-OS MCP optimization,
 - Do not write code or run technical implementations
 
 ## User Context
-- **Last user request**: Tối ưu hóa MCP cho AI coding agents, sửa triệt để lỗi path traversal / UNC, chuẩn zero-dependencies, launcher portable độc lập.
+- **Last user request**: Workstation Hybrid architecture upgrade, Windows D: NTFS abstraction, AutoZoner self-defense, AcademicClassifier (FPTU + mojibake fix), 100% tests pass.
 - **Pending clarifications**: none
 - **Delivered results**:
-  - R1: MCP Server token-efficient formatting, pagination & multi-agent registrar (Antigravity 2.0, Claude, Cursor, Windsurf, .mcp.json).
-  - R2: Universal path traversal hardening, UNC & cross-drive sanitization, 100% test pass (686/686).
-  - R3: Zero runtime external pip dependencies, pure Python 3.9+ standard library, stdio isolation.
-  - R4: Full matrix of 20 portable launchers with 5-tier self-environment check and host isolation.
+  - Previous milestone: MCP server token efficiency, path security hardening, zero-dependencies, portable launchers.
 
 ## Project Status
-- **Phase**: complete
-- **Active Orchestrator Directory**: /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/orchestrator_2
-- **Orchestrator Claim**: VICTORY CLAIMED
-- **Victory Audit Verdict**: VICTORY CONFIRMED
+- **Phase**: in progress (Milestones 1 Complete, 2 Finalizing, 3 & 4 Implemented)
+- **Route**: General (`teamwork_preview_orchestrator`)
+- **Active Orchestrator Directory**: /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/orchestrator_3
+- **Current Activity**: Milestone 1 passed (697 tests); Milestone 2 finalizing self-defense; Milestone 3 (AcademicClassifier) & Milestone 4 (cmd_path_check & test_workstation_hybrid) created.
+- **Orchestrator Claim**: none
+- **Victory Audit Verdict**: pending
 
 ## Victory Audit Status
-- **Triggered**: yes
-- **Verdict**: VICTORY CONFIRMED
-- **Auditor ID**: 52027df7-6883-448f-8e3a-5a4377046051
-- **Test execution**: 697 tests (686 passed, 0 failed, 0 errors, 11 skipped)
+- **Triggered**: no
+- **Verdict**: pending
 - **Retry count**: 0
 
 ## Artifact Index
 - /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/ORIGINAL_REQUEST.md — Authoritative record of user requests
 - /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/sentinel/BRIEFING.md — Persistent sentinel memory
-- /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/sentinel/handoff.md — Sentinel final handoff report
-- /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/orchestrator_2/handoff.md — Orchestrator handoff report
-- /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/victory_auditor_2/handoff.md — Auditor handoff report
+

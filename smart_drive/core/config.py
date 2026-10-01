@@ -155,20 +155,86 @@ PROTECTED_ROOT_DIRS: FrozenSet[str] = frozenset({
     "teamwork_projects",
     ".agents",
     "python_master_final",
-    # OS System Directories
+    # OS System Directories (Windows & Unix)
     "system volume information",
     ".fseventsd",
+    ".spotlight-v100",
+    ".trashes",
+    "$recycle.bin",
+    "windowsapps",
+    "wpsystem",
+    "deliveryoptimization",
+    "wudownloadcache",
+    "program files",
+    "program files (x86)",
+    # Game & Application Directories
+    "steamlibrary",
+    "riot games",
+    "ldplayer",
+    "sql2022",
+    "downloads",
+    "32837",
+    "fo4",
+    # Active Services & Databases
+    "dbi202_vupt/mssql16.mssqlserver",
+    "dbi202_vupt\\mssql16.mssqlserver",
+    "mssql16.mssqlserver",
+    "mssqlserver",
+    "mssql",
+    # SmartDrive-OS Self-Defense
+    "smart-drive-os",
+    "smart_drive_os",
+    "smart_drive",
+    "smart_drive_manager",
 })
+
+_TAXONOMY_DIRS_LOWER: FrozenSet[str] = frozenset(t.lower() for t in PROTECTED_CORE_TAXONOMIES)
 
 
 def is_protected_root_dir(dir_name: str) -> bool:
     """Validates whether a directory name corresponds to an inviolable protected root folder.
 
-    Handles leading/trailing slashes and case-insensitivity.
+    Handles leading/trailing slashes, Windows drive letters, compound paths,
+    path segments, and case-insensitivity.
     """
-    normalized = dir_name.strip().replace("\\", "/").rstrip("/")
+    if not dir_name:
+        return False
+
+    cleaned = dir_name.strip().replace("\\", "/")
+    # Remove drive prefix if present (e.g. "D:", "C:")
+    if len(cleaned) >= 2 and cleaned[1] == ":":
+        cleaned = cleaned[2:]
+    normalized = cleaned.strip("/")
+    if not normalized:
+        return False
+
+    norm_lower = normalized.lower()
+
+    # 1. Direct match on normalized relative path
+    if norm_lower in PROTECTED_ROOT_DIRS:
+        return True
+
+    # 2. Check base directory name (e.g. "D:/WindowsApps" -> "WindowsApps")
     base_name = os.path.basename(normalized) or normalized
-    return base_name.lower() in PROTECTED_ROOT_DIRS
+    base_lower = base_name.lower()
+    if base_lower in PROTECTED_ROOT_DIRS:
+        return True
+
+    # 3. Check compound path segments and subpaths for non-taxonomy protected entities
+    # (e.g., "DBI202_VuPT/MSSQL16.MSSQLSERVER", or inside system/app/service dirs)
+    # Inner items inside taxonomies (e.g. 01_AI_Models/llama3.gguf) are NOT root dirs.
+    parts = norm_lower.split("/")
+    for part in parts:
+        if part in PROTECTED_ROOT_DIRS and part not in _TAXONOMY_DIRS_LOWER:
+            return True
+
+    for i in range(len(parts)):
+        for j in range(i + 1, len(parts) + 1):
+            subpath = "/".join(parts[i:j])
+            if subpath in PROTECTED_ROOT_DIRS and subpath not in _TAXONOMY_DIRS_LOWER:
+                return True
+
+    return False
 
 
 # ==============================================================================
@@ -540,12 +606,40 @@ def match_junk_rule(
 # ==============================================================================
 
 DEFAULT_EXCLUDE_DIRS: FrozenSet[str] = frozenset({
+    # Windows & Unix System Directories
     "$RECYCLE.BIN",
+    "$Recycle.Bin",
     "System Volume Information",
     ".Spotlight-V100",
     ".Trashes",
+    ".fseventsd",
     ".git",
     ".agents",
+    "WindowsApps",
+    "WpSystem",
+    "DeliveryOptimization",
+    "WUDownloadCache",
+    "Program Files",
+    "Program Files (x86)",
+    # Game & Application Directories
+    "SteamLibrary",
+    "Riot Games",
+    "LDPlayer",
+    "SQL2022",
+    "Downloads",
+    "32837",
+    "fo4",
+    # Active Services & Databases
+    "DBI202_VuPT/MSSQL16.MSSQLSERVER",
+    "DBI202_VuPT\\MSSQL16.MSSQLSERVER",
+    "MSSQL16.MSSQLSERVER",
+    "MSSQLSERVER",
+    "MSSQL",
+    # SmartDrive-OS Self-Defense
+    "smart-drive-os",
+    "smart_drive_os",
+    "smart_drive",
+    "smart_drive_manager",
 })
 
 

@@ -249,25 +249,44 @@ class TestRealHostInspection(unittest.TestCase):
         secondary_drives = list_secondary_drives()
         self.assertGreaterEqual(len(secondary_drives), 1)
 
-        # If D: is Kingston XS2000 external SSD, verify USB detection
+        # Validate general invariants across all detected secondary drives
+        for sec in secondary_drives:
+            self.assertFalse(sec.is_system_drive)
+            self.assertGreater(sec.total_bytes, 0)
+            self.assertGreater(sec.cluster_size_bytes, 0)
+            self.assertIn(sec.filesystem, [FilesystemType.NTFS, FilesystemType.EXFAT, FilesystemType.FAT32, FilesystemType.OTHER])
+            self.assertIn(sec.hardware_type, [DriveType.FIXED_INTERNAL, DriveType.REMOVABLE_EXTERNAL, DriveType.UNKNOWN])
+            if sec.filesystem == FilesystemType.EXFAT:
+                self.assertTrue(sec.anti_symlink_required)
+                self.assertFalse(sec.supports_junctions)
+            elif sec.filesystem == FilesystemType.NTFS:
+                self.assertFalse(sec.anti_symlink_required)
+                self.assertTrue(sec.supports_junctions)
+
+        # Dynamic inspection for D: respecting hardware and format differences
         d_matches = [d for d in secondary_drives if d.drive_letter.upper() == "D:"]
         if d_matches:
-            d_info = d_matches[0]
+            d_info = inspect_drive("D:")
             self.assertFalse(d_info.is_system_drive)
-            self.assertEqual(d_info.filesystem, FilesystemType.EXFAT)
-            self.assertEqual(d_info.cluster_size_bytes, 524288)
-            self.assertEqual(d_info.hardware_type, DriveType.REMOVABLE_EXTERNAL)
-            self.assertEqual(d_info.bus_type.upper(), "USB")
+            if d_info.filesystem == FilesystemType.EXFAT:
+                self.assertTrue(d_info.anti_symlink_required)
+                self.assertFalse(d_info.supports_junctions)
+                if "kingston" in (d_info.vendor_model or "").lower() or (d_info.bus_type or "").upper() == "USB":
+                    self.assertEqual(d_info.hardware_type, DriveType.REMOVABLE_EXTERNAL)
+                    self.assertEqual(d_info.cluster_size_bytes, 524288)
+            elif d_info.filesystem == FilesystemType.NTFS:
+                self.assertFalse(d_info.anti_symlink_required)
+                self.assertTrue(d_info.supports_junctions)
 
-        # If E: is Crucial internal NVMe SSD, verify NVMe detection
+        # Dynamic inspection for E:
         e_matches = [d for d in secondary_drives if d.drive_letter.upper() == "E:"]
         if e_matches:
-            e_info = e_matches[0]
+            e_info = inspect_drive("E:")
             self.assertFalse(e_info.is_system_drive)
-            self.assertEqual(e_info.filesystem, FilesystemType.NTFS)
-            self.assertEqual(e_info.cluster_size_bytes, 4096)
-            self.assertEqual(e_info.hardware_type, DriveType.FIXED_INTERNAL)
-            self.assertEqual(e_info.bus_type.upper(), "NVME")
+            if e_info.filesystem == FilesystemType.NTFS:
+                self.assertTrue(e_info.supports_junctions)
+                if "crucial" in (e_info.vendor_model or "").lower() or (e_info.bus_type or "").upper() == "NVME":
+                    self.assertEqual(e_info.hardware_type, DriveType.FIXED_INTERNAL)
 
     def test_inspect_nonexistent_drive_raises_filenotfound(self):
         with self.assertRaises(FileNotFoundError):

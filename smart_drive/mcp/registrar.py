@@ -19,9 +19,27 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
+def _safe_home_dir() -> Path:
+    """Safely determines user home directory with fallbacks for stripped environments (Python 3.13+)."""
+    try:
+        return Path.home()
+    except Exception:
+        pass
+
+    user_profile = os.environ.get("USERPROFILE")
+    if user_profile:
+        return Path(user_profile)
+    home_env = os.environ.get("HOME")
+    if home_env:
+        return Path(home_env)
+    if sys.platform == "win32" or platform.system().lower() == "windows":
+        return Path("C:/Users/Default")
+    return Path("/tmp")
+
+
 def get_agent_config_paths() -> Dict[str, Path]:
     """Returns standard config paths for supported AI agents on this host."""
-    home = Path.home()
+    home = _safe_home_dir()
     system = platform.system().lower()
 
     # 1. Google Antigravity 2.0
@@ -63,7 +81,7 @@ def get_agent_config_paths() -> Dict[str, Path]:
 
 def detect_installed_agents() -> Dict[str, bool]:
     """Detects which supported AI coding agents are installed on the local system."""
-    home = Path.home()
+    home = _safe_home_dir()
     system = platform.system().lower()
 
     detected = {
@@ -260,6 +278,7 @@ def register_ide_configs(
 
 
 __all__ = [
+    "_safe_home_dir",
     "detect_installed_agents",
     "get_agent_config_paths",
     "load_json_config",

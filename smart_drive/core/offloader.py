@@ -17,7 +17,9 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
+import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -207,7 +209,17 @@ CACHE_CATALOG: Dict[str, CacheDefinition] = {
 def _get_base_directories() -> Dict[str, Path]:
     """Resolves base user directories supporting test environment overrides."""
     mock_user = os.environ.get("SMART_DRIVE_MOCK_USERPROFILE")
-    user_str = mock_user or os.environ.get("USERPROFILE") or os.environ.get("HOME") or str(Path.home())
+    if mock_user:
+        user_str = mock_user
+    elif os.environ.get("USERPROFILE"):
+        user_str = os.environ["USERPROFILE"]
+    elif os.environ.get("HOME"):
+        user_str = os.environ["HOME"]
+    else:
+        try:
+            user_str = str(Path.home())
+        except Exception:
+            user_str = "C:\\Users\\Default" if (sys.platform == "win32" or platform.system().lower() == "windows") else "/tmp"
     user_home = Path(os.path.abspath(user_str))
 
     local_app_data_str = os.environ.get("LOCALAPPDATA") or str(user_home / "AppData" / "Local")

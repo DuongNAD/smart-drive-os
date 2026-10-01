@@ -101,6 +101,27 @@ PROFILES = {
             "06_Archives_Storage/backups",
         ],
     },
+    "workstation-hybrid": {
+        "description": "Internal secondary drive (D:, E:) hybrid profile accommodating existing Games, Windows Apps, and University Coursework",
+        "taxonomies": [
+            "01_AI_Models",
+            "02_Learning_Knowledge",
+            "03_Development_Projects",
+            "04_System_Workspaces",
+            "05_Dev_Toolbox",
+            "06_Archives_Storage",
+        ],
+        "subdirs": [
+            "02_Learning_Knowledge/FPTU",
+            "02_Learning_Knowledge/Personal_Books",
+            "02_Learning_Knowledge/Notes",
+            "03_Development_Projects/active",
+            "03_Development_Projects/archive",
+            "05_Dev_Toolbox/OEM_Drivers",
+            "05_Dev_Toolbox/Installers",
+            "05_Dev_Toolbox/scripts",
+        ],
+    },
 }
 
 AGENTS_MD_TEMPLATE = """# AGENTS.md - Autonomous AI Coding Agent Manifest

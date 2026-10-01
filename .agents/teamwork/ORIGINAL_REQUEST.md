@@ -128,3 +128,63 @@ Integrity mode: development
 ### Packaging & Compatibility
 - [ ] Không có bất kỳ external pip package nào được đưa vào `pyproject.toml`.
 - [ ] Launcher portable Windows chạy kiểm tra ổ đĩa độc lập mà không yêu cầu cấu hình Git hay thông tin xác thực tài khoản.
+
+## 2026-10-01T10:09:26Z
+
+Nâng cấp kiến trúc SmartDrive-OS lên chuẩn Workstation Hybrid: giải quyết triệt để 7 vấn đề thực tế trên máy Windows (ổ D: fixed NTFS), tự bảo vệ chính mình khỏi AutoZoner, loại trừ thư mục dịch vụ/game nhạy cảm, tích hợp AcademicClassifier nhận diện môn học đại học FPTU & sửa lỗi font mojibake, và duy trì 100% tests pass đa nền tảng.
+
+Working directory: /Users/duongnad/Documents/tool/smart-drive-os
+Integrity mode: development
+
+## Requirements
+
+### R1. Loại bỏ giả định cứng về phần cứng (Hardware & Filesystem Abstraction)
+- Cập nhật các test suite (`tests/test_drive_detector.py`, `tests/test_adversarial_filesystem.py`) để không còn giả định cứng ổ D: luôn là Kingston XS2000 USB exFAT 512KB. Sử dụng `inspect_drive(drive_letter)` để kiểm tra kiểu phần cứng và định dạng thực tế (NTFS vs exFAT) trước khi assert.
+- Bọc khối `try ... except` quanh `Path.home()` trong `smart_drive/mcp/registrar.py`, fallback về `os.environ.get("USERPROFILE")` hoặc `Path("C:/Users/Default")` / `Path("/tmp")` khi môi trường biến bị xóa trắng trên Python 3.13.
+- Bổ sung `@unittest.skipIf(sys.platform == "win32", "os.symlink requires elevation on Windows")` cho các test case gọi `os.symlink` trực tiếp trong `tests/test_mcp_adversarial_challenger1.py`.
+
+### R2. Cơ chế tự bảo vệ tuyệt đối trong AutoZoner & Bảo vệ ứng dụng/dịch vụ Windows
+- Ngăn chặn triệt để nguy cơ AutoZoner "tự di chuyển chính mình": tự động đưa đường dẫn gốc thực thi của SmartDrive-OS (`Path(__file__).resolve()`) vào danh sách bảo vệ bất biến.
+- Mở rộng `PROTECTED_ROOT_DIRS` và `DEFAULT_EXCLUDE_DIRS` trong `smart_drive/core/config.py`:
+  - Thư mục hệ thống: `WindowsApps`, `WpSystem`, `DeliveryOptimization`, `WUDownloadCache`, `Program Files`, `$Recycle.Bin`, `System Volume Information`.
+  - Thư mục game/ứng dụng: `SteamLibrary`, `Riot Games`, `LDPlayer`, `SQL2022`, `Downloads`, `32837`, `fo4`.
+  - Thư mục chứa cơ sở dữ liệu và dịch vụ đang chạy: `DBI202_VuPT\MSSQL16.MSSQLSERVER` (Microsoft SQL Server 2022).
+- Thêm cơ chế xử lý ngoại lệ an toàn trong `smart_drive/core/scanner.py` để không spam lỗi `Scanner error [PERMISSION_DENIED]` từ các thư mục độc quyền của hệ thống.
+
+### R3. Profile `workstation-hybrid` & Bộ phân loại `AcademicClassifier` (Việt Nam Localization)
+- Bổ sung profile `workstation-hybrid` trong `DriveInitializer` (`cmd_init.py`) và `AutoZoner` tối ưu riêng cho ổ cứng phụ gắn trong (Fixed Internal SSD NTFS) đang chứa Game, ứng dụng Windows và dữ liệu học tập/dự án.
+- Xây dựng module `AcademicClassifier` trong `smart_drive/core/academic_classifier.py`:
+  - Nhận diện mã môn học đại học qua Regex (`[A-Z]{2,4}\d{3}[a-z]?` như DBI202, WED201c, SWE202c, OSG, PRN211, PRJ301, LAB1_sp26, PE_WED201c,...).
+  - Nhận diện từ khóa học thuật tiếng Việt: `hoc ky`, `ky`, `fptu`, `pe_`, `lab`, `bai tap`, `de thi`, `on luyen`.
+  - Phân loại và gom cấu trúc thông minh theo Học kỳ & Môn học: `02_Learning_Knowledge/FPTU/Ky_X/<Mã_Môn>/`.
+  - Tích hợp bộ giải mã / sửa lỗi font mojibake tên thư mục (ví dụ `h?c k? 3 fptu` ➔ `Hoc_Ky_3_FPTU`, `k 1 fptu` ➔ `Ky_1_FPTU`, `n luy?n pe dbi202` ➔ `On_Luyen_PE_DBI202`).
+  - Gom tài liệu và bộ cài cá nhân: `dich truyen` ➔ `02_Learning_Knowledge/Personal_Books/`, `LENOVO` ➔ `05_Dev_Toolbox/OEM_Drivers/`, `SQL2022` ➔ `05_Dev_Toolbox/Installers/`.
+
+### R4. Tiện ích Môi trường CLI & Kiểm định Chất lượng Toàn diện (100% Tests Pass)
+- Thêm lệnh CLI `smart-drive self-path-check` để hướng dẫn người dùng kiểm tra và cấu hình Scripts vào User PATH trên Windows.
+- Đảm bảo các launcher `.bat`, `.ps1` luôn ưu tiên thực thi bằng cú pháp `python -m smart_drive <lệnh>` để hoạt động độc lập không phụ thuộc biến PATH.
+- Bổ sung bộ test mới cho `AcademicClassifier`, `workstation-hybrid`, và cơ chế tự bảo vệ của `AutoZoner`. Đảm bảo 100% toàn bộ bộ test (700+ tests) pass sạch sẽ trên cả macOS và Windows.
+
+## Verification Resources
+- Toàn bộ bộ test hiện tại trong `tests/` (697 tests).
+- Lệnh kiểm thử tự động: `python3 -m unittest discover tests` hoặc `pytest`.
+
+## Acceptance Criteria
+
+### Tương Thích Filesystem & Nền Tảng
+- [ ] Không còn bất kỳ test nào fail do giả định cứng ổ D: là USB exFAT Kingston khi chạy trên máy Windows có ổ D: NTFS.
+- [ ] `Path.home()` trong `registrar.py` không crash trên Python 3.13 khi môi trường bị xóa trắng.
+- [ ] Các test case symlink trên Windows không gặp lỗi `WinError 1314`.
+
+### An Toàn & Bảo Vệ Tuyệt Đối
+- [ ] AutoZoner tuyệt đối không bao giờ tạo action di chuyển chính thư mục `smart-drive-os` hoặc các thư mục hệ thống/game/SQL Server.
+- [ ] Lệnh `smart-drive clean` không còn in tràn lỗi `[PERMISSION_DENIED]` từ `WindowsApps` hay log SQL Server.
+
+### AcademicClassifier & Localization
+- [ ] Toàn bộ các thư mục môn học FPTU (`DBI202_VuPT`, `wed201c`, `PE_WED201c_SP26`, `h?c k? 3 fptu`) được tự động gom gọn theo kỳ/môn và chuẩn hóa tên sạch font vào `02_Learning_Knowledge/FPTU/`.
+- [ ] Profile `workstation-hybrid` khởi tạo cấu trúc phân vùng phù hợp cho ổ đĩa phụ hybrid.
+
+### Zero-Dependency & Test Suite
+- [ ] Duy trì tuyệt đối chuẩn Zero external pip dependencies (`dependencies = []`).
+- [ ] Toàn bộ bộ test (700+ tests) pass 100% với 0 failures, 0 errors.
+

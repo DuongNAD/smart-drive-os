@@ -361,6 +361,7 @@ class TestAdversarialWorkerRemediationsIntegrity(SmartDriveTestCase):
         self.assertEqual(normalize_drive_letter("c:/windows"), "C:")
         self.assertEqual(normalize_drive_letter("D:\\"), "D:")
 
+    @unittest.skipIf(sys.platform == "win32", "os.symlink requires elevation on Windows")
     def test_broken_junction_detection_on_posix(self) -> None:
         """Broken directory symlinks on POSIX are correctly identified as junctions."""
         temp_dir = tempfile.mkdtemp()

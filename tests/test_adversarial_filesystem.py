@@ -41,6 +41,7 @@ from smart_drive.core.drive_detector import (
     FilesystemType,
     DriveInfo,
     FilesystemAdapter,
+    inspect_drive,
     get_filesystem_adapter,
 )
 from smart_drive.core.exfat_compat import (
@@ -379,14 +380,22 @@ class TestAntiSymlinkAndJunctionSupport(unittest.TestCase):
             # 3. NTFS adapter allows junctions (check_symlink_violation returns False)
             self.assertFalse(self.ntfs.check_symlink_violation(junction_link))
 
-            # 4. If host has an exFAT volume mounted (e.g. D:), verify mklink /J is rejected by OS
+            # 4. If host has an actual exFAT volume mounted, verify mklink /J is rejected by OS
+            exfat_probe_dir = None
             if os.path.exists("D:\\"):
-                exfat_junc = "D:\\__test_junc_probe__"
-                res_exfat = subprocess.run(f'cmd /c mklink /J "{exfat_junc}" "{target_dir}"', capture_output=True, text=True, shell=True)
+                try:
+                    d_info = inspect_drive("D:")
+                    if d_info.filesystem == FilesystemType.EXFAT:
+                        exfat_probe_dir = "D:\\__test_junc_probe__"
+                except Exception:
+                    pass
+
+            if exfat_probe_dir:
+                res_exfat = subprocess.run(f'cmd /c mklink /J "{exfat_probe_dir}" "{target_dir}"', capture_output=True, text=True, shell=True)
                 self.assertNotEqual(res_exfat.returncode, 0, "mklink /J must fail when target location is on exFAT")
                 self.assertIn("Local NTFS volumes are required", res_exfat.stderr + res_exfat.stdout)
-                if os.path.lexists(exfat_junc):
-                    os.rmdir(exfat_junc)
+                if os.path.lexists(exfat_probe_dir):
+                    os.rmdir(exfat_probe_dir)
 
             # 5. Clean up junction (rmdir removes reparse point without touching target)
             os.rmdir(junction_link)

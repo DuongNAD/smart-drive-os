@@ -26,7 +26,23 @@ from smart_drive.core.config import (
     is_protected_root_dir,
     is_protected_root_file,
 )
+from smart_drive.core.academic_classifier import AcademicClassifier
 from smart_drive.core.exfat_compat import ExFatEngine
+
+# Inviolable execution root self-defense anchors
+_CURRENT_FILE = Path(__file__).resolve()
+_SMART_DRIVE_CORE_DIR = _CURRENT_FILE.parent              # smart_drive/core
+_SMART_DRIVE_PKG_DIR = _CURRENT_FILE.parents[1]           # smart_drive
+_SMART_DRIVE_REPO_DIR = _CURRENT_FILE.parents[2]          # smart-drive-os (repository root)
+
+
+def _is_relative_to(path: Path, base: Path) -> bool:
+    """Safe check if path is relative to base across Python 3.8+."""
+    try:
+        path.relative_to(base)
+        return True
+    except (ValueError, RuntimeError):
+        return False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -89,6 +105,23 @@ class AutoZoner:
         self.root = os.path.abspath(root)
         self.compat = ExFatEngine()
 
+        # Inviolable execution root self-defense anchors
+        self._self_ancestors: Set[Path] = set(_CURRENT_FILE.parents)
+        self._self_protected_paths: Set[Path] = {
+            _CURRENT_FILE,
+            _SMART_DRIVE_CORE_DIR,
+            _SMART_DRIVE_PKG_DIR,
+            _SMART_DRIVE_REPO_DIR,
+        }
+        self._self_protected_names: Set[str] = {
+            "smart-drive-os",
+            "smart_drive_os",
+            "smart_drive",
+            "smart_drive_manager",
+            _SMART_DRIVE_REPO_DIR.name.lower(),
+            _SMART_DRIVE_PKG_DIR.name.lower(),
+        }
+
     def ensure_taxonomies_exist(self) -> List[str]:
         """Ensures the 6 core taxonomy directories exist on disk."""
         created = []
@@ -134,11 +167,29 @@ class AutoZoner:
         Returns None if item should not be relocated.
         """
         base_name = os.path.basename(item_path)
+        base_name_lower = base_name.lower()
         is_dir = os.path.isdir(item_path)
+
+        # 0. INVIOLABLE SELF-DEFENSE: Never relocate running SmartDrive-OS code, repo root, or ancestors
+        if base_name_lower in self._self_protected_names:
+            return None
+
+        try:
+            resolved_item = Path(item_path).resolve()
+            if (
+                resolved_item in self._self_protected_paths
+                or resolved_item in self._self_ancestors
+                or _is_relative_to(_CURRENT_FILE, resolved_item)
+                or _is_relative_to(resolved_item, _SMART_DRIVE_REPO_DIR)
+                or any(part.lower() in self._self_protected_names for part in resolved_item.parts)
+            ):
+                return None
+        except (ValueError, OSError, RuntimeError):
+            pass
 
         # 1. Whitelist guard: Never move protected items
         if is_dir:
-            if is_protected_root_dir(base_name):
+            if is_protected_root_dir(base_name) or is_protected_root_dir(item_path):
                 return None
         else:
             if is_protected_root_file(base_name):
@@ -150,6 +201,10 @@ class AutoZoner:
 
         # 2. Directory Classification
         if is_dir:
+            academic_res = AcademicClassifier.classify_folder(base_name)
+            if academic_res:
+                return academic_res
+
             try:
                 entries = {e.name.lower() for e in os.scandir(item_path)}
             except (OSError, PermissionError):
@@ -276,7 +331,25 @@ class AutoZoner:
 
         for action in plan:
             base_name = os.path.basename(action.src_path)
-            if action.is_dir and is_protected_root_dir(base_name):
+            base_lower = base_name.lower()
+
+            # Inviolable self-defense check: never relocate running SmartDrive-OS code, repo root, or ancestors
+            if base_lower in self._self_protected_names:
+                continue
+            try:
+                resolved_src = Path(action.src_path).resolve()
+                if (
+                    resolved_src in self._self_protected_paths
+                    or resolved_src in self._self_ancestors
+                    or _is_relative_to(_CURRENT_FILE, resolved_src)
+                    or _is_relative_to(resolved_src, _SMART_DRIVE_REPO_DIR)
+                    or any(part.lower() in self._self_protected_names for part in resolved_src.parts)
+                ):
+                    continue
+            except (ValueError, OSError, RuntimeError):
+                pass
+
+            if action.is_dir and (is_protected_root_dir(base_name) or is_protected_root_dir(action.src_path)):
                 continue
             if not action.is_dir and is_protected_root_file(base_name):
                 continue
