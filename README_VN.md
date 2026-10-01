@@ -9,7 +9,7 @@
 [![Web Dashboard](https://img.shields.io/badge/Giao%20di%E1%BB%87n-Web%20Dark%20SPA-purple.svg)](#)
 [![Giao thức MCP: JSON-RPC 2.0](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
 [![Kiểm định Bảo mật MCP: Hạng A (100/100)](https://img.shields.io/badge/MCP%20Audit-H%E1%BA%A1ng%20A%20(100%2F100)-brightgreen.svg)](#)
-[![Điểm M8ven](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
+[![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![Kiểm thử: 725/725 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-725%2F725%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Launcher Portable](https://img.shields.io/badge/launchers-20%20t%E1%BB%87p%20kh%E1%BB%9Fi%20ch%E1%BA%A1y-blue.svg)](#)
 [![Phiên bản: v1.1.0](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
@@ -419,6 +419,16 @@ Các mẫu cấu hình dựng sẵn cũng được lưu trữ trong `configs/`:
 - `configs/claude_desktop_config.json` — Claude Desktop & Claude Code (`~/.claude.json`)
 - `configs/cursor_mcp.json` — Cursor IDE / OpenAI Codex (`~/.cursor/mcp.json`)
 - `configs/windsurf_mcp.json` — Windsurf IDE (`~/.codeium/windsurf/mcp_config.json`)
+
+### Chứng Chỉ & Chỉ Số Tin Cậy M8ven MCP (Grade A 100/100)
+SmartDrive-OS được kiểm định độc lập và xếp hạng chính thức trên thư mục [M8ven MCP Directory](https://m8ven.ai/mcp/duongnad-smart-drive-os) với **Điểm Tin Cậy Tuyệt Đối Hạng A (100/100)**:
+- **Mã Xác Thực (Verification Token)**: `duongnad-smart-drive-os-1kxkwu`
+- **100% AST Handler Isolation**: Toàn bộ handler công cụ được phân giải tĩnh qua chuỗi `if-elif` và class-level handler map, tuyệt đối không dùng `eval()` hay reflection động gây rủi ro bảo mật.
+- **Xác Thực Handshake Thời Gian Hằng Số**: Hỗ trợ xác thực token an toàn chống timing attack qua `hmac.compare_digest` chuẩn JSON-RPC `auth/handshake`. Hỗ trợ các tham số `--auth-token`, `--require-auth` hoặc biến môi trường `SMART_DRIVE_MCP_AUTH_TOKEN`.
+- **Bộ Giới Hạn Tần Suất Trượt (Rate Limiter)**: Cơ chế `SlidingWindowRateLimiter` thread-safe ngăn ngừa agent gọi lặp vô tận (runaway loop), phản hồi mã lỗi chuẩn `-32000` kèm header `Retry-After` chính xác tới millisecond.
+- **Chặn Đứng Path Traversal & Escape**: Hàm `_resolve_safe_path` cô lập 100% các vector tấn công vượt cấp (`..`), null-byte (`\0`) và nhảy ổ đĩa.
+- **Tuân Thủ Chuẩn M8ven, Claude & OpenAI**: Khai báo minh bạch các thuộc tính an toàn `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` cho toàn bộ 8 công cụ.
+- **Không Gửi Dữ Liệu Ra Ngoài**: Đảm bảo 100% giao tiếp qua luồng `stdio` cục bộ, không mở port mạng, không chứa thư viện tracking/telemetry.
 
 ---
 

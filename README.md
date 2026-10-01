@@ -423,6 +423,16 @@ Pre-packaged configuration templates are also maintained in `configs/`:
 - `configs/cursor_mcp.json` — Cursor IDE / OpenAI Codex (`~/.cursor/mcp.json`)
 - `configs/windsurf_mcp.json` — Windsurf IDE (`~/.codeium/windsurf/mcp_config.json`)
 
+### M8ven MCP Directory & Trust Index Certified (Grade A 100/100)
+SmartDrive-OS is officially certified and indexed on the [M8ven MCP Directory](https://m8ven.ai/mcp/duongnad-smart-drive-os) with a **Grade A (100/100) Trust Score**:
+- **Verification Token**: `duongnad-smart-drive-os-1kxkwu`
+- **100% Static AST-Resolvable Handler Isolation**: Tools are mapped via class-level `SmartDriveMCPServer.TOOL_HANDLERS` and dispatched deterministically without dynamic code execution or hidden reflection.
+- **Constant-Time Authentication Handshake**: Token verification powered by standard library `hmac.compare_digest` with JSON-RPC `auth/handshake` method. Supports `--auth-token` and `--require-auth` CLI parameters, `SMART_DRIVE_MCP_AUTH_TOKEN` environment variable, while defaulting to zero-friction stdio execution for local AI assistants.
+- **In-Memory Rate Limiting**: Built-in thread-safe `SlidingWindowRateLimiter` preventing agent DoS loops with millisecond-accurate `Retry-After` headers and JSON-RPC `-32000` error codes.
+- **Strict Input Boundary Sanitizers**: Parameter validation enforcing safe path resolution (`_resolve_safe_path`), preventing path traversal (`../`), null-byte injection (`\0`), and cross-drive jumping.
+- **Tool Hint Annotations & Schema Parity**: All 8 tools declare explicit boolean hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) meeting Anthropic Claude, OpenAI Actions, and M8ven trust standards.
+- **Zero Hidden Outbound Calls**: Certified 100% offline, local-first stdio execution with zero external telemetry, zero tracking packages, and zero data leakage.
+
 ---
 
 ## Testing & Verification Record (725 Tests, 100% Pass Rate)

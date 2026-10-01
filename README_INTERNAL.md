@@ -6,6 +6,7 @@
 [![Zero-Elevation Junctions](https://img.shields.io/badge/junctions-NTFS%20Reparse%20(No%20Admin)-green.svg)](#)
 [![TRIM & S.M.A.R.T Verified](https://img.shields.io/badge/SSD-TRIM%20%26%20Geometry-orange.svg)](#)
 [![Tests: 100% Pass](https://img.shields.io/badge/tests-725%2F725%20passed%20(100%25)-brightgreen.svg)](#)
+[![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![Branch: internal-secondary-drive](https://img.shields.io/badge/branch-internal--secondary--drive-purple.svg)](https://github.com/DuongNAD/smart-drive-os/tree/internal-secondary-drive)
 
 > **High-performance autonomous architecture for internal secondary SSDs (`D:`, `E:`, etc.), deep NTFS 4KB geometry optimization, zero-data-loss C-drive cache offloading via non-elevated NTFS Directory Junctions (`mklink /J`), workstation developer profile initialization, and SSD TRIM health diagnostics.**
