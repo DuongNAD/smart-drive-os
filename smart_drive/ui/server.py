@@ -38,6 +38,7 @@ class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     """Multi-threaded HTTP server using daemon threads for clean process shutdown."""
     daemon_threads = True
     allow_reuse_address = True
+    request_queue_size = 128
 
     def __init__(
         self,

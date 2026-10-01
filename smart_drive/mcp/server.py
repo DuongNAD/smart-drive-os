@@ -19,16 +19,15 @@ import hmac
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from smart_drive.core.auditor import StorageAuditor
+from smart_drive.core.auditor import StorageAuditor, format_bytes
 from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.config import (
-    CLUSTER_SIZE_BYTES,
     JunkTier,
     ensure_anti_indexing_markers,
     is_protected_root_file,
@@ -42,7 +41,7 @@ from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
 from smart_drive.mcp.proxy import SmartDriveProxy
 from smart_drive.search.engine import SearchEngine
-from smart_drive.search.parser import SearchParams, parse_search_query, parse_size_spec
+from smart_drive.search.parser import parse_search_query, parse_size_spec
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "smart-drive"
@@ -57,7 +56,15 @@ logger.addHandler(stderr_handler)
 TOOLS: List[Dict[str, Any]] = [
     {
         "name": "ssd_search",
-        "description": "Instant high-speed search across 500,000+ files on the SSD (<10ms latency). Use this instead of running slow shell find or grep commands.",
+        "description": (
+            "MANDATORY FILE SEARCH: Instant sub-10ms multi-criteria search over 500,000+ files "
+            "using the local SQLite FTS5 index. ALWAYS use ssd_search to locate files, code, "
+            "models, or documents. DO NOT use recursive shell commands ('find', 'grep', 'dir /s', "
+            "'Get-ChildItem') on this external SSD, as walking the 512KB cluster exFAT filesystem "
+            "causes severe I/O thrashing and high latency. Supports keywords ('transformer'), "
+            "exact phrases ('\"llama 3\"'), prefix wildcards ('audit*'), extensions ('py,json'), "
+            "categories ('Code', 'AI Models'), directory scopes, and size filters ('>10MB')."
+        ),
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -111,7 +118,11 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "ssd_audit",
-        "description": "Returns full storage allocation breakdown across 6 standard taxonomies and extension categories, and calculates wasted 512KB exFAT cluster slack and top slack directories.",
+        "description": (
+            "Analyzes SSD storage allocation breakdown across 6 standard taxonomies (01_AI_Models .. "
+            "06_Archives_Storage) and computes wasted 512KB exFAT cluster slack and top slack directories. "
+            "Use this to audit drive capacity. NEVER run recursive shell find or grep commands."
+        ),
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -132,6 +143,11 @@ TOOLS: List[Dict[str, Any]] = [
                 "directory": {
                     "type": "string",
                     "description": "Optional subdirectory to restrict audit scope (alias for sub_dir).",
+                },
+                "compact": {
+                    "type": "boolean",
+                    "description": "Return summarized category extensions instead of raw extension dictionary (default: true).",
+                    "default": True,
                 },
             },
         },
@@ -176,7 +192,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "ssd_find_duplicates",
-        "description": "Detects identical duplicate files using 3-phase cascade (Size -> 8KB Hash -> Full SHA-256) and returns exact nominal and 512KB physical cluster space savings.",
+        "description": "Detects identical duplicate files using 3-phase cascade (Size -> 8KB Hash -> Full SHA-256) and returns exact nominal and 512KB physical cluster space savings with pagination controls.",
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -199,12 +215,26 @@ TOOLS: List[Dict[str, Any]] = [
                     "description": "Optional minimum file size in bytes to filter duplicates (default: 0).",
                     "default": 0,
                 },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum duplicate groups to return (default: 20, max: 100).",
+                    "default": 20,
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Pagination offset for duplicate groups (default: 0).",
+                    "default": 0,
+                },
             },
         },
     },
     {
         "name": "ssd_update_index",
-        "description": "Performs fast incremental synchronization of the SQLite FTS5 search index after creating, editing, or deleting files.",
+        "description": (
+            "Performs fast incremental synchronization of the SQLite FTS5 search index (<50ms) "
+            "after creating, editing, or deleting files. Call this tool to keep the search index fresh. "
+            "NEVER use shell find or grep."
+        ),
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": False,
@@ -426,6 +456,7 @@ class SmartDriveMCPServer:
             detected = SmartDriveProxy.detect_mount_point()
             self.root = str(detected) if detected else os.getcwd()
         self.use_content_length_mode = False
+        self._raw_stdout: Optional[Any] = None
         self.rate_limiter = SlidingWindowRateLimiter(
             max_requests=rate_limit_requests,
             window_seconds=rate_limit_window,
@@ -471,25 +502,51 @@ class SmartDriveMCPServer:
 
         - If sub_path is empty or None, returns self.root.
         - Rejects null bytes (\\x00).
-        - Resolves canonical realpath: os.path.realpath(os.path.abspath(os.path.join(self.root, sub_path.strip())))
-        - Verifies boundary containment: ensures target is within self.root.
+        - Rejects UNC / device namespace paths (//, \\, etc.).
+        - Rejects Windows drive letters escaping root (^[a-zA-Z]:).
+        - Rejects POSIX root escapes (/...).
+        - Normalizes backslashes to / before joining and checking boundary containment.
         - If must_exist and not os.path.exists(target), raises FileNotFoundError.
 
         Raises:
-            ValueError: If path contains null bytes or escapes self.root.
+            ValueError: If path contains null bytes, is UNC, or escapes self.root.
             FileNotFoundError: If must_exist is True and path does not exist.
         """
         canonical_root = os.path.realpath(os.path.abspath(self.root))
         if sub_path is None:
-            target = canonical_root
-        else:
-            sub_path_str = str(sub_path).strip()
-            if not sub_path_str:
-                target = canonical_root
+            return canonical_root
+
+        sub_path_str = str(sub_path).strip()
+        if not sub_path_str:
+            return canonical_root
+
+        if "\x00" in sub_path_str:
+            raise ValueError("Access denied: path contains null byte")
+
+        # Reject UNC or device namespace paths
+        if sub_path_str.startswith(("\\\\", "//", "\\\\?\\", "\\\\.\\", "\\??\\")):
+            raise ValueError("Access denied: path escapes storage root")
+
+        # Normalize backslashes to forward slashes for universal boundary check
+        clean_norm = sub_path_str.replace("\\", "/")
+        c_root_fwd = canonical_root.replace("\\", "/")
+
+        # Check for Windows drive letter (e.g. C:, D:)
+        if re.match(r"^[a-zA-Z]:", sub_path_str):
+            root_drive = canonical_root[:2].upper() if len(canonical_root) >= 2 and canonical_root[0].isalpha() and canonical_root[1] == ":" else ""
+            path_drive = sub_path_str[:2].upper()
+            if not root_drive or path_drive != root_drive:
+                raise ValueError("Access denied: path escapes storage root")
+            if not (clean_norm == c_root_fwd or clean_norm.startswith(c_root_fwd + "/")):
+                raise ValueError("Access denied: path escapes storage root")
+            target = os.path.realpath(os.path.abspath(clean_norm))
+        elif clean_norm.startswith("/"):
+            if clean_norm == c_root_fwd or clean_norm.startswith(c_root_fwd + "/"):
+                target = os.path.realpath(os.path.abspath(clean_norm))
             else:
-                if "\x00" in sub_path_str:
-                    raise ValueError("Access denied: path contains null byte")
-                target = os.path.realpath(os.path.abspath(os.path.join(canonical_root, sub_path_str)))
+                raise ValueError("Access denied: path escapes storage root")
+        else:
+            target = os.path.realpath(os.path.abspath(os.path.join(canonical_root, clean_norm)))
 
         # Verify boundary containment
         try:
@@ -645,20 +702,51 @@ class SmartDriveMCPServer:
     def handle_ssd_audit(self, args: Dict[str, Any]) -> Dict[str, Any]:
         sub_dir = args.get("sub_dir") or args.get("directory")
         target_root = self._resolve_safe_path(sub_dir)
+        compact_mode = self._parse_bool(args.get("compact"), default=True)
         auditor = StorageAuditor(target_root)
         report = auditor.run_audit()
-        return {
+
+        raw_categories = report.get("categories", {})
+        if compact_mode:
+            categories_out = {}
+            for name, cdata in raw_categories.items():
+                exts = cdata.get("extensions", {})
+                sorted_exts = sorted(exts.items(), key=lambda x: x[1], reverse=True)
+                top_exts = [k if k.startswith(".") else f".{k}" for k, _ in sorted_exts[:3]]
+                categories_out[name] = {
+                    "name": cdata.get("name", name),
+                    "file_count": cdata.get("file_count", 0),
+                    "nominal_bytes": cdata.get("nominal_bytes", 0),
+                    "allocated_bytes": cdata.get("allocated_bytes", 0),
+                    "slack_bytes": cdata.get("slack_bytes", 0),
+                    "slack_percentage": cdata.get("slack_percentage", 0.0),
+                    "top_extensions": top_exts,
+                    "extension_count": len(exts),
+                }
+        else:
+            categories_out = raw_categories
+
+        logical_bytes = report.get("total_logical_bytes", 0)
+        slack_bytes = report.get("total_slack_bytes", 0)
+
+        result = {
             "root_path": report.get("root_path", target_root),
             "total_files": report.get("total_files", 0),
             "total_directories": report.get("total_directories", 0),
-            "total_logical_bytes": report.get("total_logical_bytes", 0),
+            "total_logical_bytes": logical_bytes,
             "total_allocated_bytes": report.get("total_allocated_bytes", 0),
-            "total_slack_bytes": report.get("total_slack_bytes", 0),
+            "total_slack_bytes": slack_bytes,
             "total_slack_percentage": report.get("total_slack_percentage", 0.0),
             "taxonomies": report.get("taxonomies", {}),
-            "categories": report.get("categories", {}),
+            "categories": categories_out,
             "top_slack_directories": report.get("top_slack_directories", [])[:10],
         }
+        if compact_mode:
+            result["compact"] = True
+            result["total_logical_formatted"] = format_bytes(logical_bytes)
+            result["total_slack_formatted"] = format_bytes(slack_bytes)
+
+        return result
 
     def handle_ssd_clean(self, args: Dict[str, Any]) -> Dict[str, Any]:
         dry_run = self._parse_bool(args.get("dry_run"), default=True)
@@ -678,7 +766,7 @@ class SmartDriveMCPServer:
         purge_engine = PurgeEngine(guard, dry_run=dry_run)
         summary = purge_engine.purge_batch(junk_items, dry_run=dry_run)
 
-        return {
+        result = {
             "target_root": target_root,
             "dry_run": dry_run,
             "tier": max_tier.name,
@@ -688,21 +776,69 @@ class SmartDriveMCPServer:
             "slack_bytes_reclaimed": summary.allocated_bytes_reclaimed,
         }
 
+        if dry_run:
+            breakdown: Dict[str, int] = collections.defaultdict(int)
+            sample_preview: List[str] = []
+            for item in junk_items:
+                type_name = getattr(item, "name", "") or getattr(item, "description", "other")
+                breakdown[type_name] += 1
+                if len(sample_preview) < 5:
+                    sample_preview.append(getattr(item, "rel_path", getattr(item, "path", "")))
+            result["breakdown_by_type"] = dict(breakdown)
+            result["sample_preview"] = sample_preview
+
+        return result
+
     def handle_ssd_find_duplicates(self, args: Dict[str, Any]) -> Dict[str, Any]:
         sub_dir = args.get("sub_dir")
         target_root = self._resolve_safe_path(sub_dir)
         min_size = self._parse_int(args.get("min_size"), default=0, min_val=0)
+        limit = self._parse_int(args.get("limit"), default=20, min_val=1, max_val=100)
+        offset = self._parse_int(args.get("offset"), default=0, min_val=0)
+
         detector = DuplicateDetector(target_root)
         plan = detector.generate_reclamation_plan()
-        if min_size > 0 and "duplicate_groups" in plan:
-            filtered = [g for g in plan["duplicate_groups"] if g.get("size", 0) >= min_size]
-            plan["duplicate_groups"] = filtered
-            plan["duplicate_group_count"] = len(filtered)
-            plan["duplicate_file_count"] = sum(len(g["files"]) for g in filtered)
-            plan["total_reclaimable_bytes"] = sum(g["reclaimable_bytes"] for g in filtered)
-            plan["total_reclaimable_slack"] = sum(g["reclaimable_slack"] for g in filtered)
-            plan["total_reclaimable_physical"] = plan["total_reclaimable_bytes"] + plan["total_reclaimable_slack"]
-        return plan
+        all_groups = plan.get("duplicate_groups", [])
+
+        if min_size > 0:
+            all_groups = [g for g in all_groups if g.get("size", 0) >= min_size]
+
+        total_groups = len(all_groups)
+        total_dup_files = sum(len(g.get("files", [])) for g in all_groups)
+        total_reclaimable_bytes = sum(g.get("reclaimable_bytes", 0) for g in all_groups)
+        total_reclaimable_slack = sum(g.get("reclaimable_slack", 0) for g in all_groups)
+        total_reclaimable_physical = total_reclaimable_bytes + total_reclaimable_slack
+
+        paged_groups = all_groups[offset: offset + limit]
+        has_more = (offset + len(paged_groups)) < total_groups
+        next_offset = (offset + len(paged_groups)) if has_more else None
+
+        # Cap file paths per group to prevent context overflow (max 10 paths preview per group)
+        max_files_per_group = 10
+        capped_groups = []
+        for g in paged_groups:
+            files = g.get("files", [])
+            g_copy = dict(g)
+            if len(files) > max_files_per_group:
+                g_copy["files"] = files[:max_files_per_group]
+                g_copy["truncated_files_count"] = len(files) - max_files_per_group
+            capped_groups.append(g_copy)
+
+        return {
+            "root": target_root,
+            "limit": limit,
+            "offset": offset,
+            "total_groups": total_groups,
+            "duplicate_group_count": total_groups,
+            "returned_group_count": len(capped_groups),
+            "duplicate_file_count": total_dup_files,
+            "total_reclaimable_bytes": total_reclaimable_bytes,
+            "total_reclaimable_slack": total_reclaimable_slack,
+            "total_reclaimable_physical": total_reclaimable_physical,
+            "has_more": has_more,
+            "next_offset": next_offset,
+            "duplicate_groups": capped_groups,
+        }
 
     def handle_ssd_update_index(self, args: Dict[str, Any]) -> Dict[str, Any]:
         target_dir = args.get("directory") or args.get("target_dir")
@@ -710,9 +846,13 @@ class SmartDriveMCPServer:
         db_path = self.get_db_path()
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         db = DatabaseManager(db_path)
-        mgr = IndexManager(db, target_root)
-        inc = mgr.incremental_update()
-        return dataclasses.asdict(inc)
+        try:
+            db.initialize_schema()
+            mgr = IndexManager(db, target_root)
+            inc = mgr.incremental_update()
+            return dataclasses.asdict(inc)
+        finally:
+            db.close()
 
     def handle_ssd_check_safety(self, args: Dict[str, Any]) -> Dict[str, Any]:
         path_str = args.get("path", "")
@@ -731,20 +871,71 @@ class SmartDriveMCPServer:
 
         canonical_root = os.path.realpath(os.path.abspath(self.root))
         clean_path = path_str.strip()
-        raw_target = os.path.join(canonical_root, clean_path)
-        normalized_target = os.path.realpath(os.path.abspath(raw_target))
-        try:
-            escapes_root = (os.path.commonpath([canonical_root, normalized_target]) != canonical_root)
-        except ValueError:
+
+        # 1. UNC network paths
+        if clean_path.startswith(("\\\\", "//")):
+            path_no_unc = re.sub(r'^[\\/]+', '', clean_path)
+            path_segments = [p for p in path_no_unc.replace("\\", "/").split("/") if p and p not in (".", "..")]
+            all_forbidden = []
+            for seg in path_segments:
+                violations = ExFatEngine.audit_forbidden_characters(seg)
+                for v in violations:
+                    v_str = str(v)
+                    if v_str not in all_forbidden:
+                        all_forbidden.append(v_str)
             return {
                 "path": path_str,
                 "is_safe": False,
                 "is_symlink": False,
-                "forbidden_character_violations": [],
+                "forbidden_character_violations": all_forbidden,
+                "is_protected_root_file": False,
+                "is_protected_root_dir": False,
+                "error": "Path is on a different drive mount or escapes drive root (UNC path)",
+            }
+
+        # 2. Cross-drive checks & Windows drive stripping
+        root_drive = canonical_root[:2].upper() if len(canonical_root) >= 2 and canonical_root[0].isalpha() and canonical_root[1] == ":" else ""
+        path_drive = clean_path[:2].upper() if len(clean_path) >= 2 and clean_path[0].isalpha() and clean_path[1] == ":" else ""
+        path_no_drive = re.sub(r'^[a-zA-Z]:', '', clean_path)
+        norm_sub = path_no_drive.replace("\\", "/")
+
+        # Inspect intermediate segments without Windows drive prefix to avoid false positive colons
+        path_segments = [p for p in norm_sub.split("/") if p and p not in (".", "..")]
+        all_forbidden: List[str] = []
+        for seg in path_segments:
+            violations = ExFatEngine.audit_forbidden_characters(seg)
+            for v in violations:
+                v_str = str(v)
+                if v_str not in all_forbidden:
+                    all_forbidden.append(v_str)
+
+        if path_drive and path_drive != root_drive:
+            return {
+                "path": path_str,
+                "is_safe": False,
+                "is_symlink": False,
+                "forbidden_character_violations": all_forbidden,
                 "is_protected_root_file": False,
                 "is_protected_root_dir": False,
                 "error": "Path is on a different drive mount or escapes drive root",
             }
+
+        c_root_fwd = canonical_root.replace("\\", "/")
+        if norm_sub.startswith("/"):
+            raw_target = norm_sub
+            if norm_sub == c_root_fwd or norm_sub.startswith(c_root_fwd + "/"):
+                escapes_root = False
+                normalized_target = os.path.realpath(os.path.abspath(norm_sub))
+            else:
+                escapes_root = True
+                normalized_target = canonical_root
+        else:
+            raw_target = os.path.join(canonical_root, norm_sub)
+            normalized_target = os.path.realpath(os.path.abspath(raw_target))
+            try:
+                escapes_root = (os.path.commonpath([canonical_root, normalized_target]) != canonical_root)
+            except ValueError:
+                escapes_root = True
 
         if escapes_root:
             rel_path = clean_path
@@ -769,16 +960,6 @@ class SmartDriveMCPServer:
         except (OSError, ValueError):
             is_symlink = False
 
-        _, path_no_drive = os.path.splitdrive(clean_path)
-        path_segments = [p for p in path_no_drive.replace("\\", "/").split("/") if p and p not in (".", "..")]
-        all_forbidden: List[str] = []
-        for seg in path_segments:
-            violations = ExFatEngine.audit_forbidden_characters(seg)
-            for v in violations:
-                v_str = str(v)
-                if v_str not in all_forbidden:
-                    all_forbidden.append(v_str)
-
         is_prot_file = is_protected_root_file(rel_path)
         is_prot_dir = is_protected_root_dir(rel_path)
         is_safe = (
@@ -797,7 +978,7 @@ class SmartDriveMCPServer:
             "is_protected_root_dir": is_prot_dir,
         }
         if escapes_root:
-            res["error"] = "Path escapes drive root"
+            res["error"] = "Path is on a different drive mount or escapes drive root"
         return res
 
     def handle_ssd_status(self, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -873,12 +1054,13 @@ class SmartDriveMCPServer:
             raise ValueError(f"Unknown tool '{name}'")
 
     def send_response(self, response: Dict[str, Any]) -> None:
-        body = json.dumps(response, ensure_ascii=False)
+        body = json.dumps(response, separators=(",", ":"), ensure_ascii=False)
+        out = self._raw_stdout if self._raw_stdout is not None else sys.stdout
         if self.use_content_length_mode:
-            sys.stdout.write(f"Content-Length: {len(body.encode('utf-8'))}\r\n\r\n{body}")
+            out.write(f"Content-Length: {len(body.encode('utf-8'))}\r\n\r\n{body}")
         else:
-            sys.stdout.write(body + "\n")
-        sys.stdout.flush()
+            out.write(body + "\n")
+        out.flush()
 
     def handle_request(self, req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         msg_id = req.get("id")
@@ -928,6 +1110,15 @@ class SmartDriveMCPServer:
                     "serverInfo": {
                         "name": SERVER_NAME,
                         "version": SERVER_VERSION,
+                        "instructions": (
+                            "SmartDrive-OS MCP Server governs an external high-speed SSD formatted as exFAT with a "
+                            "512KB cluster allocation unit. Hard rules for autonomous coding agents:\n"
+                            "1. Never run recursive find, grep, dir /s, or Get-ChildItem on this SSD. Always use the ssd_search tool (<10ms).\n"
+                            "2. Call ssd_update_index after writing or modifying files to update the FTS5 index.\n"
+                            "3. Never delete or relocate the 6 standard taxonomies (01_AI_Models .. 06_Archives_Storage).\n"
+                            "4. Never place symlinks or Windows-illegal characters (\\ / : * ? \" < > |) on the drive.\n"
+                            "5. Keep small micro-files bundled to prevent 512KB cluster slack waste."
+                        ),
                     },
                     "capabilities": {
                         "tools": {},
@@ -1038,7 +1229,7 @@ class SmartDriveMCPServer:
                         "content": [
                             {
                                 "type": "text",
-                                "text": json.dumps(res_data, indent=2, ensure_ascii=False),
+                                "text": json.dumps(res_data, separators=(",", ":"), ensure_ascii=False),
                             }
                         ],
                     },
@@ -1078,57 +1269,64 @@ class SmartDriveMCPServer:
 
     def run_stdio(self) -> None:
         """Runs the JSON-RPC 2.0 stdio event loop."""
-        if sys.platform == "win32":
-            if hasattr(sys.stdin, "reconfigure"):
-                sys.stdin.reconfigure(encoding="utf-8")
-            if hasattr(sys.stdout, "reconfigure"):
-                sys.stdout.reconfigure(encoding="utf-8")
-            if hasattr(sys.stderr, "reconfigure"):
-                sys.stderr.reconfigure(encoding="utf-8")
+        self._raw_stdout = sys.stdout
+        orig_stdout = sys.stdout
+        sys.stdout = sys.stderr
+        try:
+            if sys.platform == "win32":
+                if hasattr(sys.stdin, "reconfigure"):
+                    sys.stdin.reconfigure(encoding="utf-8")
+                if hasattr(self._raw_stdout, "reconfigure"):
+                    self._raw_stdout.reconfigure(encoding="utf-8")
+                if hasattr(sys.stderr, "reconfigure"):
+                    sys.stderr.reconfigure(encoding="utf-8")
 
-        logger.info("Smart Drive MCP Server started. Root: %s", self.root)
+            logger.info("Smart Drive MCP Server started. Root: %s", self.root)
 
-        while True:
-            try:
-                line = sys.stdin.readline()
-                if not line:
-                    break
+            while True:
+                try:
+                    line = sys.stdin.readline()
+                    if not line:
+                        break
 
-                line_clean = line.strip()
-                if not line_clean:
-                    continue
-
-                if line_clean.lower().startswith("content-length:"):
-                    self.use_content_length_mode = True
-                    content_length = int(line_clean.split(":", 1)[1].strip())
-                    while True:
-                        sep_line = sys.stdin.readline()
-                        if sep_line.strip() == "":
-                            break
-                    body = sys.stdin.read(content_length)
-                    try:
-                        req = json.loads(body)
-                    except Exception as json_err:
-                        self.send_response({
-                            "jsonrpc": "2.0",
-                            "id": None,
-                            "error": {"code": -32700, "message": f"Parse error: {json_err}"},
-                        })
+                    line_clean = line.strip()
+                    if not line_clean:
                         continue
-                    self.handle_request(req)
-                elif line_clean.startswith("{"):
-                    try:
-                        req = json.loads(line_clean)
-                    except Exception as json_err:
-                        self.send_response({
-                            "jsonrpc": "2.0",
-                            "id": None,
-                            "error": {"code": -32700, "message": f"Parse error: {json_err}"},
-                        })
-                        continue
-                    self.handle_request(req)
-            except Exception as e:
-                logger.error("Error in run_stdio: %s", e)
+
+                    if line_clean.lower().startswith("content-length:"):
+                        self.use_content_length_mode = True
+                        content_length = int(line_clean.split(":", 1)[1].strip())
+                        while True:
+                            sep_line = sys.stdin.readline()
+                            if sep_line.strip() == "":
+                                break
+                        body = sys.stdin.read(content_length)
+                        try:
+                            req = json.loads(body)
+                        except Exception as json_err:
+                            self.send_response({
+                                "jsonrpc": "2.0",
+                                "id": None,
+                                "error": {"code": -32700, "message": f"Parse error: {json_err}"},
+                            })
+                            continue
+                        self.handle_request(req)
+                    elif line_clean.startswith("{"):
+                        try:
+                            req = json.loads(line_clean)
+                        except Exception as json_err:
+                            self.send_response({
+                                "jsonrpc": "2.0",
+                                "id": None,
+                                "error": {"code": -32700, "message": f"Parse error: {json_err}"},
+                            })
+                            continue
+                        self.handle_request(req)
+                except Exception as e:
+                    logger.error("Error in run_stdio: %s", e)
+        finally:
+            sys.stdout = orig_stdout
+            self._raw_stdout = None
 
 
 __all__ = [

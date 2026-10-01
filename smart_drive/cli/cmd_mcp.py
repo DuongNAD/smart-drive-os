@@ -10,6 +10,11 @@ from smart_drive.mcp.server import SmartDriveMCPServer
 
 def cmd_mcp(args: argparse.Namespace) -> int:
     """Handles the `mcp` subcommand."""
+    action = getattr(args, "action", "serve") or "serve"
+    if action == "register":
+        from smart_drive.cli.cmd_mcp_config import cmd_mcp_config
+        return cmd_mcp_config(args)
+
     root = getattr(args, "root", None)
     auth_token = getattr(args, "auth_token", None)
     require_auth = getattr(args, "require_auth", None)

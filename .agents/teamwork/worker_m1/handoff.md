@@ -1,128 +1,175 @@
-# Handoff Report: Milestone 1 — Zero-Dependency Web Dashboard & Visual UI (`smart-drive ui`)
+# Handoff Report — Worker M1: Path Traversal Security & Core Cross-Platform Resolution
 
-**Agent**: Worker M1 (Web UI Developer)  
-**Milestone**: M1 (Features F01 through F11)  
-**Date**: 2026-09-26  
-**Type**: Hard Handoff (Task Complete)  
+**Agent**: Worker M1  
+**Working Directory**: `/Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/worker_m1`  
+**Date**: 2026-10-01T08:08:00Z  
+**Parent**: `49720693-a82c-49f8-8742-35eba7ba1b1f` (Project Orchestrator)  
+**Status**: Completed — 100% Pass Rate (584 passed, 0 failed, 0 errors, 11 skipped)
 
 ---
 
 ## 1. Observation
 
-1. **Mandatory Zero-Dependency & stdlib Constraint**:
-   - `d:\teamwork_projects\smart_drive_os\pyproject.toml` line 45 contains `dependencies = []`.
-   - The entire implementation strictly uses Python Standard Library modules: `http.server`, `socketserver`, `json`, `urllib.parse`, `urllib.request`, `threading`, `time`, `logging`, `webbrowser`, and `unittest`.
-   - No external packages (Flask, FastAPI, requests, Jinja2, etc.) were installed or imported.
+### 1.1 Initial Test Suite Baseline Failures
+Upon executing the baseline tests, exactly 14 failures and 2 errors were observed across 8 test suites:
 
-2. **Created & Modified Files (Exclusively Owned)**:
-   - `smart_drive/ui/__init__.py`: Exports `SmartDriveRequestHandler`, `ThreadingHTTPServer`, `create_server`, `run_server`, and `get_dashboard_html`.
-   - `smart_drive/ui/server.py`: Implements `ThreadingHTTPServer` (`daemon_threads = True`, `allow_reuse_address = True`) and `SmartDriveRequestHandler` providing REST API routes:
-     - `GET /`: Serves embedded Dark Mode SPA (`text/html; charset=utf-8`).
-     - `GET /api/status`: System status, drive root, version ("1.1.0"), cluster geometry (524,288 B / 512 KB), and database existence/size.
-     - `GET /api/audit`: Runs `StorageAuditor(root).run_audit()`, returning 6 canonical taxonomies, cluster slack metrics, and top slack hotspots.
-     - `GET /api/search`: Runs `SearchEngine.search()`, calculates 512KB cluster allocations and slack per result, measuring sub-10ms query latency; returns `index_exists: False` gracefully if index database is missing.
-     - `GET /api/junk`: Runs `JunkDetector.find_junk()`, categorizing items into Tiers 1, 2, and 3 with item counts, nominal bytes, and cluster slack bytes.
-     - `POST /api/junk/clean`: Parses `{ "tiers": [1], "dry_run": bool, "paths": [...] }`, invokes `PurgeEngine.purge_items()`, and enforces `SecurityGuard` boundary checks.
-     - `OPTIONS /api/*`: Returns HTTP 204 with CORS preflight headers (`Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: GET, POST, OPTIONS`).
-   - `smart_drive/ui/dashboard.py`: Implements `get_dashboard_html()`, returning a 100% offline, zero-CDN, responsive Dark Mode Single-Page Application (HTML5, embedded CSS3 variables, inline SVGs, and Vanilla JS) with:
-     - 6 Canonical Kingston taxonomy progress bars (`01_AI_Models` .. `06_Archives_Storage`) showing nominal vs 512KB cluster slack waste.
-     - Top Cluster Slack Hotspots table highlighting directories with small file overhead.
-     - Instant SQLite FTS5 search interface with 150ms debouncing, live latency badge, category pills, and results table.
-     - Safe 3-Tier cleanup dashboard with tier checkboxes (Tier 1 Safe OS Junk, Tier 2 Dev/Build Caches, Tier 3 Sensitive/Temp Dumps), candidate preview table, Dry-Run simulation, and a modal confirmation dialog before live purging.
-   - `smart_drive/cli/cmd_ui.py`: Subcommand handler resolving `--root`, `--port` (default 8765), `--no-browser`, and `--db`.
-   - `smart_drive/cli/main.py`: Registered `ui` subparser in `build_parser()` and bound `ui: cmd_ui` in the dispatch dictionary.
-   - `tests/test_ui.py`: Comprehensive test suite containing 18 unit tests across `TestWebServerLifecycle`, `TestRestEndpoints`, and `TestCliAndHeadless`.
-
-3. **Test Execution Results**:
-   - `python -m unittest tests/test_ui.py`:
-     ```
-     Ran 18 tests in 7.578s
-     OK
-     ```
-   - `python -m unittest discover tests`:
-     ```
-     Ran 150 tests in 12.153s
-     OK
-     ```
-     All 132 existing baseline tests + 18 new UI tests passed with 100% success rate and zero regressions.
-
-4. **CLI Help Banner**:
-   - `python -m smart_drive ui --help`:
-     ```
-     usage: smart-drive ui [-h] [--root ROOT] [--port PORT] [--no-browser] [--db DB]
-
-     options:
-       -h, --help    show this help message and exit
-       --root ROOT   Root directory of the SSD
-       --port PORT   HTTP port to listen on (default: 8765)
-       --no-browser  Do not open web browser automatically
-       --db DB       Path to SQLite search database file
-     ```
+1. **`test_mock_system_drive_reassignment`** (`tests/test_drive_detector.py:327`):
+   ```
+   AssertionError: 'C:' != 'E:'
+   - C:
+   + E:
+   ```
+2. **`test_unnormalized_drive_strings_with_non_c_system_drive`** (`tests/test_drive_detector.py:378`):
+   ```
+   AssertionError: 'E:' unexpectedly found in ['D:', 'E:', 'F:']
+   ```
+3. **`test_broken_junction_detection`** (`tests/test_junction.py:194`):
+   ```
+   AssertionError: False is not true
+   ```
+4. **`test_environment_variable_override_resolution`** (`tests/test_offloader.py:78`):
+   ```
+   AssertionError: PosixPath('/var/folders/cd/zk3m8vps03vg88p8k8c3j_gw00[44 chars]ome') != PosixPath('/private/var/folders/cd/zk3m8vps03vg88p8k8[52 chars]ome')
+   ```
+5. **`test_valid_secondary_drive_letter_resolution`** (`tests/test_offloader.py:189`):
+   ```
+   AssertionError: 'D:\\/04_System_Offload_Caches' != 'D:\\04_System_Offload_Caches'
+   - D:\/04_System_Offload_Caches
+   ?    -
+   + D:\04_System_Offload_Caches
+   ```
+6. **`test_detect_mount_point_macos_mock`** (`tests/test_mcp_proxy.py:110`):
+   ```
+   AssertionError: '/Users/duongnad/Documents/tool/smart-drive-os' != '/Volumes/KINGSTON'
+   - /Users/duongnad/Documents/tool/smart-drive-os
+   + /Volumes/KINGSTON
+   ```
+7. **`test_detect_mount_point_windows_letters_mock`** (`tests/test_mcp_proxy.py:127`):
+   ```
+   AssertionError: unexpectedly None
+   ```
+8. **`test_cross_drive_path_in_check_safety`** (`tests/test_mcp_adversarial_challenger2.py:180`):
+   ```
+   AssertionError: 'error' not found in {'path': 'C:\\Windows\\System32\\notepad.exe', 'is_safe': False, 'is_symlink': False, 'forbidden_character_violations': ['FORBIDDEN_CHAR::'], 'is_protected_root_file': False, 'is_protected_root_dir': False}
+   ```
+9. **`test_unc_paths_in_check_safety`** (`tests/test_mcp_adversarial_challenger2.py:186`):
+   ```
+   AssertionError: True is not false
+   ```
+10. **`test_directory_escape_attacks_resolve_safe_path`** (`tests/test_mcp_adversarial_challenger2.py:62`):
+    ```
+    AssertionError: (<class 'ValueError'>, <class 'FileNotFoundError'>) not raised : Payload 'C:\\' was not blocked!
+    ```
+11. **`test_path_traversal_blocked_in_tools_call_jsonrpc`** (`tests/test_mcp_adversarial_challenger2.py:92`):
+    ```
+    AssertionError: False is not true : Tool ssd_clean did not set isError=True on traversal
+    ```
+12. **`test_resolve_safe_path_traversal_relative_parent_rejected`** (`tests/test_mcp_hardening.py:302`):
+    ```
+    AssertionError: ValueError not raised : Should reject escape path: ..\..\Windows\System32
+    ```
+13. **`test_ssd_check_safety_cross_drive_path_handled_safely`** (`tests/test_mcp_hardening.py:435`):
+    ```
+    AssertionError: 'different drive' not found in ''
+    ```
+14. **`test_check_safety_intermediate_path_segments_and_forbidden_chars`** (`tests/test_mcp_grade_a.py:333`):
+    ```
+    AssertionError: True is not false
+    ```
+15. **`test_concurrent_search_sqlite_lock_resistance`** (`tests/test_ui_adversarial.py:624`):
+    ```
+    urllib.error.URLError: <urlopen error [Errno 54] Connection reset by peer>
+    ```
+16. **`test_high_concurrency_mixed_endpoints`** (`tests/test_ui_adversarial.py:602`):
+    ```
+    urllib.error.URLError: <urlopen error [Errno 54] Connection reset by peer>
+    ```
 
 ---
 
-## 2. Logic Chain
+## 2. Logic Chain & Implementation Details
 
-1. **Zero External Dependencies**:
-   - *Premise*: `pyproject.toml` mandates standard library only.
-   - *Deduction*: By utilizing `socketserver.ThreadingMixIn` combined with `http.server.HTTPServer` and standard `http.server.BaseHTTPRequestHandler`, multi-threaded concurrent request handling is achieved without external pip packages.
-2. **Offline Single Page Application**:
-   - *Premise*: ORIGINAL_REQUEST.md R1 requires an interactive modern Dark Mode UI running without external CDN connections.
-   - *Deduction*: `get_dashboard_html()` embeds all CSS variables, typography, SVGs, and asynchronous fetch logic in a single self-contained string, ensuring reliable execution in air-gapped or offline development environments.
-3. **512KB Cluster Slack Accuracy**:
-   - *Premise*: Kingston XS2000 exFAT storage has 524,288-byte cluster allocation geometry.
-   - *Deduction*: The dashboard and API compute exact allocations via `calculate_allocated_bytes(size, 524288)`, visualizing both nominal usage and physical slack overhead on metric cards, taxonomy bars, search results, and junk candidate lists.
-4. **Safety & SecurityGuard Protection**:
-   - *Premise*: File purge actions must never delete critical root configuration or anti-indexing shields.
-   - *Deduction*: `handle_api_junk_clean` delegates unlinking strictly to `PurgeEngine.purge_items()`, which validates all targets against `SecurityGuard`. Protected files (`GEMINI.md`, `README.md`, `.metadata_never_index`) are unconditionally preserved. The front-end modal prevents accidental 1-click execution.
-5. **Headless & CI Resilience**:
-   - *Premise*: Automated testing and headless servers may lack graphical desktop browsers.
-   - *Deduction*: `webbrowser.open()` is wrapped in a `try...except` block in `run_server()`, logging a warning instead of failing. The test suite uses ephemeral port `0` to eliminate socket address collision risks.
+### 2.1 Cross-Platform Drive Letter Detection (`smart_drive/core/drive_detector.py`)
+- **Observation**: `backend.get_system_directory()` returns Windows paths (e.g. `"E:\\Windows\\System32"`). On POSIX platforms, `os.path.splitdrive("E:\\Windows\\System32")` returned `("", "E:\\Windows\\System32")` because backslashes are not directory separators under POSIX. As a result, `drive_part` was empty and the code fell back to `"C:"`.
+- **Reasoning**: `normalize_drive_letter` already implements regular expression parsing (`re.match(r"^([a-zA-Z]):", s)`) that functions uniformly across all operating systems.
+- **Fix**: In `get_system_drive_letter()`, passed `sys_dir` and `env` directly into `normalize_drive_letter(sys_dir)` and `normalize_drive_letter(env)`, enabling correct drive letter extraction on both Windows and POSIX.
+
+### 2.2 Broken Junction Detection on POSIX (`smart_drive/core/junction.py`)
+- **Observation**: `is_directory_junction()` relied on `os.path.islink(p_str) and (os.path.isdir(p_str) or stat.S_ISDIR(st.st_mode))`. When a junction target was deleted to test broken junction handling, `os.path.isdir` returned `False` because it attempts to follow the symlink, and `stat.S_ISDIR` returned `False` because `st_mode` represented `S_IFLNK`.
+- **Reasoning**: On Windows, reparse points retain directory attribute flags regardless of target presence. On POSIX, a symlink whose target directory was deleted represents a broken symlink. If `os.path.islink(p_str)` is `True` and `not os.path.exists(p_str)`, it simulates a broken junction.
+- **Fix**: If `not os.path.islink(p_str)`, return `False`. If `os.path.exists(p_str)`, return `os.path.isdir(p_str)`. If it does not exist (broken symlink), return `True`.
+
+### 2.3 Offloader Cache Resolution & Target Drive Formatting (`smart_drive/core/offloader.py`)
+- **Observation**: In `resolve_cache_path()`, `custom_hf.resolve()` on macOS resolved `/var` to `/private/var`, while `os.path.abspath()` left `/var`. In `validate_target_drive("D:")`, `root = Path("D:\\")` followed by `offload_root = root / "04_System_Offload_Caches"` constructed `Path("D:\\/04_System_Offload_Caches")` on POSIX.
+- **Reasoning**: Adding `.resolve()` aligns the environment variable path with symlink-resolved temp paths. Constructing `Path(f"{letter}\\04_System_Offload_Caches")` directly prevents dual-separator insertion on non-Windows hosts.
+- **Fix**: Updated line 236 to use `Path(os.path.abspath(clean)).resolve()`, and line 418 to return `letter, Path(f"{letter}\\04_System_Offload_Caches")`.
+
+### 2.4 Mount Point Discovery in Mock Environments (`smart_drive/mcp/proxy.py`)
+- **Observation**: In `detect_mount_point()`, when `Path.cwd()` returned `Path("C:/MockNonDrive")`, calling `resolve()` on POSIX resolved it against the local repository directory, locating `GEMINI.md` and short-circuiting before macOS `/Volumes/KINGSTON` detection. For Windows letter candidates, `root_cand = Path(f"{letter}:\\")` appended `/` on POSIX, creating `e://gemini.md` instead of `e:/gemini.md`.
+- **Reasoning**: If `cwd` starts with a Windows drive letter on non-Windows platforms, resolving it against the host filesystem must be avoided, and relative parent markers (`.`, `""`) must be excluded from ancestor searches. Formatting letter candidates as `Path(f"{letter}:/")` normalizes path joining cross-platform.
+- **Fix**: Filtered mock cwd relative parents on POSIX and normalized candidate path construction to `Path(f"{letter}:/")`.
+
+### 2.5 HTTP Server Concurrency Listen Backlog (`smart_drive/ui/server.py`)
+- **Observation**: `socketserver.TCPServer` sets `request_queue_size = 5` by default. Under concurrent stress testing (30 to 50 concurrent client threads), incoming connection requests exceeded the socket backlog, triggering kernel TCP reset (`[Errno 54] Connection reset by peer`).
+- **Reasoning**: Increasing the listen queue backlog buffers pending connections until worker threads accept them.
+- **Fix**: Added `request_queue_size = 128` to `ThreadingHTTPServer`.
+
+### 2.6 Universal Path Normalization & MCP Security (`smart_drive/mcp/server.py`)
+- **Observation**: `_resolve_safe_path` joined paths before normalizing backslashes, allowing `..\..\Windows` and `C:\` to be treated as filenames inside `self.root` on POSIX. In `handle_ssd_check_safety`, Windows drive letters were not stripped before checking forbidden characters, causing false positive `:` violations, while UNC network paths were not blocked. Additionally, `handle_ssd_update_index` did not call `db.initialize_schema()`.
+- **Reasoning**:
+  1. Universal path normalization must inspect paths regardless of host OS: disallow null bytes, reject UNC and device namespace prefixes, disallow foreign drive letters, disallow POSIX root escapes, normalize `\` to `/`, and verify containment via `os.path.commonpath`.
+  2. `handle_ssd_check_safety` must strip Windows drive prefixes before segment audits to prevent colon false positives, identify UNC paths, and populate `"error": "Path is on a different drive mount or escapes drive root"`.
+  3. `handle_ssd_update_index` must invoke `db.initialize_schema()` and ensure `db.close()` in a `try/finally` block.
+- **Fix**: Implemented complete universal normalization in `_resolve_safe_path`, updated `handle_ssd_check_safety` for UNC/drive/escape handling, and added schema initialization in `handle_ssd_update_index`.
 
 ---
 
 ## 3. Caveats
 
-1. **Search Index Prerequisite**:
-   - The instant search endpoint `/api/search` queries SQLite FTS5 index at `.smart_drive/index.db`. If the index has not been built yet, the API responds gracefully with HTTP 200 and `{ "results": [], "total": 0, "index_exists": false }` indicating that `smart-drive index` needs to be run.
-2. **Localhost Binding**:
-   - By default, `run_server` binds to `127.0.0.1`. It is designed for secure local machine usage and does not expose ports to external network interfaces by default.
+- **Skipped Hardware Tests (11 Skipped)**:
+  11 tests in `tests/test_adversarial_filesystem.py` and `tests/test_drive_detector.py` target Win32 IOCTL structures (NVMe/SATA/USB device query structures) and are intentionally skipped on macOS/POSIX via `unittest.skipUnless(sys.platform == "win32")`. This is expected platform-specific behavior, not a defect.
+- **No External Runtime Dependencies**:
+  All changes strictly use Python Standard Library (`os`, `re`, `sys`, `pathlib`, `socketserver`, `http.server`, `json`, `time`, `logging`). `pyproject.toml` remains zero-dependency.
 
 ---
 
 ## 4. Conclusion
 
-Milestone 1 is complete, verified, and operational:
-- Features F01 through F11 have been implemented in strict compliance with the architecture and technical blueprint.
-- All 18 new unit tests pass cleanly, and all 132 existing unit tests continue to pass with zero regressions (total: 150/150 passed).
-- File ownership boundaries were strictly respected; only assigned files were created or modified.
+All 14 previously failing tests and 2 concurrency errors across the test suite have been genuinely resolved. The complete test suite now passes with a 100% success rate:
+- **Total Tests**: 595
+- **Passed**: 584
+- **Failed**: 0
+- **Errors**: 0
+- **Skipped**: 11 (Platform-dependent Win32 IOCTL tests)
 
 ---
 
 ## 5. Verification Method
 
-To independently verify Worker M1's deliverables:
+### 5.1 Independent Test Verification Commands
 
-1. **Execute M1 UI Test Suite**:
+1. **Run Full Test Suite**:
    ```bash
-   python -m unittest tests/test_ui.py
+   python3 -m unittest discover -s tests -v
    ```
-   *Expected*: 18 tests run and pass (`OK`).
+   *Expected Output*: `Ran 595 tests ... OK (skipped=11)` with 0 failures and 0 errors.
 
-2. **Execute Full Project Test Suite**:
+2. **Run Targeted Remediated Modules**:
    ```bash
-   python -m unittest discover tests
+   python3 -m unittest tests/test_mcp_adversarial_challenger2.py tests/test_mcp_hardening.py tests/test_mcp_grade_a.py tests/test_drive_detector.py tests/test_mcp_proxy.py tests/test_junction.py tests/test_offloader.py tests/test_ui_adversarial.py -v
    ```
-   *Expected*: 150 tests run and pass (`OK`).
+   *Expected Output*: `Ran 190 tests ... OK (skipped=9)` with 0 failures and 0 errors.
 
-3. **Inspect CLI Help Output**:
+3. **Verify Syntax & Compilation**:
    ```bash
-   python -m smart_drive ui --help
+   python3 -m py_compile smart_drive/core/drive_detector.py smart_drive/core/junction.py smart_drive/core/offloader.py smart_drive/mcp/proxy.py smart_drive/mcp/server.py smart_drive/ui/server.py
    ```
-   *Expected*: Displays help banner for `smart-drive ui` with `--port`, `--no-browser`, `--root`, and `--db`.
+   *Expected Output*: Exit code 0, no output.
 
-4. **Verify Live Web Server Startup (Smoke Test)**:
-   ```bash
-   python -c "from smart_drive.ui.server import create_server; s = create_server('.', port=0); print('Server OK on port:', s.server_address[1]); s.server_close()"
-   ```
-   *Expected*: Outputs `Server OK on port: <ephemeral_port>`.
+### 5.2 Files Modified and Inspected
+- `smart_drive/core/drive_detector.py`: Cross-platform `get_system_drive_letter()`
+- `smart_drive/core/junction.py`: Cross-platform `is_directory_junction()`
+- `smart_drive/core/offloader.py`: `resolve_cache_path()` and `validate_target_drive()`
+- `smart_drive/mcp/proxy.py`: `SmartDriveProxy.detect_mount_point()`
+- `smart_drive/ui/server.py`: `ThreadingHTTPServer.request_queue_size = 128`
+- `smart_drive/mcp/server.py`: `_resolve_safe_path`, `handle_ssd_check_safety`, `handle_ssd_update_index`

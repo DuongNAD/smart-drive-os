@@ -1,19 +1,36 @@
-## 2026-09-26T06:46:37Z
+# DISPATCH: Challenger 2 — Milestone 1 Adversarial Verification
 
-You are Challenger M1-2 for SmartDrive-OS v1.1.0 Milestone 1: Zero-Dependency Web Dashboard & Visual UI (`smart-drive ui`).
-Your working directory is: `d:\teamwork_projects\smart_drive_os\.agents\teamwork\challenger_m1_2`
-The project root is: `d:\teamwork_projects\smart_drive_os`
-The original user request is at: `d:\teamwork_projects\smart_drive_os\.agents\teamwork\ORIGINAL_REQUEST.md` (You MUST read this file first).
-The project scope document is at: `d:\teamwork_projects\smart_drive_os\.agents\teamwork\orchestrator\PROJECT.md`.
-Worker M1's handoff report is at: `d:\teamwork_projects\smart_drive_os\.agents\teamwork\worker_m1\handoff.md`.
+## Working Directory
+`/Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/challenger_m1_2`
 
-Objective:
-Empirically challenge the safety and security boundaries of the Web UI cleanup mechanism:
-1. Test whether `POST /api/junk/clean` can be tricked into deleting:
-   - Protected root files (`GEMINI.md`, `CLAUDE.md`, `README.md`, `Quick_*.bat`, etc.)
-   - Anti-indexing markers (`.metadata_never_index`)
-   - Files outside the drive root (path traversal `../` attacks)
-   - Inviolable directories (`.git`)
-2. Verify that dry-run mode strictly prevents any filesystem modification.
-3. Document empirical results and state your verdict (`CONFIRMED` or `FAILED`) in `d:\teamwork_projects\smart_drive_os\.agents\teamwork\challenger_m1_2\handoff.md`.
-4. Send a completion message back to parent orchestrator with your verdict.
+## Parent
+`49720693-a82c-49f8-8742-35eba7ba1b1f` (Project Orchestrator)
+
+## Mandatory Inputs
+- Read `ORIGINAL_REQUEST.md`: `/Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/ORIGINAL_REQUEST.md` (specifically under `## 2026-10-01T07:40:41Z`)
+- Read `PROJECT.md`: `/Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/orchestrator_2/PROJECT.md`
+- Read Worker M1 handoff: `/Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/worker_m1/handoff.md`
+
+## Adversarial Verification Tasks
+Empirically stress-test cross-platform components:
+1. Test `drive_detector.py` under strange or malformed path strings (`"//server/share"`, `"c:"`, `"z:\\"`, `None`, empty string).
+2. Test `proxy.py` with mock mount roots and various working directory structures.
+3. Test `junction.py` with valid symlinks, broken symlinks, real directories, and non-existent paths.
+4. Test `ui/server.py` with burst concurrent socket requests to ensure the backlog prevents connection drops.
+5. Report verdict: `APPROVE` or `REQUEST_CHANGES`.
+
+## Deliverable
+Write your report to `/Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/challenger_m1_2/handoff.md`.
+Notify parent via `send_message` with your verdict when done.
+
+## 2026-10-01T08:08:55Z
+You are Challenger 2 for Milestone 1.
+Your working directory is: /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/challenger_m1_2
+Your parent is: 49720693-a82c-49f8-8742-35eba7ba1b1f (Project Orchestrator)
+
+MANDATORY FIRST STEP: Read the user request at /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/ORIGINAL_REQUEST.md (under ## 2026-10-01T07:40:41Z) and your dispatch file at /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/challenger_m1_2/DISPATCH.md.
+
+Adversarially stress-test cross-platform components:
+Empirically test drive_detector.py, proxy.py, junction.py, and ui/server.py under malformed inputs, mock roots, and concurrent bursts.
+Write your findings and explicit verdict (APPROVE or REQUEST_CHANGES) to /Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/challenger_m1_2/handoff.md and notify parent via send_message.
+

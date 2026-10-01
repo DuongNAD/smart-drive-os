@@ -41,7 +41,12 @@ def is_directory_junction(path: Union[str, Path]) -> bool:
         return is_reparse and is_dir
     else:
         # Cross-platform fallback for testing on POSIX systems
-        return os.path.islink(p_str) and (os.path.isdir(p_str) or stat.S_ISDIR(st.st_mode))
+        if not os.path.islink(p_str):
+            return False
+        if os.path.exists(p_str):
+            return os.path.isdir(p_str)
+        # Broken symlink simulating a broken junction
+        return True
 
 
 def get_junction_target(path: Union[str, Path]) -> Optional[str]:

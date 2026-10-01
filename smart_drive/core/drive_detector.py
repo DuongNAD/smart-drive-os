@@ -970,17 +970,17 @@ def get_system_drive_letter() -> str:
     backend = get_backend()
     try:
         sys_dir = backend.get_system_directory()
-        drive_part, _ = os.path.splitdrive(sys_dir)
-        if drive_part:
-            return normalize_drive_letter(drive_part)
+        if sys_dir:
+            return normalize_drive_letter(sys_dir)
     except Exception:
         pass
 
     env = os.environ.get("SystemDrive") or os.environ.get("SystemRoot") or os.environ.get("WINDIR")
     if env:
-        drive_part, _ = os.path.splitdrive(env)
-        if drive_part:
-            return normalize_drive_letter(drive_part)
+        try:
+            return normalize_drive_letter(env)
+        except ValueError:
+            pass
 
     return "C:"
 

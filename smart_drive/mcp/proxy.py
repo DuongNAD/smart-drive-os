@@ -30,8 +30,18 @@ class SmartDriveProxy:
             return Path(env_root).resolve()
 
         # 2. Check current working directory or ancestors
-        cwd = Path.cwd().resolve()
-        for p in [cwd] + list(cwd.parents):
+        cwd = Path.cwd()
+        if sys.platform != "win32" and len(str(cwd)) >= 2 and str(cwd)[1] == ":":
+            cwd_cand = cwd
+        else:
+            try:
+                cwd_cand = cwd.resolve()
+            except Exception:
+                cwd_cand = cwd
+        parents = [p for p in cwd_cand.parents if str(p) not in (".", "")]
+        for p in [cwd_cand] + parents:
+            if str(p) in (".", ""):
+                continue
             if (p / "GEMINI.md").is_file() or (p / "AGENTS.md").is_file():
                 return p
             if p.name.lower() == "kingston":
@@ -55,13 +65,13 @@ class SmartDriveProxy:
         elif "windows" in system or sys.platform == "win32":
             letters = [l for l in string.ascii_uppercase if l not in ("A", "B", "C")] + ["C"]
             for letter in letters:
-                root_cand = Path(f"{letter}:\\")
+                root_cand = Path(f"{letter}:/")
                 if root_cand.is_dir():
                     if (root_cand / "GEMINI.md").is_file() or (root_cand / "AGENTS.md").is_file():
                         return root_cand
-            # Direct check for D:\
-            if Path("D:\\").is_dir():
-                return Path("D:\\")
+            # Direct check for D:\ or D:/
+            if Path("D:/").is_dir() or Path("D:\\").is_dir():
+                return Path("D:/")
 
         # 5. Linux probe
         else:

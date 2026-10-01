@@ -237,6 +237,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     # 8. mcp
     p_mcp = subparsers.add_parser("mcp", help="Run JSON-RPC 2.0 stdio MCP server for AI Coding Agents")
+    p_mcp.add_argument(
+        "action",
+        nargs="?",
+        default="serve",
+        choices=["serve", "register"],
+        help="Action: 'serve' to run MCP stdio server (default), 'register' to register in AI IDE configs",
+    )
     p_mcp.add_argument("--root", help="Root directory of the SSD")
     p_mcp.add_argument("--auth-token", help="Shared secret authentication token for MCP server")
     p_mcp.add_argument(
@@ -251,6 +258,15 @@ def build_parser() -> argparse.ArgumentParser:
         dest="require_auth",
         help="Explicitly disable authentication requirement for MCP server",
     )
+    p_mcp.add_argument("--target-dir", help="Target project directory to write local .mcp.json")
+    p_mcp.add_argument("--antigravity", action="store_true", help="Register only for Antigravity")
+    p_mcp.add_argument("--claude", action="store_true", help="Register only for Claude Desktop")
+    p_mcp.add_argument("--cursor", action="store_true", help="Register only for Cursor")
+    p_mcp.add_argument("--codex", action="store_true", help="Register only for OpenAI Codex / Cursor")
+    p_mcp.add_argument("--windsurf", action="store_true", help="Register only for Windsurf")
+    p_mcp.add_argument("--workspace", action="store_true", help="Register local workspace .mcp.json")
+    p_mcp.add_argument("--all", action="store_true", help="Register for all supported AI agents")
+    p_mcp.add_argument("--json", action="store_true", help="Output registration results in JSON")
 
     # 9. mcp-config
     p_mcp_cfg = subparsers.add_parser("mcp-config", help="Register SmartDrive MCP server in AI IDE configurations")
@@ -258,7 +274,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_mcp_cfg.add_argument("--antigravity", action="store_true", help="Register only for Antigravity")
     p_mcp_cfg.add_argument("--claude", action="store_true", help="Register only for Claude Desktop")
     p_mcp_cfg.add_argument("--cursor", action="store_true", help="Register only for Cursor")
+    p_mcp_cfg.add_argument("--codex", action="store_true", help="Register only for OpenAI Codex / Cursor")
     p_mcp_cfg.add_argument("--windsurf", action="store_true", help="Register only for Windsurf")
+    p_mcp_cfg.add_argument("--workspace", action="store_true", help="Register local workspace .mcp.json")
+    p_mcp_cfg.add_argument("--all", action="store_true", help="Register for all supported AI agents")
     p_mcp_cfg.add_argument("--json", action="store_true", help="Output registration results in JSON")
 
     # 10. dup

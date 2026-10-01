@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "smart-drive": {
+      "command": "/Users/duongnad/.pyenv/versions/3.11.8/bin/python3",
+      "args": [
+        "-m",
+        "smart_drive",
+        "mcp"
+      ],
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1"
+      }
+    }
+  }
+}

@@ -1,15 +1,14 @@
 # Progress Tracker - Worker M4
 
-Last visited: 2026-09-26T07:39:10Z
+Last visited: 2026-10-01T08:30:15Z
 
 ## Status: COMPLETE
 
 ### Checklist:
 - [x] Step 1: Dispatch recorded & briefing initialized
-- [x] Step 2: Version bump in `pyproject.toml` and `smart_drive/__init__.py` to 1.1.0
-- [x] Step 3: Polish `smart_drive/core/snapshot.py` (proper failed copy bookkeeping) and `smart_drive/cli/cmd_backup.py` (exit code 1 on failed count in json mode)
-- [x] Step 4: Run full test suite to verify fixes (314/314 tests passed)
-- [x] Step 5: Comprehensively update `README.md` and `README_VN.md` with complete v1.1.0 documentation (Web UI, Snapshot & Backup, AI Classifier)
-- [x] Step 6: Re-run full test suite (314/314 tests passed, 0 failures)
-- [x] Step 7: Git commit (`a27af551a49aae2b13698bacedb86f1ab0749fc6`), tag `v1.1.0`, and push to origin main
-- [x] Step 8: Handoff report & orchestrator notification
+- [x] Step 2: Survey existing launcher files and root scripts
+- [x] Step 3: Implement 5-Tier Self-Environment Check for `.bat`, `.ps1`, `.command`, `.sh`
+- [x] Step 4: Generate/Update all 5 launcher types in `launchers/` and repository root (20 in `launchers/`, 20 at root)
+- [x] Step 5: Syntax validation via `bash -n launchers/*.sh launchers/*.command *.command *.sh` (0 errors)
+- [x] Step 6: Functional tests & test suite verification (`tests/test_e2e_mcp_distribution.py` 30/30 passed)
+- [x] Step 7: Final handoff report & orchestrator notification

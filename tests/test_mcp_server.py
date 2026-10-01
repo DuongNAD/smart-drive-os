@@ -237,6 +237,132 @@ class TestMCPProtocolJSONRPC(SmartDriveTestCase):
         self.assertIn("error", resp)
         self.assertEqual(resp["error"]["code"], -32601)
 
+    def test_protocol_initialize_includes_instructions(self) -> None:
+        """initialize response serverInfo must include agent instructions."""
+        req = {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "initialize",
+            "params": {"clientInfo": {"name": "test-agent"}},
+        }
+        self.server.handle_request(req)
+        resp = self._get_last_response()
+        server_info = resp["result"].get("serverInfo", {})
+        self.assertIn("instructions", server_info)
+        self.assertIn("ssd_search", server_info["instructions"])
+
+    def test_protocol_compact_json_serialization(self) -> None:
+        """JSON-RPC responses must use compact serialization separators without extra spaces."""
+        req = {"jsonrpc": "2.0", "id": 20, "method": "ping", "params": {}}
+        self.server.handle_request(req)
+        raw_output = self._stdout_capture.getvalue().strip()
+        lines = [line for line in raw_output.split("\n") if line.strip()]
+        last_line = lines[-1]
+        self.assertIn('{"jsonrpc":"2.0","id":20,"result":{}}', last_line)
+
+
+class TestMCPOptimizationsAndRegistrar(SmartDriveTestCase):
+    """Unit tests for token-saving schemas, pagination, clean breakdown, and multi-agent registrar."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.mock_root = self.create_mock_drive()
+        self.server = SmartDriveMCPServer(root=str(self.mock_root))
+
+    def test_ssd_audit_compact_vs_full(self) -> None:
+        """ssd_audit supports compact mode by default with top extensions and formatted strings."""
+        compact_res = self.server.dispatch_tool("ssd_audit", {"compact": True})
+        self.assertTrue(compact_res.get("compact"))
+        self.assertIn("total_logical_formatted", compact_res)
+        self.assertIn("total_slack_formatted", compact_res)
+        self.assertIn("categories", compact_res)
+        # Check that categories contain top_extensions and extension_count
+        categories = compact_res["categories"]
+        self.assertGreater(len(categories), 0)
+        first_cat = next(iter(categories.values()))
+        self.assertIn("top_extensions", first_cat)
+        self.assertIn("extension_count", first_cat)
+
+        full_res = self.server.dispatch_tool("ssd_audit", {"compact": False})
+        self.assertFalse(full_res.get("compact", False))
+        self.assertNotIn("total_logical_formatted", full_res)
+
+    def test_ssd_clean_dry_run_breakdown_and_sample(self) -> None:
+        """ssd_clean dry_run provides breakdown_by_type and preview capped at 5 files."""
+        # Create some mock junk files
+        junk_dir = self.mock_root / "03_Development_Projects" / "cache_dir"
+        junk_dir.mkdir(parents=True, exist_ok=True)
+        for i in range(8):
+            (junk_dir / f"temp_{i}.tmp").write_bytes(b"temp junk")
+
+        clean_res = self.server.dispatch_tool("ssd_clean", {"dry_run": True})
+        self.assertTrue(clean_res["dry_run"])
+        self.assertIn("breakdown_by_type", clean_res)
+        self.assertIn("sample_preview", clean_res)
+        self.assertLessEqual(len(clean_res["sample_preview"]), 5)
+
+    def test_ssd_find_duplicates_pagination(self) -> None:
+        """ssd_find_duplicates supports limit/offset pagination and reports has_more."""
+        # Create 3 duplicate groups
+        for group_idx in range(3):
+            content = f"UNIQUE_CONTENT_FOR_GROUP_{group_idx}_".encode("utf-8") * 20
+            p1 = self.mock_root / "01_AI_Models" / f"dup_{group_idx}_a.bin"
+            p2 = self.mock_root / "06_Archives_Storage" / f"dup_{group_idx}_b.bin"
+            p1.write_bytes(content)
+            p2.write_bytes(content)
+
+        # Page 1: limit 1, offset 0
+        page1 = self.server.dispatch_tool("ssd_find_duplicates", {"limit": 1, "offset": 0})
+        self.assertEqual(page1["limit"], 1)
+        self.assertEqual(page1["offset"], 0)
+        self.assertGreaterEqual(page1["total_groups"], 3)
+        self.assertEqual(page1["returned_group_count"], 1)
+        self.assertEqual(len(page1["duplicate_groups"]), 1)
+        self.assertTrue(page1["has_more"])
+        self.assertEqual(page1["next_offset"], 1)
+
+        # Page 2: limit 1, offset 1
+        page2 = self.server.dispatch_tool("ssd_find_duplicates", {"limit": 1, "offset": 1})
+        self.assertEqual(page2["limit"], 1)
+        self.assertEqual(page2["offset"], 1)
+        self.assertEqual(page2["returned_group_count"], 1)
+        self.assertEqual(len(page2["duplicate_groups"]), 1)
+
+    def test_registrar_detect_installed_agents(self) -> None:
+        """detect_installed_agents returns detection dictionary for all supported agents."""
+        from smart_drive.mcp.registrar import detect_installed_agents
+        agents = detect_installed_agents()
+        self.assertIsInstance(agents, dict)
+        for key in ["antigravity", "claude", "cursor", "windsurf", "workspace"]:
+            self.assertIn(key, agents)
+            self.assertIsInstance(agents[key], bool)
+
+    def test_registrar_utf8_env_in_mcp_entry(self) -> None:
+        """mcp_entry must declare UTF-8 environment variables for cross-platform compatibility."""
+        from smart_drive.mcp.registrar import mcp_entry
+        entry = mcp_entry()
+        self.assertIn("env", entry)
+        self.assertEqual(entry["env"].get("PYTHONIOENCODING"), "utf-8")
+        self.assertEqual(entry["env"].get("PYTHONUTF8"), "1")
+
+    def test_cli_mcp_register_dispatch_json(self) -> None:
+        """smart_drive.cli.main handles `mcp register --json` returning valid JSON."""
+        from smart_drive.cli.main import main
+        captured_stdout = io.StringIO()
+        orig_stdout = sys.stdout
+        sys.stdout = captured_stdout
+        try:
+            exit_code = main(["mcp", "register", "--json", "--workspace"])
+        finally:
+            sys.stdout = orig_stdout
+
+        self.assertEqual(exit_code, 0)
+        output = captured_stdout.getvalue().strip()
+        data = json.loads(output)
+        self.assertIsInstance(data, dict)
+        self.assertTrue(data.get("workspace"))
+
 
 if __name__ == "__main__":
     unittest.main()
+

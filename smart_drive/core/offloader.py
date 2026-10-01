@@ -233,7 +233,7 @@ def resolve_cache_path(defn: CacheDefinition) -> Path:
         if val:
             clean = val.strip().strip('"').strip("'")
             if clean:
-                p = Path(os.path.abspath(clean))
+                p = Path(os.path.abspath(clean)).resolve()
                 if os.path.lexists(str(p)) or is_directory_junction(p):
                     return p
                 # If path was explicitly set via env var, honor it even if directory doesn't exist yet
@@ -415,8 +415,7 @@ def validate_target_drive(target_spec: Union[str, Path]) -> Tuple[str, Path]:
     # If target is drive letter (e.g. "D:", "D:\"):
     if len(clean_ts) <= 3 and (clean_ts.endswith(":") or len(clean_ts) == 1):
         letter = clean_ts[0] + ":"
-        root = Path(f"{letter}\\")
-        offload_root = root / "04_System_Offload_Caches"
+        offload_root = Path(f"{letter}\\04_System_Offload_Caches")
         return letter, offload_root
 
     # Target is a custom directory path (e.g. mock directory in testing)

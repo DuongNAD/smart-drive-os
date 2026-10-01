@@ -1,162 +1,161 @@
-# Handoff Report: Challenger M1-2 — Safety & Security Boundary Verification
+# Handoff Report — Milestone 1 Challenger 2: Cross-Platform Adversarial Verification
 
-**Agent**: Challenger M1-2 (Adversarial Security Critic)  
-**Milestone**: M1 (Zero-Dependency Web Dashboard & Visual UI)  
-**Date**: 2026-09-26  
-**Type**: Hard Handoff (Task Complete)  
-**Verdict**: **CONFIRMED**  
+**Agent**: Challenger 2 (Empirical Challenger)  
+**Working Directory**: `/Users/duongnad/Documents/tool/smart-drive-os/.agents/teamwork/challenger_m1_2`  
+**Date**: 2026-10-01T08:16:00Z  
+**Parent**: `49720693-a82c-49f8-8742-35eba7ba1b1f` (Project Orchestrator)  
+**Verdict**: **APPROVE**  
 
 ---
 
 ## 1. Observation
 
-Direct empirical observations from codebase inspection, architectural tracing, and adversarial execution:
+### 1.1 Scope & Direct Inspection
+An adversarial stress test was conducted targeting the four core cross-platform components modified for Milestone 1:
+- `smart_drive/core/drive_detector.py`
+- `smart_drive/mcp/proxy.py`
+- `smart_drive/core/junction.py`
+- `smart_drive/ui/server.py`
 
-1. **Endpoint Implementation (`smart_drive/ui/server.py:313-370`)**:
-   - `handle_api_junk_clean()` parses JSON request body containing `tiers`, `dry_run`, and optional `paths`.
-   - Lines 342-343:
-     ```python
-     detector = JunkDetector(self.server.root_path, max_tier=detector_max, cluster_size=self.server.cluster_size)
-     items = detector.find_junk()
-     ```
-   - Lines 346-351:
-     ```python
-     candidates = [item for item in items if int(item.tier) in selected_tiers]
-     if specific_paths is not None:
-         path_set = set(specific_paths)
-         candidates = [c for c in candidates if c.path in path_set or c.rel_path in path_set]
-     ```
-   - *Observation*: An adversary cannot inject arbitrary target files via the `paths` parameter unless `JunkDetector` independently identified that target as a valid junk candidate matching declarative rules.
+### 1.2 Dedicated Adversarial Test Suite Execution
+A dedicated empirical adversarial test harness was authored and executed at `tests/test_cross_platform_adversarial_m1_2.py`:
+```bash
+python3 -m unittest tests/test_cross_platform_adversarial_m1_2.py -v
+```
+Verbatim Output:
+```
+test_filesystem_adapter_cluster_math_adversarial (tests.test_cross_platform_adversarial_m1_2.TestDriveDetectorCrossPlatformAdversarial.test_filesystem_adapter_cluster_math_adversarial)
+FilesystemAdapter cluster allocation and slack calculations under boundary conditions. ... ok
+test_inspect_drive_unmounted_or_nonexistent (tests.test_cross_platform_adversarial_m1_2.TestDriveDetectorCrossPlatformAdversarial.test_inspect_drive_unmounted_or_nonexistent)
+inspect_drive raises FileNotFoundError on unmounted drives and ValueError on malformed inputs. ... ok
+test_mock_system_drive_reassignment_and_exclusion (tests.test_cross_platform_adversarial_m1_2.TestDriveDetectorCrossPlatformAdversarial.test_mock_system_drive_reassignment_and_exclusion)
+System drive reassignment (e.g. E: or G:) must exclude both system drive AND C: from secondary drives. ... ok
+test_normalize_drive_letter_malformed_and_strange_inputs (tests.test_cross_platform_adversarial_m1_2.TestDriveDetectorCrossPlatformAdversarial.test_normalize_drive_letter_malformed_and_strange_inputs)
+normalize_drive_letter must accept valid drive letters and reject UNC, empty, and malformed specs. ... ok
+test_normalize_mount_point_formatting (tests.test_cross_platform_adversarial_m1_2.TestDriveDetectorCrossPlatformAdversarial.test_normalize_mount_point_formatting)
+normalize_mount_point always outputs standard format with trailing backslash. ... ok
+test_broken_junction_detection_and_safe_cleanup (tests.test_cross_platform_adversarial_m1_2.TestJunctionCrossPlatformAdversarial.test_broken_junction_detection_and_safe_cleanup)
+Broken directory junction (target deleted) must be detected as junction and removed safely. ... ok
+test_junction_unlinking_preserves_target_files (tests.test_cross_platform_adversarial_m1_2.TestJunctionCrossPlatformAdversarial.test_junction_unlinking_preserves_target_files)
+Removing a directory junction unlinks the junction and preserves 100% of target files. ... ok
+test_nonexistent_and_malformed_paths (tests.test_cross_platform_adversarial_m1_2.TestJunctionCrossPlatformAdversarial.test_nonexistent_and_malformed_paths)
+Non-existent and malformed paths safely return False / None without unhandled crashes. ... ok
+test_real_directory_rejection_prevents_data_loss (tests.test_cross_platform_adversarial_m1_2.TestJunctionCrossPlatformAdversarial.test_real_directory_rejection_prevents_data_loss)
+remove_directory_junction strictly refuses to remove a regular directory, preserving data. ... ok
+test_regular_file_and_symlink_to_file_rejected (tests.test_cross_platform_adversarial_m1_2.TestJunctionCrossPlatformAdversarial.test_regular_file_and_symlink_to_file_rejected)
+Regular files and symlinks to regular files must NOT be recognized as directory junctions. ... ok
+test_valid_symlink_directory_detected_as_junction (tests.test_cross_platform_adversarial_m1_2.TestJunctionCrossPlatformAdversarial.test_valid_symlink_directory_detected_as_junction)
+On POSIX systems, a symlink pointing to an existing directory is recognized as a junction. ... ok
+test_discover_with_latency_performance_under_100ms (tests.test_cross_platform_adversarial_m1_2.TestProxyCrossPlatformAdversarial.test_discover_with_latency_performance_under_100ms)
+discover_with_latency completes well within the 100ms SLA. ... ok
+test_env_root_overrides_valid_and_invalid (tests.test_cross_platform_adversarial_m1_2.TestProxyCrossPlatformAdversarial.test_env_root_overrides_valid_and_invalid)
+SMART_DRIVE_ROOT and KINGSTON_SSD_ROOT precedence, handling valid and invalid paths. ... ok
+test_mock_windows_paths_on_posix_no_host_directory_leak (tests.test_cross_platform_adversarial_m1_2.TestProxyCrossPlatformAdversarial.test_mock_windows_paths_on_posix_no_host_directory_leak)
+Simulated Windows drive letter paths on POSIX do not resolve to local host repo. ... ok
+test_nested_working_directory_structure_detection (tests.test_cross_platform_adversarial_m1_2.TestProxyCrossPlatformAdversarial.test_nested_working_directory_structure_detection)
+Deeply nested working directory resolves correctly to root containing GEMINI.md or AGENTS.md. ... ok
+test_burst_concurrent_socket_requests_backlog_resilience (tests.test_cross_platform_adversarial_m1_2.TestUIServerConcurrencyAndSocketBacklog.test_burst_concurrent_socket_requests_backlog_resilience)
+Burst of 80 concurrent worker threads making 160 requests must not drop connections. ... ok
+test_malformed_http_payloads_and_boundaries (tests.test_cross_platform_adversarial_m1_2.TestUIServerConcurrencyAndSocketBacklog.test_malformed_http_payloads_and_boundaries)
+Malformed payloads in POST and edge query parameters are safely handled. ... ok
+test_security_restriction_host_binding (tests.test_cross_platform_adversarial_m1_2.TestUIServerConcurrencyAndSocketBacklog.test_security_restriction_host_binding)
+create_server strictly enforces 127.0.0.1 loopback binding and prohibits external interfaces. ... ok
 
-2. **Security Guard Boundaries (`smart_drive/core/purge_engine.py:164-237`)**:
-   - `SecurityGuard.is_protected()` enforces multiple inviolable rules:
-     - Lines 177-179 & 186-188:
-       ```python
-       if any(p.lower() == ".git" for p in target_path_obj.parts):
-           return True, "Git repository contents are inviolable"
-       ```
-     - Lines 191-192:
-       ```python
-       if real_target == self.drive_root or real_target.lower() == self.drive_root.lower():
-           return True, "Cannot delete drive root"
-       ```
-     - Lines 195-197:
-       ```python
-       is_inside, rel_path = self._normalize_rel_path(real_target)
-       if not is_inside:
-           return True, "Path escapes drive root boundary"
-       ```
-     - Lines 210-213:
-       ```python
-       if base_name.lower() in {ANTI_INDEXING_ROOT_FILE.lower(), "no_log"}:
-           return True, f"Anti-indexing marker protected: {base_name}"
-       ```
-     - Lines 216-224: Protects non-junk user files inside business taxonomy directories (`01_AI_Models` .. `06_Archives_Storage`).
-     - Lines 227-228: Protects root files matching exact names (`GEMINI.md`, `CLAUDE.md`, `README.md`, etc.) and glob patterns (`Quick_*.bat`, `smart_*`, etc.).
+----------------------------------------------------------------------
+Ran 18 tests in 0.694s
 
-3. **Purge Engine Dry-Run & Anti-Indexing Restoration (`smart_drive/core/purge_engine.py:387-401, 559-561`)**:
-   - Lines 387-401: When `self.dry_run` is `True`, `delete_file` returns a `DeletionRecord(status="SIMULATED", reason="Dry-run simulation (file intact)")` without calling `os.unlink()`.
-   - Lines 559-561:
-     ```python
-     if not self.dry_run:
-         self.ensure_anti_indexing()
-     ```
-   - When a live purge executes, `ensure_anti_indexing()` is unconditionally invoked to recreate `.metadata_never_index` and `.fseventsd/no_log` if an external entity removed them.
+OK
+```
 
-4. **Empirical Adversarial Test Suite Execution (`tests/test_ui_security_m1_2.py`)**:
-   - Built a comprehensive adversarial test harness (`tests/test_ui_security_m1_2.py`) consisting of 11 targeted test methods across 5 challenge domains:
-     ```bash
-     python -m unittest tests/test_ui_security_m1_2.py
-     ```
-   - Verbatim console output:
-     ```
-     ...........
-     ----------------------------------------------------------------------
-     Ran 11 tests in 6.058s
+### 1.3 Milestone 1 Test Suite Regression
+Execution command:
+```bash
+python3 -m unittest tests/test_mcp_adversarial_challenger2.py tests/test_mcp_hardening.py tests/test_mcp_grade_a.py tests/test_drive_detector.py tests/test_mcp_proxy.py tests/test_junction.py tests/test_offloader.py tests/test_ui_adversarial.py tests/test_cross_platform_adversarial_m1_2.py -v
+```
+Verbatim Summary:
+```
+----------------------------------------------------------------------
+Ran 208 tests in 15.520s
 
-     OK
-     ```
-   - Zero test failures, zero regressions.
+OK (skipped=9)
+```
+
+### 1.4 Incidental Discovery: Flaky Assertion in Milestone 2 E2E Test
+During full repository discovery (`python3 -m unittest discover -s tests`), an intermittent failure was observed in `tests/test_e2e_mcp_distribution.py:154`:
+```
+FAIL: test_r1_mcp_search_compact_token_efficiency (test_e2e_mcp_distribution.TestTier1FeatureCoverage.test_r1_mcp_search_compact_token_efficiency)
+AssertionError: 186 not less than or equal to 185 : Compact mode payload should be more token-efficient than full mode
+```
+Empirical investigation isolated the exact root cause:
+- `test_r1_mcp_search_compact_token_efficiency` queries `{"query": "test", "limit": 10}` against the mock tree, which returns 0 matches (`"matches": []`).
+- When matches are empty, compact mode and full mode produce identical dictionaries whose byte counts differ only by the floating point representation of `elapsed_ms` (e.g., `0.27` is 4 bytes, `0.2` is 3 bytes).
+- When the first query runs slightly slower than the second query, `compact_bytes` (186) exceeds `full_bytes` (185) by 1 byte.
+- This belongs to Milestone 2 (Feature 9: Token-Efficient JSON Output) and is documented below for Worker M2.
 
 ---
 
 ## 2. Logic Chain
 
-1. **Protected Root Files Inviolability**:
-   - *Premise*: An attacker might attempt to supply `"GEMINI.md"`, `"CLAUDE.md"`, `"README.md"`, `"Quick_clean.bat"`, or lowercase/relative variants in the `paths` parameter of `POST /api/junk/clean` with `dry_run: false`.
-   - *Observation*: `test_cannot_trick_clean_into_deleting_protected_root_files` injected exact, lowercase, mixed-case, relative (`./`), and absolute paths of all protected root files into `POST /api/junk/clean` with `dry_run: false`.
-   - *Deduction*: `JunkDetector` does not recognize these filenames as junk; furthermore, `SecurityGuard.is_protected()` explicitly catches them under Rule 5 (`is_protected_root_file`). SHA-256 hashes of all protected files before and after the API call were verified identical (`OK`). Full cleans across all tiers also left 100% of protected root files intact.
+### 2.1 Component 1: `smart_drive/core/drive_detector.py`
+- **Observation (§ 1.2)**: Passed 16 diverse valid inputs (including `//?/C:/foo/bar`, `\\.\D:`, `//./E:/test`, `\\?\Z:\system`, `x:\`, `Z:/`), and 13 malformed inputs (UNC `//server/share`, `\\server\share`, `//127.0.0.1/c$`, `\\attacker.com\payload`, empty string, whitespace, `/usr/local/bin`, `1:`, `.:`, `!:`, `\\.\PhysicalDrive0`, `Volume GUID`).
+- **Deduction**: `normalize_drive_letter` cleanly handles device namespaces (`//./`, `\\.\`, `\\?\`), extracts valid drive letters, and strictly rejects UNC paths and malformed strings with `ValueError`.
+- **System Drive Invariant**: Reassigning mock system drive to `E:` confirmed that `list_secondary_drive_letters()` and `list_secondary_drives()` strictly exclude BOTH `C:` and `E:`, preserving the zero-touch system drive guarantee across platforms.
 
-2. **Anti-Indexing Markers Defense & Restoration**:
-   - *Premise*: Deletion of `.metadata_never_index` or `.fseventsd/no_log` would allow macOS Spotlight or Windows Search to write junk onto the exFAT drive.
-   - *Observation*: `test_cannot_trick_clean_into_deleting_anti_indexing_markers` targeted these files directly via `POST /api/junk/clean`. `test_clean_restores_anti_indexing_markers_if_missing` unlinked the markers prior to calling the endpoint.
-   - *Deduction*: Both markers were shielded from deletion (`SecurityGuard` Rule 3). In addition, when markers were intentionally wiped prior to a live purge, `POST /api/junk/clean` triggered `PurgeEngine.ensure_anti_indexing()`, successfully recreating them on disk.
+### 2.2 Component 2: `smart_drive/mcp/proxy.py`
+- **Observation (§ 1.2)**: Tested environment variable overrides (`SMART_DRIVE_ROOT`, `KINGSTON_SSD_ROOT`), invalid environment directories (skipped without error), and non-directory files in env (safely rejected). Tested 4-tier directory nesting (`03_Development_Projects/frontend/src/components`), where root containing `GEMINI.md` or `AGENTS.md` was correctly detected.
+- **Cross-Platform Resilience**: When cwd was mocked with a Windows drive letter on POSIX (`Path("C:/MockNonDrive/subdir")`), the fix in Worker M1 (`if sys.platform != "win32" and len(str(cwd)) >= 2 and str(cwd)[1] == ":": cwd_cand = cwd`) prevented `cwd.resolve()` from resolving against the local host git repository, preventing host false positive matches.
+- **Latency SLA**: `discover_with_latency()` completed in < 100ms.
 
-3. **Path Traversal & Host System Isolation**:
-   - *Premise*: A malicious actor might submit `../`, `..\`, or absolute host file paths (`/etc/passwd`, `C:\Windows\...`) to escape the SSD volume root and delete arbitrary host files.
-   - *Observation*: `test_cannot_delete_files_outside_drive_root_via_path_traversal` placed external canary files (`victim_outside_1.txt`, `victim_outside_2.txt`, `system_important_file.conf`) outside `mock_root` and submitted diverse traversal strings (`../`, `..\`, `....//....//`, absolute paths).
-   - *Deduction*: `SecurityGuard._normalize_rel_path()` canonicalizes paths via `os.path.realpath(os.path.abspath(...))` and checks `rel.startswith("..") or os.path.isabs(rel)`. All traversal attempts were blocked. 100% of canary files outside the drive remained intact and unedited.
+### 2.3 Component 3: `smart_drive/core/junction.py`
+- **Observation (§ 1.2)**: Valid symlink directories are detected as junctions on POSIX. When the target directory was deleted, `is_directory_junction` continued to return `True` (verifying Worker M1's broken junction fix: `if not os.path.exists(p_str): return True`).
+- **Safety Rejection**: Attempting to call `remove_directory_junction(real_dir)` on a regular directory strictly raised `ValueError("Safety Violation: '...' is a regular directory or file, not an NTFS Directory Junction!")`, preserving all canary files inside.
+- **Data Preservation**: Removing a valid junction successfully unlinked the reparse point while leaving 100% of target files intact.
 
-4. **Inviolable Git Repositories**:
-   - *Premise*: Developers frequently have `.git` directories on external drives; deletion of git objects or index would cause catastrophic data loss.
-   - *Observation*: `test_git_directory_and_contents_are_strictly_inviolable` tested:
-     a) Direct unlinking of `.git`, `.git/config`, `.git/HEAD`, `.git/objects/...`.
-     b) Planted legitimate junk-type files inside `.git` (`.git/Thumbs.db`, `.git/.DS_Store`, `.git/temp.tmp`).
-     c) Executed full cleans across all tiers (1, 2, 3) with `dry_run: false`.
-   - *Deduction*: `FastDirectoryScanner` excludes `.git` from scanning entirely (`scanner_excludes = {".git", ...}`). Additionally, `SecurityGuard.is_protected()` unconditionally blocks any path containing `.git` as a path segment (`"Git repository contents are inviolable"`). 100% of git directories, configs, and internal files were preserved.
-
-5. **Dry-Run Mode Absolute Immutability**:
-   - *Premise*: `dry_run: true` must allow safe visual previews in the web dashboard without modifying a single byte on disk.
-   - *Observation*: `test_dry_run_strictly_prevents_any_filesystem_modification` created authentic junk items across Tiers 1, 2, and 3 (`.DS_Store`, `Thumbs.db`, `._notes.txt`, `__pycache__/*.pyc`, `*.dmp`, `*.tmp`), recorded their exact byte size, modification timestamp (`st_mtime`), and SHA-256 hash, and invoked `POST /api/junk/clean` with `dry_run: true`.
-   - *Deduction*: The response returned `dry_run: true`, reported accurate `nominal_bytes_reclaimed` and `allocated_bytes_reclaimed` with `SIMULATED` status. A post-check confirmed that every file remained on disk with identical size, unchanged `st_mtime`, and matching SHA-256. Subsequent execution with `dry_run: false` cleanly unlinked the junk files, proving the dry-run barrier is strictly enforced.
+### 2.4 Component 4: `smart_drive/ui/server.py`
+- **Observation (§ 1.2)**: Fired 80 concurrent worker threads making 160 simultaneous HTTP requests across `/`, `/api/status`, `/api/audit`, `/api/search?q=test`, and `/api/junk`.
+- **Deduction**: Worker M1's configuration `request_queue_size = 128` successfully absorbed the socket burst. Zero connections were dropped, zero `ConnectionResetError` (Errno 54) occurred, and all 160 requests returned HTTP 200 within timeout limits.
+- **Security Binding**: `create_server` strictly rejected non-loopback bindings (`0.0.0.0`, `192.168.1.100`) with `ValueError`.
 
 ---
 
 ## 3. Caveats
 
-1. **Non-Dict JSON Edge Case**:
-   - If a client sends valid JSON that is not a dictionary (e.g. `[1, 2, 3]` or `"string"`), `server.py` line 327 (`req_data.get(...)`) triggers an `AttributeError`, which is caught by the route's `try...except Exception` handler and returns HTTP 500 (`Internal server error`) rather than HTTP 400. This is safely trapped, does not crash the server daemon, and causes zero filesystem destruction.
-2. **File Locking under Windows**:
-   - If a target junk file is open with exclusive read lock by another Windows process, `os.unlink()` records `FAILED` with the Windows error message, preserving system stability.
+1. **Native Win32 IOCTL Device Queries (9 Skipped)**:
+   Tests in `tests/test_drive_detector.py` that invoke `DeviceIoControl(IOCTL_STORAGE_QUERY_PROPERTY)` are decorated with `@unittest.skipUnless(sys.platform == "win32")` and were skipped as expected on macOS host. Their logic is verified via `MockDriveBackend`.
+2. **Flaky Test Advisory for Milestone 2**:
+   `tests/test_e2e_mcp_distribution.py::test_r1_mcp_search_compact_token_efficiency` should use a query that actually matches files (e.g. `llama` or `algorithm`) rather than `test` (which matches 0 files), so the payload byte comparison tests genuine compact formatting rather than timing float string variations.
 
 ---
 
 ## 4. Conclusion
 
-**Verdict: CONFIRMED**
+All cross-platform components modified in Milestone 1 have been subjected to rigorous adversarial testing and empirical verification:
+- `smart_drive/core/drive_detector.py`: **ROBUST** — Handles UNC, malformed strings, and system drive reassignments correctly.
+- `smart_drive/mcp/proxy.py`: **ROBUST** — Resolves mount roots reliably without host leaks or cross-platform false positives.
+- `smart_drive/core/junction.py`: **SAFE & ACCURATE** — Broken junctions detected, real directories protected against deletion, target files preserved.
+- `smart_drive/ui/server.py`: **HIGH-CONCURRENCY VERIFIED** — 128 socket backlog prevents connection drops under 80+ concurrent threads.
 
-The safety and security boundaries of `POST /api/junk/clean` and `PurgeEngine` are robust, empirical, and mathematically sound:
-1. **Protected root files** (`GEMINI.md`, `CLAUDE.md`, `README.md`, `Quick_*.bat`, etc.) cannot be deleted via explicit path injection or full purge.
-2. **Anti-indexing markers** (`.metadata_never_index`, `.fseventsd/no_log`) are inviolable and automatically restored if missing.
-3. **Path traversal attacks** (`../`, `..\`, absolute system paths) are blocked by strict canonicalization.
-4. **Git repositories** (`.git` and nested files) are completely excluded from scans and protected by hard security guards.
-5. **Dry-run mode** strictly guarantees byte-for-byte and timestamp immutability.
+**Explicit Verdict: APPROVE**
 
 ---
 
 ## 5. Verification Method
 
-To independently verify Challenger M1-2's findings:
+To independently reproduce and verify this empirical challenge:
 
-1. **Run the M1-2 Empirical Security Test Suite**:
+1. **Run Dedicated Adversarial Test Suite**:
    ```bash
-   python -m unittest tests/test_ui_security_m1_2.py
+   python3 -m unittest tests/test_cross_platform_adversarial_m1_2.py -v
    ```
-   *Expected Output*:
-   ```
-   ...........
-   ----------------------------------------------------------------------
-   Ran 11 tests in ~6s
+   *Expected Result*: `Ran 18 tests in ~0.7s ... OK`
 
-   OK
-   ```
-
-2. **Run the Standard UI and Purge Unit Tests**:
+2. **Run Targeted Milestone 1 Test Suites**:
    ```bash
-   python -m unittest tests/test_ui.py
-   python -m unittest tests/test_cleaner.py tests/test_sentinel.py
+   python3 -m unittest tests/test_mcp_adversarial_challenger2.py tests/test_mcp_hardening.py tests/test_mcp_grade_a.py tests/test_drive_detector.py tests/test_mcp_proxy.py tests/test_junction.py tests/test_offloader.py tests/test_ui_adversarial.py tests/test_cross_platform_adversarial_m1_2.py -v
    ```
-   *Expected Output*: All 18 UI tests, 9 cleaner tests, and 7 sentinel tests pass (`OK`).
+   *Expected Result*: `Ran 208 tests ... OK (skipped=9)`
 
-3. **Inspect Test Code**:
-   Review `tests/test_ui_security_m1_2.py` for exact attack vectors and assertion methods.
+3. **Verify Pure Python Standard Library (Zero External Dependencies)**:
+   ```bash
+   python3 -c "import smart_drive.core.drive_detector, smart_drive.mcp.proxy, smart_drive.core.junction, smart_drive.ui.server; print('Zero external runtime dependencies verified.')"
+   ```
