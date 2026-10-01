@@ -176,7 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument(
         "--profile",
         default="general-workspace",
-        choices=["general-workspace", "ai-developer", "data-science", "internal-developer-vault"],
+        choices=["general-workspace", "ai-developer", "data-science", "internal-developer-vault", "workstation-hybrid"],
         help="Preset profile configuration",
     )
     p_init.add_argument("--force", action="store_true", help="Force overwrite existing manifests")
