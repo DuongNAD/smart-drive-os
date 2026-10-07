@@ -869,8 +869,11 @@ class SmartDriveMCPServer:
         db = DatabaseManager(db_path)
         try:
             db.initialize_schema()
-            mgr = IndexManager(db, target_root)
-            inc = mgr.incremental_update()
+            # Index paths are stored relative to the drive root, so the manager must always be
+            # rooted there; a sub-directory is passed as the sync scope. Rooting the manager at
+            # the sub-directory would treat every row outside it as deleted.
+            mgr = IndexManager(db, self._ensure_root())
+            inc = mgr.incremental_update(directory=target_root if target_dir else None)
             return dataclasses.asdict(inc)
         finally:
             db.close()

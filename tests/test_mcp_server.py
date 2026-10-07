@@ -137,6 +137,36 @@ class TestMCPToolDispatching(SmartDriveTestCase):
         self.assertGreater(search_res.get("total_count", 0), 0)
         self.assertGreater(len(search_res.get("matches", [])), 0)
 
+    def test_scoped_update_index_keeps_rows_outside_scope(self) -> None:
+        """ssd_update_index(directory=X) syncs only X and leaves the rest of the index intact."""
+        from smart_drive.indexer.db import DatabaseManager
+
+        def query(sql: str, params: tuple = ()) -> list:
+            db = DatabaseManager(self.server.get_db_path())
+            try:
+                cur = db.get_connection().cursor()
+                cur.execute(sql, params)
+                return [tuple(row) for row in cur.fetchall()]
+            finally:
+                db.close()
+
+        self.server.dispatch_tool("ssd_update_index", {})
+        rows_before = query("SELECT COUNT(*) FROM files;")[0][0]
+        self.assertGreater(rows_before, 0)
+
+        scope = Path(self.server.root) / "scoped_sync_dir"
+        scope.mkdir()
+        (scope / "fresh_notes.md").write_text("scoped", encoding="utf-8")
+
+        scoped = self.server.dispatch_tool("ssd_update_index", {"directory": "scoped_sync_dir"})
+        self.assertEqual(scoped["added"], 1)
+        self.assertEqual(scoped["deleted"], 0)
+        self.assertEqual(query("SELECT COUNT(*) FROM files;")[0][0], rows_before + 1)
+        self.assertEqual(
+            query("SELECT path FROM files WHERE filename = ?;", ("fresh_notes.md",)),
+            [("scoped_sync_dir/fresh_notes.md",)],
+        )
+
     def test_dispatch_unknown_tool_raises_value_error(self) -> None:
         """Dispatching an unregistered tool name raises ValueError."""
         with self.assertRaises(ValueError):
