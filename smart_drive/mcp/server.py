@@ -39,6 +39,7 @@ from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine, SecurityGuard
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
+from smart_drive.core.root import DriveRootNotFound, find_drive_root
 from smart_drive.mcp.proxy import SmartDriveProxy
 from smart_drive.search.engine import SearchEngine
 from smart_drive.search.parser import parse_search_query, parse_size_spec
@@ -451,10 +452,21 @@ class SmartDriveMCPServer:
         require_auth: Optional[bool] = None,
     ) -> None:
         if root:
-            self.root = os.path.abspath(root)
+            res = find_drive_root(explicit=root)
+            if res:
+                self.root: Optional[str] = res.path
+                self.root_source: Optional[str] = res.source
+            else:
+                self.root = None
+                self.root_source = None
         else:
-            detected = SmartDriveProxy.detect_mount_point()
-            self.root = str(detected) if detected else os.getcwd()
+            res = find_drive_root()
+            if res:
+                self.root = res.path
+                self.root_source = res.source
+            else:
+                self.root = None
+                self.root_source = None
         self.use_content_length_mode = False
         self._raw_stdout: Optional[Any] = None
         self.rate_limiter = SlidingWindowRateLimiter(
@@ -485,6 +497,12 @@ class SmartDriveMCPServer:
         # In stdio mode with no token and require_auth unconfigured, require_auth is False (zero-friction).
         self._authenticated: bool = not self.require_auth
 
+    def _ensure_root(self) -> str:
+        """Ensures that a valid drive root is configured, or raises DriveRootNotFound."""
+        if self.root is None:
+            raise DriveRootNotFound("Could not determine the SmartDrive root. Pass --root <path> or set SMART_DRIVE_ROOT.")
+        return self.root
+
     def verify_token(self, token: Optional[str]) -> bool:
         """Verifies the provided token against self.auth_token using constant-time comparison."""
         if not self.auth_token or token is None:
@@ -509,10 +527,12 @@ class SmartDriveMCPServer:
         - If must_exist and not os.path.exists(target), raises FileNotFoundError.
 
         Raises:
+            DriveRootNotFound: If self.root is None.
             ValueError: If path contains null bytes, is UNC, or escapes self.root.
             FileNotFoundError: If must_exist is True and path does not exist.
         """
-        canonical_root = os.path.realpath(os.path.abspath(self.root))
+        root = self._ensure_root()
+        canonical_root = os.path.realpath(os.path.abspath(root))
         if sub_path is None:
             return canonical_root
 
@@ -604,10 +624,11 @@ class SmartDriveMCPServer:
         return res
 
     def get_db_path(self) -> str:
-        new_path = os.path.join(self.root, ".smart_drive", "index.db")
+        root = self._ensure_root()
+        new_path = os.path.join(root, ".smart_drive", "index.db")
         if os.path.exists(new_path):
             return new_path
-        legacy_path = os.path.join(self.root, ".smart_drive_manager", "index.db")
+        legacy_path = os.path.join(root, ".smart_drive_manager", "index.db")
         if os.path.exists(legacy_path):
             return legacy_path
         return new_path
@@ -762,7 +783,7 @@ class SmartDriveMCPServer:
         detector = JunkDetector(target_root, max_tier=max_tier)
         junk_items = detector.find_junk()
 
-        guard = SecurityGuard(drive_root=self.root)
+        guard = SecurityGuard(drive_root=self._ensure_root())
         purge_engine = PurgeEngine(guard, dry_run=dry_run)
         summary = purge_engine.purge_batch(junk_items, dry_run=dry_run)
 
@@ -869,7 +890,8 @@ class SmartDriveMCPServer:
                 "error": "Path contains null byte",
             }
 
-        canonical_root = os.path.realpath(os.path.abspath(self.root))
+        root = self._ensure_root()
+        canonical_root = os.path.realpath(os.path.abspath(root))
         clean_path = path_str.strip()
 
         # 1. UNC network paths
@@ -982,44 +1004,51 @@ class SmartDriveMCPServer:
         return res
 
     def handle_ssd_status(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        root = self._ensure_root()
         try:
             from smart_drive.core.sentinel import SentinelEngine
-            engine = SentinelEngine(self.root)
-            report = engine.run_health_check(self.root, auto_heal=False)
-            return dict(report)
+            engine = SentinelEngine(root)
+            report = engine.run_health_check(root, auto_heal=False)
+            res = dict(report)
+            if "mount" in res and isinstance(res["mount"], dict):
+                res["mount"]["source"] = self.root_source
+            res["source"] = self.root_source
+            return res
         except Exception as e:
             logger.exception("Error during ssd_status health check: %s", e)
             return {
-                "mount": {"root": self.root, "accessible": os.path.exists(self.root)},
+                "mount": {"root": root, "source": self.root_source, "accessible": os.path.exists(root)},
                 "anti_indexing_shields": {"status": "unknown"},
                 "taxonomies": {},
                 "integrity_status": "error",
                 "error": str(e),
+                "source": self.root_source,
             }
 
     def handle_ssd_auto_organize(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        zoner = AutoZoner(self.root)
+        root = self._ensure_root()
+        zoner = AutoZoner(root)
         plan = zoner.generate_plan()
         apply_mode = self._parse_bool(args.get("apply"), default=False)
         clean_mode = self._parse_bool(args.get("clean"), default=False)
         if clean_mode:
             try:
-                detector = JunkDetector(self.root, max_tier=JunkTier.TIER_1_SAFE)
+                detector = JunkDetector(root, max_tier=JunkTier.TIER_1_SAFE)
                 junk_items = detector.find_junk()
-                guard = SecurityGuard(drive_root=self.root)
+                guard = SecurityGuard(drive_root=root)
                 purge_engine = PurgeEngine(guard, dry_run=not apply_mode)
                 purge_engine.purge_batch(junk_items, dry_run=not apply_mode)
             except Exception as e:
                 logger.warning("Error running clean in auto_organize: %s", e)
         if apply_mode:
-            created_shields = ensure_anti_indexing_markers(self.root)
+            created_shields = ensure_anti_indexing_markers(root)
             res = zoner.apply_plan(plan)
             db_path = self.get_db_path()
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
             db = DatabaseManager(db_path)
             try:
                 db.initialize_schema()
-                mgr = IndexManager(db, self.root)
+                mgr = IndexManager(db, root)
                 inc_stats = mgr.incremental_update()
             finally:
                 db.close()

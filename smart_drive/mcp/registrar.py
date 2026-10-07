@@ -10,13 +10,20 @@ Registers the SmartDrive MCP Server across:
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import os
 import platform
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+
+class ConfigParseError(ValueError):
+    """Raised when JSON configuration parsing fails in strict mode."""
+    pass
 
 
 def _safe_home_dir() -> Path:
@@ -108,7 +115,7 @@ def detect_installed_agents() -> Dict[str, bool]:
     elif "windows" in system or sys.platform == "win32":
         appdata = os.environ.get("APPDATA")
         claude_desktop = Path(appdata) / "Claude" if appdata else home / "AppData" / "Roaming" / "Claude"
-    else:
+    else:  # Linux
         claude_desktop = home / ".config" / "Claude"
 
     if (
@@ -142,24 +149,54 @@ def detect_installed_agents() -> Dict[str, bool]:
     return detected
 
 
-def load_json_config(path: Path) -> Dict[str, Any]:
+def load_json_config(path: Path, strict: bool = False) -> Dict[str, Any]:
     """Safely loads an existing JSON configuration file."""
     if not path.is_file():
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except Exception:
+            if not isinstance(data, dict):
+                if strict:
+                    raise ConfigParseError(
+                        f"Root JSON element in '{path}' must be an object/dict, got {type(data).__name__}"
+                    )
+                return {}
+            return data
+    except Exception as err:
+        if strict:
+            if isinstance(err, ConfigParseError):
+                raise
+            raise ConfigParseError(f"Failed to parse JSON config '{path}': {err}") from err
         return {}
 
 
 def save_json_config(path: Path, data: Dict[str, Any]) -> None:
-    """Safely writes a JSON configuration file, creating parent directories."""
+    """Safely and atomically writes a JSON configuration file, creating parent directories."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    temp_file = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=str(path.parent),
+        delete=False,
+        suffix=".tmp",
+    )
+    temp_path = Path(temp_file.name)
+    try:
+        json.dump(data, temp_file, indent=2, ensure_ascii=False)
+        temp_file.write("\n")
+        temp_file.flush()
+        os.fsync(temp_file.fileno())
+        temp_file.close()
+        os.replace(str(temp_path), str(path))
+    except Exception:
+        temp_file.close()
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except Exception:
+                pass
+        raise
 
 
 def build_mcp_entry(python_cmd: Optional[str] = None) -> Dict[str, Any]:
@@ -202,70 +239,77 @@ def register_ide_configs(
     results: Dict[str, bool] = {}
 
     entry = build_mcp_entry(python_cmd)
-
-
     config_paths = get_agent_config_paths()
     detected = detect_installed_agents() if auto_detect else {}
 
     primary_agents = ["antigravity", "claude", "cursor", "windsurf"]
 
-    for ide_name in primary_agents:
-        path = config_paths.get(ide_name)
-        if not path:
-            continue
-
-        if flags is not None:
-            if ide_name == "cursor" and "codex" in flags and "cursor" not in flags:
-                should_register = flags.get("codex", True)
-            else:
-                should_register = flags.get(ide_name, True)
-            if not should_register:
-                continue
-        elif auto_detect:
-            if any(detected.values()) and not detected.get(ide_name, False):
+    # Only register global targets if explicit flags are given OR auto_detect is True
+    if flags is not None or auto_detect:
+        for ide_name in primary_agents:
+            path = config_paths.get(ide_name)
+            if not path:
                 continue
 
-        try:
-            cfg = load_json_config(path)
-            if "mcpServers" not in cfg or not isinstance(cfg["mcpServers"], dict):
-                cfg["mcpServers"] = {}
+            if flags is not None:
+                if ide_name == "cursor" and "codex" in flags and "cursor" not in flags:
+                    should_register = flags.get("codex", True)
+                else:
+                    should_register = flags.get(ide_name, True)
+                if not should_register:
+                    continue
+            elif auto_detect:
+                if any(detected.values()) and not detected.get(ide_name, False):
+                    continue
 
-            cfg["mcpServers"]["smart-drive"] = entry
-            save_json_config(path, cfg)
-            results[ide_name] = True
+            try:
+                if path.is_file():
+                    cfg = load_json_config(path, strict=True)
+                else:
+                    cfg = {}
+                if "mcpServers" not in cfg or not isinstance(cfg["mcpServers"], dict):
+                    cfg["mcpServers"] = {}
 
-            # If registering Claude, also update ~/.claude.json if present
-            if ide_name == "claude":
-                claude_code_path = config_paths.get("claude_code")
-                if claude_code_path and claude_code_path.is_file():
-                    try:
-                        cc_cfg = load_json_config(claude_code_path)
-                        if "mcpServers" not in cc_cfg or not isinstance(cc_cfg["mcpServers"], dict):
-                            cc_cfg["mcpServers"] = {}
-                        cc_cfg["mcpServers"]["smart-drive"] = entry
-                        save_json_config(claude_code_path, cc_cfg)
-                        results["claude_code"] = True
-                    except Exception:
-                        pass
-        except Exception:
-            results[ide_name] = False
+                cfg["mcpServers"]["smart-drive"] = entry
+                save_json_config(path, cfg)
+                results[ide_name] = True
 
-    # Also register local workspace .mcp.json if target_dir provided
+                # If registering Claude, also update ~/.claude.json if present
+                if ide_name == "claude":
+                    claude_code_path = config_paths.get("claude_code")
+                    if claude_code_path and claude_code_path.is_file():
+                        try:
+                            cc_cfg = load_json_config(claude_code_path, strict=True)
+                            if "mcpServers" not in cc_cfg or not isinstance(cc_cfg["mcpServers"], dict):
+                                cc_cfg["mcpServers"] = {}
+                            cc_cfg["mcpServers"]["smart-drive"] = entry
+                            save_json_config(claude_code_path, cc_cfg)
+                            results["claude_code"] = True
+                        except Exception:
+                            pass
+            except Exception:
+                results[ide_name] = False
+
+    # Also register local workspace .mcp.json if target_dir provided or requested
+    local_path = None
     if target_dir:
-        try:
-            local_path = Path(target_dir) / ".mcp.json"
-            cfg = load_json_config(local_path)
-            if "mcpServers" not in cfg or not isinstance(cfg["mcpServers"], dict):
-                cfg["mcpServers"] = {}
-            cfg["mcpServers"]["smart-drive"] = entry
-            save_json_config(local_path, cfg)
-            results["workspace"] = True
-        except Exception:
-            results["workspace"] = False
+        local_path = Path(target_dir) / ".mcp.json"
     elif (flags and flags.get("workspace")) or (auto_detect and Path(".mcp.json").is_file()):
+        local_path = Path.cwd() / ".mcp.json"
+
+    if local_path is not None:
         try:
-            local_path = Path.cwd() / ".mcp.json"
-            cfg = load_json_config(local_path)
+            if local_path.is_file():
+                try:
+                    cfg = load_json_config(local_path, strict=True)
+                except ConfigParseError:
+                    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    bak_path = local_path.parent / f"{local_path.name}.bak-{timestamp}"
+                    shutil.copy2(str(local_path), str(bak_path))
+                    cfg = {}
+            else:
+                cfg = {}
+
             if "mcpServers" not in cfg or not isinstance(cfg["mcpServers"], dict):
                 cfg["mcpServers"] = {}
             cfg["mcpServers"]["smart-drive"] = entry
@@ -278,6 +322,7 @@ def register_ide_configs(
 
 
 __all__ = [
+    "ConfigParseError",
     "_safe_home_dir",
     "detect_installed_agents",
     "get_agent_config_paths",

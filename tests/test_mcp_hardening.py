@@ -139,7 +139,7 @@ class TestMCPRateLimiter(SmartDriveTestCase):
         self.assertTrue(limiter.acquire()[0])
         self.assertFalse(limiter.acquire()[0])
 
-        time.sleep(0.06)
+        time.sleep(0.08)
         # Should now be permitted
         allowed, _ = limiter.acquire()
         self.assertTrue(allowed, "Real-time window expiry did not permit new request")

@@ -8,21 +8,11 @@ import os
 import sys
 
 from smart_drive.core.initializer import DriveInitializer, PROFILES
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 
 
-def detect_default_root() -> str:
-    """Discovers SSD root dynamically or falls back to project/current dir."""
-    if os.path.exists("/Volumes/KINGSTON"):
-        return "/Volumes/KINGSTON"
-    if os.path.exists("D:\\"):
-        return "D:\\"
-    return os.getcwd()
-
-
-def normalize_drive_path(path_spec: Optional[str]) -> str:
+def normalize_drive_path(path_spec: str) -> str:
     """Normalizes drive letters and root paths to canonical form (e.g. 'D:' -> 'D:\\')."""
-    if not path_spec:
-        return detect_default_root()
     s = path_spec.strip()
     if len(s) == 2 and s[1] == ":" and s[0].isalpha():
         return f"{s[0].upper()}:\\"
@@ -35,8 +25,16 @@ def normalize_drive_path(path_spec: Optional[str]) -> str:
 
 def cmd_init(args: argparse.Namespace) -> int:
     """Handles the `init` subcommand."""
-    raw_path = getattr(args, "path", None) or getattr(args, "root", None)
-    target_path = normalize_drive_path(raw_path)
+    raw_path = getattr(args, "path", None)
+    if raw_path:
+        target_path = normalize_drive_path(raw_path)
+    else:
+        try:
+            resolved = resolve_drive_root(getattr(args, "root", None))
+            target_path = resolved.path
+        except DriveRootNotFound as e:
+            sys.stderr.write(f"{e}\n")
+            return 2
     profile = getattr(args, "profile", "general-workspace")
     force = getattr(args, "force", False)
 

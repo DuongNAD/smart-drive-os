@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from smart_drive.core.classifier import ClassifierEngine, ClassificationReport
-from smart_drive.core.exfat_compat import detect_drive_root
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 
 
 def _format_size(size_bytes: int) -> str:
@@ -30,7 +30,13 @@ def _format_size(size_bytes: int) -> str:
 
 def cmd_classify(args: argparse.Namespace) -> int:
     """Handles the `classify` subcommand."""
-    root = os.path.abspath(getattr(args, "root", None) or detect_drive_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
+
     target_path = getattr(args, "path", None)
     target = os.path.abspath(target_path) if target_path else root
 

@@ -231,7 +231,10 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
 
             from unittest.mock import patch
             with patch("smart_drive.mcp.registrar.get_agent_config_paths", return_value=mock_paths):
-                res = register_ide_configs(target_dir=str(tmp_path))
+                res = register_ide_configs(
+                    target_dir=str(tmp_path),
+                    flags={"antigravity": True, "claude": True, "cursor": True, "windsurf": True},
+                )
 
             self.assertTrue(res.get("antigravity"))
             self.assertTrue(res.get("claude"))

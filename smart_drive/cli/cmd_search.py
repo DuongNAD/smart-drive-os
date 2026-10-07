@@ -9,19 +9,11 @@ import sys
 from typing import Optional
 
 from smart_drive.core.exfat_compat import ExFatEngine
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.search.engine import SearchEngine
 from smart_drive.search.formatter import export_csv, export_json, format_table
 from smart_drive.search.parser import SearchParams, parse_search_query, parse_size_spec
-
-
-def detect_default_root() -> str:
-    """Discovers SSD root dynamically or falls back to project/current dir."""
-    if os.path.exists("/Volumes/KINGSTON"):
-        return "/Volumes/KINGSTON"
-    if os.path.exists("D:\\"):
-        return "D:\\"
-    return os.getcwd()
 
 
 def get_default_db_path(root: str) -> str:
@@ -38,7 +30,12 @@ def get_default_db_path(root: str) -> str:
 
 def cmd_search(args: argparse.Namespace) -> int:
     """Handles the `search` subcommand."""
-    root = os.path.abspath(getattr(args, "root", None) or detect_default_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
     db_path = getattr(args, "db", None)
     if not db_path:
         db_path = get_default_db_path(root)

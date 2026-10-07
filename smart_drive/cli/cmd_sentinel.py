@@ -8,16 +8,8 @@ import os
 import sys
 
 from smart_drive.core.config import CLUSTER_SIZE_BYTES
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.sentinel import SentinelEngine
-
-
-def detect_default_root() -> str:
-    """Discovers SSD root dynamically or falls back to project/current dir."""
-    if os.path.exists("/Volumes/KINGSTON"):
-        return "/Volumes/KINGSTON"
-    if os.path.exists("D:\\"):
-        return "D:\\"
-    return os.getcwd()
 
 
 def format_ansi_report(report: dict) -> str:
@@ -103,7 +95,13 @@ def format_ansi_report(report: dict) -> str:
 
 def cmd_sentinel(args: argparse.Namespace) -> int:
     """Handles the `sentinel` / `agent-check` subcommand."""
-    root = os.path.abspath(getattr(args, "root", None) or detect_default_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
+
     auto_heal = getattr(args, "auto_heal", True)
 
     engine = SentinelEngine(root)

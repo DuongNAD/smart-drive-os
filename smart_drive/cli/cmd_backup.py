@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-from smart_drive.core.exfat_compat import detect_drive_root
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.snapshot import SnapshotManager, BackupError
 
 
@@ -31,7 +31,13 @@ def cmd_backup(args: argparse.Namespace) -> int:
         sys.stderr.write("Error: --target directory is required for backup.\n")
         return 1
 
-    root = os.path.abspath(getattr(args, "root", None) or detect_drive_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
+
     manager = SnapshotManager(root)
 
     raw_parts = getattr(args, "partitions", None)

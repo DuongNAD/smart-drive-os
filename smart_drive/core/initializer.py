@@ -6,9 +6,11 @@ and SQLite FTS5 database for Kingston XS2000 external SSDs.
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import os
 from pathlib import Path
+import shutil
 from typing import Any, Dict, List, Optional
 
 from smart_drive.core.config import CLUSTER_SIZE_BYTES, STANDARD_TAXONOMIES
@@ -214,7 +216,15 @@ class DriveInitializer:
         created_manifests: List[str] = []
         for filename, content in manifests.items():
             f_path = os.path.join(root, filename)
-            if not os.path.exists(f_path) or force:
+            if os.path.exists(f_path):
+                if force:
+                    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    bak_path = os.path.join(root, f"{filename}.bak-{timestamp}")
+                    shutil.copy2(f_path, bak_path)
+                    with open(f_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    created_manifests.append(filename)
+            else:
                 with open(f_path, "w", encoding="utf-8") as f:
                     f.write(content)
                 created_manifests.append(filename)

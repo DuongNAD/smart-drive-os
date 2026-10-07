@@ -28,6 +28,12 @@ from smart_drive.core.config import (
     classify_by_extension,
     classify_file_entry,
 )
+from smart_drive.core.root import (
+    DriveRootNotFound,
+    RootResolution,
+    find_drive_root,
+    resolve_drive_root,
+)
 from smart_drive.core.exfat_compat import (
     ExFatEngine,
     ExFatCompatError,
@@ -74,7 +80,11 @@ __all__ = [
     "CATEGORIES",
     "classify_by_extension",
     "classify_file_entry",
-    # exFAT Compatibility
+    # exFAT Compatibility & Root Resolution
+    "DriveRootNotFound",
+    "RootResolution",
+    "find_drive_root",
+    "resolve_drive_root",
     "ExFatEngine",
     "ExFatCompatError",
     "SymlinkNotPermittedError",

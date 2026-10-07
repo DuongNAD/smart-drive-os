@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 
 from smart_drive.core.auditor import StorageAuditor
-from smart_drive.core.exfat_compat import detect_drive_root
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
     """Subcommand handler for `smart-drive audit`."""
-    root = os.path.abspath(getattr(args, "root", None) or detect_drive_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
     auditor = StorageAuditor(root)
     report = auditor.run_audit()
 

@@ -6,14 +6,19 @@ import argparse
 import os
 import sys
 
-from smart_drive.core.exfat_compat import detect_drive_root
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.sentinel import get_default_db_path
 from smart_drive.ui.server import run_server
 
 
 def cmd_ui(args: argparse.Namespace) -> int:
     """Handles the `smart-drive ui` command to launch the web dashboard."""
-    root = os.path.abspath(getattr(args, "root", None) or detect_drive_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
     port = int(getattr(args, "port", 8765) or 8765)
     open_browser = not getattr(args, "no_browser", False)
     db_path = getattr(args, "db", None) or get_default_db_path(root)

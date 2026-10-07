@@ -38,7 +38,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from smart_drive.cli.cmd_mcp import cmd_mcp
 from smart_drive.cli.cmd_mcp_config import cmd_mcp_config
-from smart_drive.cli.main import detect_default_root, get_default_db_path
+from smart_drive.cli.main import get_default_db_path
 from smart_drive.core.config import PROTECTED_CORE_TAXONOMIES, PROTECTED_ROOT_FILES
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
@@ -587,12 +587,13 @@ class TestMCPAdversarialCLICommands(SmartDriveTestCase):
         finally:
             shutil.rmtree(temp_dir)
 
-    def test_cli_main_detect_default_root_fallbacks(self) -> None:
-        """detect_default_root falls back safely when mount detector returns None."""
-        with patch("smart_drive.mcp.proxy.SmartDriveProxy.detect_mount_point", return_value=None):
-            with patch("os.path.exists", return_value=False):
-                root = detect_default_root()
-                self.assertEqual(root, os.getcwd())
+    def test_cli_main_resolve_drive_root_raises_when_unresolvable(self) -> None:
+        """resolve_drive_root raises DriveRootNotFound when no root can be resolved."""
+        from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
+        with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": "", "SMART_DRIVE_NO_PROBE": "1"}):
+            with patch("pathlib.Path.cwd", return_value=Path("C:/MockNonDrive")):
+                with self.assertRaises(DriveRootNotFound):
+                    resolve_drive_root()
 
     def test_cli_main_get_default_db_path(self) -> None:
         """get_default_db_path prioritizes .smart_drive over legacy .smart_drive_manager."""

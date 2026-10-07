@@ -258,44 +258,46 @@ class TestProxyCrossPlatformAdversarial(unittest.TestCase):
                 self.assertNotEqual(detected.resolve(), dummy_file.resolve())
 
     def test_nested_working_directory_structure_detection(self) -> None:
-        """Deeply nested working directory resolves correctly to root containing GEMINI.md or AGENTS.md."""
+        """Deeply nested working directory resolves correctly to root containing marker and GEMINI.md or AGENTS.md."""
         deep_dir = self.test_root / "03_Development_Projects" / "frontend" / "src" / "components"
         deep_dir.mkdir(parents=True)
+        marker_dir = self.test_root / ".smart_drive"
+        marker_dir.mkdir(parents=True, exist_ok=True)
 
-        # Case A: GEMINI.md at test_root
+        # Case A: GEMINI.md + marker at test_root
         gemini_file = self.test_root / "GEMINI.md"
         gemini_file.write_text("# GEMINI", encoding="utf-8")
 
-        with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": ""}):
+        with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": "", "SMART_DRIVE_NO_PROBE": "1"}):
             with patch("pathlib.Path.cwd", return_value=deep_dir):
                 detected = SmartDriveProxy.detect_mount_point()
                 self.assertIsNotNone(detected)
-                self.assertEqual(detected.resolve(), self.test_root)
+                self.assertEqual(detected.resolve(), self.test_root.resolve())
 
         gemini_file.unlink()
 
-        # Case B: AGENTS.md at test_root
+        # Case B: AGENTS.md + marker at test_root
         agents_file = self.test_root / "AGENTS.md"
         agents_file.write_text("# AGENTS", encoding="utf-8")
 
-        with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": ""}):
+        with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": "", "SMART_DRIVE_NO_PROBE": "1"}):
             with patch("pathlib.Path.cwd", return_value=deep_dir):
                 detected = SmartDriveProxy.detect_mount_point()
                 self.assertIsNotNone(detected)
-                self.assertEqual(detected.resolve(), self.test_root)
+                self.assertEqual(detected.resolve(), self.test_root.resolve())
 
         agents_file.unlink()
 
-        # Case C: Directory named KINGSTON (case-insensitive)
+        # Case C: Directory named KINGSTON alone (without marker/anchor) is not detected
         kingston_root = self.test_root / "Kingston"
         kingston_nested = kingston_root / "subdir" / "deep"
         kingston_nested.mkdir(parents=True)
 
-        with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": ""}):
+        with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": "", "SMART_DRIVE_NO_PROBE": "1"}):
             with patch("pathlib.Path.cwd", return_value=kingston_nested):
                 detected = SmartDriveProxy.detect_mount_point()
-                self.assertIsNotNone(detected)
-                self.assertEqual(detected.name.lower(), "kingston")
+                # Directory named Kingston without anchor/marker must not be detected
+                self.assertIsNone(detected)
 
     def test_mock_windows_paths_on_posix_no_host_directory_leak(self) -> None:
         """Simulated Windows drive letter paths on POSIX do not resolve to local host repo."""

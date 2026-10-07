@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-from smart_drive.core.exfat_compat import detect_drive_root
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.snapshot import SnapshotManager, SnapshotNotFoundError, SnapshotError
 
 
@@ -32,7 +32,13 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         print("Run 'smart-drive snapshot --help' for details.")
         return 0
 
-    root = os.path.abspath(getattr(args, "root", None) or detect_drive_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
+
     manager = SnapshotManager(root)
     as_json = getattr(args, "json", False)
 

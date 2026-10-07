@@ -12,17 +12,9 @@ from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.config import JunkTier
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine, SecurityGuard
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
-
-
-def detect_default_root() -> str:
-    """Discovers SSD root dynamically or falls back to project/current dir."""
-    if os.path.exists("/Volumes/KINGSTON"):
-        return "/Volumes/KINGSTON"
-    if os.path.exists("D:\\"):
-        return "D:\\"
-    return os.getcwd()
 
 
 def get_default_db_path(root: str) -> str:
@@ -38,7 +30,12 @@ def get_default_db_path(root: str) -> str:
 
 def cmd_organize(args: argparse.Namespace) -> int:
     """Handles the `organize` subcommand."""
-    root = os.path.abspath(getattr(args, "root", None) or detect_default_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
     zoner = AutoZoner(root)
 
     # 1. Anti-indexing shields

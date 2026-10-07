@@ -279,47 +279,12 @@ def check_symlink(path: str) -> bool:
 def detect_drive_root(start_path: Optional[str] = None) -> str:
     """Dynamically discover the SSD root directory across macOS, Windows, and Linux.
 
-    Search Strategy:
-    1. Environment variable check: SMART_DRIVE_ROOT or KINGSTON_SSD_ROOT.
-    2. Upward directory traversal starting from `start_path` (or cwd), checking for
-       a quorum (>= 2) of signature SSD root markers.
-    3. Platform-specific fallback checks (if start_path is None):
-       - macOS: Probe `/Volumes/KINGSTON`
-       - Windows: Probe drive letters (D:, E:, F:, G:, H:, C:) for markers.
-    4. Final fallback: Return canonical start_path (or cwd).
+    Delegates to smart_drive.core.root.resolve_drive_root.
+    Raises:
+        DriveRootNotFound: If a valid drive root cannot be resolved safely.
     """
-    env_root = os.environ.get("SMART_DRIVE_ROOT") or os.environ.get("KINGSTON_SSD_ROOT")
-    if env_root and os.path.isdir(env_root):
-        return os.path.abspath(env_root)
-
-    current = os.path.abspath(start_path) if start_path else os.getcwd()
-    markers = {'GEMINI.md', 'AGENTS.md', '01_AI_Models', '02_Learning_Knowledge', 'Clean_Mac_Junk.bat', '.metadata_never_index'}
-
-    # Stage 1: Traverse upwards
-    check_dir = current
-    while True:
-        hits = sum(1 for m in markers if os.path.exists(os.path.join(check_dir, m)))
-        if hits >= 2:
-            return check_dir
-        parent = os.path.dirname(check_dir)
-        if parent == check_dir:
-            break
-        check_dir = parent
-
-    # Stage 2: OS Default Probing (only when start_path was not explicitly provided)
-    if start_path is None:
-        if os.path.exists('/Volumes/KINGSTON'):
-            return '/Volumes/KINGSTON'
-
-        if sys.platform == 'win32':
-            for letter in ['D', 'E', 'F', 'G', 'H', 'C']:
-                candidate = f"{letter}:\\"
-                if os.path.exists(os.path.join(candidate, 'GEMINI.md')) or os.path.exists(os.path.join(candidate, '.metadata_never_index')):
-                    return candidate
-            if os.path.exists("D:\\"):
-                return "D:\\"
-
-    return current
+    from smart_drive.core.root import resolve_drive_root
+    return resolve_drive_root(start_path=start_path).path
 
 
 class ExFatEngine:

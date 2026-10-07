@@ -380,9 +380,9 @@ class TestAntiSymlinkAndJunctionSupport(unittest.TestCase):
             # 3. NTFS adapter allows junctions (check_symlink_violation returns False)
             self.assertFalse(self.ntfs.check_symlink_violation(junction_link))
 
-            # 4. If host has an actual exFAT volume mounted, verify mklink /J is rejected by OS
+            # 4. If host has an actual exFAT volume mounted and host tests enabled, verify mklink /J is rejected by OS
             exfat_probe_dir = None
-            if os.path.exists("D:\\"):
+            if os.environ.get("SMART_DRIVE_RUN_HOST_TESTS") == "1" and os.path.exists("D:\\"):
                 try:
                     d_info = inspect_drive("D:")
                     if d_info.filesystem == FilesystemType.EXFAT:

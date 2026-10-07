@@ -47,17 +47,16 @@ class TestSmartDriveProxy(SmartDriveTestCase):
                 self.assertIsNotNone(detected)
                 self.assertEqual(detected.resolve(), ws.resolve())
 
-    def test_detect_mount_point_invalid_env_falls_through(self) -> None:
-        """Non-existent path in environment variable falls through to next discovery mechanism."""
+    def test_detect_mount_point_invalid_env_returns_none(self) -> None:
+        """Non-existent path in environment variable does not fall through; returns None."""
         with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "/non/existent/path/987654321", "KINGSTON_SSD_ROOT": ""}):
             detected = SmartDriveProxy.detect_mount_point()
-            # Should not crash and should not return the non-existent path
-            if detected:
-                self.assertNotEqual(str(detected), "/non/existent/path/987654321")
+            self.assertIsNone(detected)
 
-    def test_detect_mount_point_cwd_ancestor_gemini_md(self) -> None:
-        """Detects root directory by walking up from cwd to find GEMINI.md anchor."""
+    def test_detect_mount_point_cwd_ancestor_gemini_md_with_marker(self) -> None:
+        """Detects root directory by walking up from cwd when directory has marker and GEMINI.md anchor."""
         with TempWorkspace() as ws:
+            (ws / ".metadata_never_index").write_text("", encoding="utf-8")
             manifest_file = ws / "GEMINI.md"
             manifest_file.write_text("# GEMINI.md\n", encoding="utf-8")
 
@@ -70,9 +69,10 @@ class TestSmartDriveProxy(SmartDriveTestCase):
                     self.assertIsNotNone(detected)
                     self.assertEqual(detected.resolve(), ws.resolve())
 
-    def test_detect_mount_point_cwd_ancestor_agents_md(self) -> None:
-        """Detects root directory by walking up from cwd to find AGENTS.md anchor."""
+    def test_detect_mount_point_cwd_ancestor_agents_md_with_marker(self) -> None:
+        """Detects root directory by walking up from cwd when directory has marker and AGENTS.md anchor."""
         with TempWorkspace() as ws:
+            (ws / ".smart_drive").mkdir(parents=True, exist_ok=True)
             manifest_file = ws / "AGENTS.md"
             manifest_file.write_text("# AGENTS.md\n", encoding="utf-8")
 
@@ -85,44 +85,47 @@ class TestSmartDriveProxy(SmartDriveTestCase):
                     self.assertIsNotNone(detected)
                     self.assertEqual(detected.resolve(), ws.resolve())
 
-    def test_detect_mount_point_cwd_ancestor_named_kingston(self) -> None:
-        """Detects root directory if an ancestor directory is literally named 'kingston'."""
+    def test_detect_mount_point_cwd_ancestor_named_kingston_without_marker_returns_none(self) -> None:
+        """Ancestor named kingston without marker/anchor is NOT detected as root."""
         with TempWorkspace() as ws:
             kingston_dir = ws / "KINGSTON"
             nested_sub = kingston_dir / "projects" / "app"
             nested_sub.mkdir(parents=True, exist_ok=True)
 
-            with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": ""}):
+            with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": "", "SMART_DRIVE_NO_PROBE": "1"}):
                 with patch("pathlib.Path.cwd", return_value=nested_sub):
                     detected = SmartDriveProxy.detect_mount_point()
-                    self.assertIsNotNone(detected)
-                    self.assertEqual(detected.name.lower(), "kingston")
+                    self.assertIsNone(detected)
 
     def test_detect_mount_point_macos_mock(self) -> None:
         """Simulates macOS /Volumes/KINGSTON mount detection."""
-        with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": ""}):
+        with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": "", "SMART_DRIVE_NO_PROBE": ""}):
             with patch("pathlib.Path.cwd", return_value=Path("C:/MockNonDrive")):
                 with patch("platform.system", return_value="Darwin"):
-                    with patch("smart_drive.mcp.proxy.sys.platform", "darwin"):
-                        with patch("os.path.isdir", side_effect=lambda p: str(p) == "/Volumes/KINGSTON"):
-                            detected = SmartDriveProxy.detect_mount_point()
-                            self.assertIsNotNone(detected)
-                            self.assertEqual(detected.as_posix(), "/Volumes/KINGSTON")
+                    with patch("smart_drive.core.root.sys.platform", "darwin"):
+                        with patch("os.path.isdir", side_effect=lambda p: str(p).replace("\\", "/") in ("/Volumes", "/Volumes/KINGSTON")):
+                            with patch("os.listdir", side_effect=lambda p: ["KINGSTON"] if str(p).replace("\\", "/") == "/Volumes" else []):
+                                with patch("smart_drive.core.root._is_candidate", side_effect=lambda p: str(p).replace("\\", "/") == "/Volumes/KINGSTON"):
+                                    detected = SmartDriveProxy.detect_mount_point()
+                                    self.assertIsNotNone(detected)
+                                    self.assertEqual(detected.as_posix(), "/Volumes/KINGSTON")
 
     def test_detect_mount_point_windows_letters_mock(self) -> None:
-        """Simulates Windows drive letter probe with GEMINI.md anchor."""
-        def mock_is_dir(p_self):
-            return str(p_self).startswith("E:")
+        """Simulates Windows drive letter probe with marker."""
+        def mock_isdir(p):
+            p_str = str(p).replace("/", "\\")
+            return p_str == "E:\\"
 
-        def mock_is_file(p_self):
-            return str(p_self).replace("\\", "/").lower() == "e:/gemini.md"
+        def mock_has_marker(p):
+            p_str = str(p).replace("/", "\\")
+            return p_str == "E:\\"
 
-        with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": ""}):
+        with patch.dict(os.environ, {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": "", "SMART_DRIVE_NO_PROBE": ""}):
             with patch("pathlib.Path.cwd", return_value=Path("C:/MockNonDrive")):
                 with patch("platform.system", return_value="Windows"):
-                    with patch("smart_drive.mcp.proxy.sys.platform", "win32"):
-                        with patch.object(Path, "is_dir", mock_is_dir):
-                            with patch.object(Path, "is_file", mock_is_file):
+                    with patch("smart_drive.core.root.sys.platform", "win32"):
+                        with patch("os.path.isdir", side_effect=mock_isdir):
+                            with patch("smart_drive.core.root._has_marker", side_effect=mock_has_marker):
                                 detected = SmartDriveProxy.detect_mount_point()
                                 self.assertIsNotNone(detected)
                                 self.assertEqual(str(detected).upper().rstrip("\\"), "E:")

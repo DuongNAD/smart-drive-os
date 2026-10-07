@@ -5,16 +5,22 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from typing import Optional
 
 from smart_drive.core.config import CLUSTER_SIZE_BYTES, TAXONOMY_ROOT_DIRS, PROTECTED_CORE_TAXONOMIES
-from smart_drive.core.exfat_compat import detect_drive_root
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.sentinel import get_default_db_path
 
 
 def cmd_status(args: argparse.Namespace) -> int:
     """Subcommand handler for `smart-drive status`."""
-    root = os.path.abspath(getattr(args, "root", None) or detect_drive_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
     markers = {
         ".metadata_never_index": os.path.exists(os.path.join(root, ".metadata_never_index")),
         ".fseventsd/no_log": os.path.exists(os.path.join(root, ".fseventsd", "no_log")),

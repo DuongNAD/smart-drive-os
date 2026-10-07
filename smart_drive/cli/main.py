@@ -58,21 +58,10 @@ from smart_drive.cli.cmd_snapshot import cmd_snapshot
 from smart_drive.cli.cmd_status import cmd_status
 from smart_drive.cli.cmd_ui import cmd_ui
 from smart_drive.core.duplicates import DuplicateDetector
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
 from smart_drive.mcp.proxy import SmartDriveProxy
-
-
-def detect_default_root() -> str:
-    """Discovers SSD root dynamically or falls back to project/current dir."""
-    mount = SmartDriveProxy.detect_mount_point()
-    if mount:
-        return str(mount)
-    if os.path.exists("/Volumes/KINGSTON"):
-        return "/Volumes/KINGSTON"
-    if os.path.exists("D:\\"):
-        return "D:\\"
-    return os.getcwd()
 
 
 def get_default_db_path(root: str) -> str:
@@ -88,7 +77,13 @@ def get_default_db_path(root: str) -> str:
 
 def cmd_dup(args: argparse.Namespace) -> int:
     """Handles the `dup` subcommand."""
-    root = os.path.abspath(getattr(args, "root", None) or detect_default_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
+
     detector = DuplicateDetector(root)
     plan = detector.generate_reclamation_plan()
 
@@ -118,7 +113,13 @@ def cmd_dup(args: argparse.Namespace) -> int:
 
 def cmd_index(args: argparse.Namespace) -> int:
     """Handles the `index` subcommand."""
-    root = os.path.abspath(getattr(args, "root", None) or detect_default_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
+
     db_path = getattr(args, "db", None) or get_default_db_path(root)
     db_path = os.path.abspath(db_path)
 
@@ -137,7 +138,13 @@ def cmd_index(args: argparse.Namespace) -> int:
 
 def cmd_update(args: argparse.Namespace) -> int:
     """Handles the `update` subcommand."""
-    root = os.path.abspath(getattr(args, "root", None) or detect_default_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
+
     db_path = getattr(args, "db", None) or get_default_db_path(root)
     db_path = os.path.abspath(db_path)
 

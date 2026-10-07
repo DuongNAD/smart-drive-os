@@ -19,7 +19,14 @@ def cmd_mcp_config(args: argparse.Namespace) -> int:
     is_all = getattr(args, "all", False)
 
     flags = None
-    if not is_all and (
+    if is_all:
+        flags = {
+            "antigravity": True,
+            "claude": True,
+            "cursor": True,
+            "windsurf": True,
+        }
+    elif (
         getattr(args, "antigravity", False)
         or getattr(args, "claude", False)
         or getattr(args, "cursor", False)

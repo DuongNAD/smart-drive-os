@@ -8,14 +8,19 @@ import os
 import sys
 
 from smart_drive.core.config import JunkTier
-from smart_drive.core.exfat_compat import detect_drive_root
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine
+from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 
 
 def cmd_clean(args: argparse.Namespace) -> int:
     """Subcommand handler for `smart-drive clean`."""
-    root = os.path.abspath(getattr(args, "root", None) or detect_drive_root())
+    try:
+        resolved = resolve_drive_root(getattr(args, "root", None))
+        root = resolved.path
+    except DriveRootNotFound as e:
+        sys.stderr.write(f"{e}\n")
+        return 2
     tier_map = {1: JunkTier.TIER_1_SAFE, 2: JunkTier.TIER_2_DEV_CACHE, 3: JunkTier.TIER_3_SENSITIVE}
     raw_tier = getattr(args, "tier", 1)
     max_tier = tier_map.get(raw_tier, JunkTier.TIER_1_SAFE)

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -348,13 +349,18 @@ class TestMCPOptimizationsAndRegistrar(SmartDriveTestCase):
     def test_cli_mcp_register_dispatch_json(self) -> None:
         """smart_drive.cli.main handles `mcp register --json` returning valid JSON."""
         from smart_drive.cli.main import main
+        import tempfile
         captured_stdout = io.StringIO()
         orig_stdout = sys.stdout
-        sys.stdout = captured_stdout
-        try:
-            exit_code = main(["mcp", "register", "--json", "--workspace"])
-        finally:
-            sys.stdout = orig_stdout
+        orig_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            os.chdir(tmp_dir)
+            sys.stdout = captured_stdout
+            try:
+                exit_code = main(["mcp", "register", "--json", "--workspace"])
+            finally:
+                sys.stdout = orig_stdout
+                os.chdir(orig_cwd)
 
         self.assertEqual(exit_code, 0)
         output = captured_stdout.getvalue().strip()
