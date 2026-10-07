@@ -90,7 +90,7 @@ class TestASTHandlerIsolation(unittest.TestCase):
         self.assertIsInstance(handlers, dict)
 
         declared_tool_names = {tool["name"] for tool in TOOLS}
-        self.assertEqual(len(declared_tool_names), 8)
+        self.assertEqual(len(declared_tool_names), len(TOOLS))
         self.assertEqual(set(handlers.keys()), declared_tool_names)
 
         # Each handler must map to handle_ssd_<suffix> and be an existing callable method
@@ -106,7 +106,7 @@ class TestASTHandlerIsolation(unittest.TestCase):
             )
 
     def test_ast_dispatch_tool_static_comparison_chain(self) -> None:
-        """Inspects dispatch_tool AST to verify all 8 tools are dispatched via static string comparisons."""
+        """Inspects dispatch_tool AST to verify all tools are dispatched via static string comparisons."""
         server_path = PROJECT_ROOT / "smart_drive" / "mcp" / "server.py"
         self.assertTrue(server_path.is_file(), f"Cannot find server.py at {server_path}")
 
@@ -145,7 +145,7 @@ class TestASTHandlerIsolation(unittest.TestCase):
             declared_tool_names,
             f"Static AST comparison mismatch. Missing: {declared_tool_names - statically_compared_tools}",
         )
-        self.assertEqual(len(statically_compared_tools), 8)
+        self.assertEqual(len(statically_compared_tools), len(TOOLS))
 
     def test_ast_dispatch_tool_handler_method_calls(self) -> None:
         """Inspects dispatch_tool AST to verify each branch invokes self.handle_<tool>(args)."""
@@ -434,7 +434,7 @@ class TestAuthenticationAndAccessControl(SmartDriveTestCase):
         self.assertIsNotNone(resp_list)
         self.assertIn("result", resp_list)
         self.assertIn("tools", resp_list["result"])
-        self.assertEqual(len(resp_list["result"]["tools"]), 8)
+        self.assertEqual(len(resp_list["result"]["tools"]), len(TOOLS))
 
         # tools/call succeeds immediately
         resp_call = server.handle_request({

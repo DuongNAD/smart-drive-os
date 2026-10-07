@@ -34,8 +34,16 @@ from smart_drive.core.config import (
     is_protected_root_dir,
 )
 from smart_drive.core.duplicates import DuplicateDetector
-from smart_drive.core.exfat_compat import ExFatEngine
+from smart_drive.core.exfat_compat import ExFatEngine, normalize_rel_path
 from smart_drive.core.junk_detector import JunkDetector
+from smart_drive.core.planner import (
+    apply_moves,
+    list_journals,
+    propose_plan,
+    survey,
+    undo_journal,
+    validate_moves,
+)
 from smart_drive.core.purge_engine import PurgeEngine, SecurityGuard
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
@@ -300,7 +308,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "ssd_auto_organize",
-        "description": "Autonomous drive auto-zoning, anti-slack rebalancing, and organization. Classifies loose items into standard taxonomies, ensures shields, and syncs index.",
+        "description": "Autonomous drive auto-zoning, anti-slack rebalancing, and organization. Classifies loose items into standard taxonomies, ensures shields, and syncs index. For agent-driven interactive organization with survey, preview, validation, and rollback, prefer the workflow: ssd_survey -> ssd_plan_organize -> ssd_validate_moves -> ssd_apply_moves -> ssd_undo_organize.",
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": True,
@@ -323,6 +331,267 @@ TOOLS: List[Dict[str, Any]] = [
                     "description": "If true, also scans and purges Tier 1 safe system junk.",
                 },
             },
+        },
+    },
+    {
+        "name": "ssd_survey",
+        "description": (
+            "Surveys direct children of the target scope on the SSD to assess folder structure, "
+            "identify unit types (projects, apps, courses, albums), count loose and junk files, "
+            "compute mess_score (0-100), and recommend safe organization actions without recursive disk traversal. "
+            "Workflow: ssd_survey -> ssd_plan_organize -> review/adjust -> ssd_validate_moves -> "
+            "ssd_apply_moves(apply=false preview) -> ssd_apply_moves(apply=true upon user confirmation) -> "
+            "ssd_undo_organize if needed. Files are NEVER renamed or deleted."
+        ),
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "description": "Subdirectory path relative to drive root (default: empty for root).",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Subdirectory path relative to drive root (alias for scope).",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum direct child entries to return in preview (default: 200).",
+                    "default": 200,
+                },
+            },
+        },
+    },
+    {
+        "name": "ssd_plan_organize",
+        "description": (
+            "Proposes a safe, deterministic file relocation plan for direct children in scope according "
+            "to SmartDrive layout rules ('zones' standard 6 taxonomies or 'in_place' subdirectories). "
+            "Supports duplicate file detection and confidence thresholding. "
+            "Workflow: ssd_survey -> ssd_plan_organize -> show plan to user and adjust -> ssd_validate_moves -> "
+            "ssd_apply_moves(apply=false preview) -> ssd_apply_moves(apply=true after user confirmation) -> "
+            "ssd_undo_organize if needed. Files are NEVER renamed or deleted."
+        ),
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "description": "Subdirectory path relative to drive root (default: empty for root).",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Subdirectory path relative to drive root (alias for scope).",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["auto", "zones", "in_place"],
+                    "description": (
+                        "Target layout: 'auto' (default: tidy in place inside a zone folder, sort into the "
+                        "standard zones elsewhere), 'zones' (standard root taxonomies) or 'in_place' "
+                        "(sub-folders of the scope)."
+                    ),
+                    "default": "auto",
+                },
+                "detect_duplicates": {
+                    "type": "boolean",
+                    "description": "If true, detects duplicate files and proposes redundant copies to _Duplicates_Review.",
+                    "default": False,
+                },
+                "min_confidence": {
+                    "type": "string",
+                    "enum": ["high", "medium", "low"],
+                    "description": "Minimum classification confidence threshold to include in moves.",
+                    "default": "low",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum proposed moves to return (default: 500).",
+                    "default": 500,
+                },
+            },
+        },
+    },
+    {
+        "name": "ssd_validate_moves",
+        "description": (
+            "Validates a proposed list of moves against exFAT filesystem safety rules, inviolable root protections, "
+            "project unit boundaries, duplicate path collisions, and Windows forbidden characters. "
+            "Workflow: ssd_survey -> ssd_plan_organize -> show plan to user and adjust -> ssd_validate_moves -> "
+            "ssd_apply_moves(apply=false preview) -> ssd_apply_moves(apply=true after user confirmation) -> "
+            "ssd_undo_organize if needed. Files are NEVER renamed or deleted."
+        ),
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "moves": {
+                    "type": "array",
+                    "description": "List of move dictionaries containing 'src', 'dst', and optional 'kind'.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "src": {"type": "string", "description": "Source relative path."},
+                            "dst": {"type": "string", "description": "Destination relative path."},
+                            "kind": {"type": "string", "description": "'file' or 'directory'."},
+                        },
+                        "required": ["src", "dst"],
+                    },
+                },
+            },
+            "required": ["moves"],
+        },
+    },
+    {
+        "name": "ssd_apply_moves",
+        "description": (
+            "Executes validated moves on the SSD with atomic forward journaling and optional _INDEX.md generation. "
+            "Runs in simulation mode by default (apply=false / dry_run=true). ONLY set apply=true after explicit "
+            "user confirmation! "
+            "Workflow: ssd_survey -> ssd_plan_organize -> show plan to user and adjust -> ssd_validate_moves -> "
+            "ssd_apply_moves(apply=false preview) -> ssd_apply_moves(apply=true after user confirmation) -> "
+            "ssd_undo_organize if needed. Files are NEVER renamed or deleted."
+        ),
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": True,
+        "openWorldHint": False,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "moves": {
+                    "type": "array",
+                    "description": "List of move dictionaries containing 'src', 'dst', and optional 'kind'.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "src": {"type": "string", "description": "Source relative path."},
+                            "dst": {"type": "string", "description": "Destination relative path."},
+                            "kind": {"type": "string", "description": "'file' or 'directory'."},
+                        },
+                        "required": ["src", "dst"],
+                    },
+                },
+                "apply": {
+                    "type": "boolean",
+                    "description": "If true, executes physical renames on disk. If false (default), runs dry-run preview.",
+                    "default": False,
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "If true (default), simulates moves without modifying disk.",
+                    "default": True,
+                },
+                "write_index": {
+                    "type": "boolean",
+                    "description": "If true (default), updates _INDEX.md in touched taxonomy or scope directories.",
+                    "default": True,
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["auto", "zones", "in_place"],
+                    "description": "Layout mode of the plan being applied ('auto', 'zones' or 'in_place'); pass the plan's mode.",
+                    "default": "auto",
+                },
+                "scope": {
+                    "type": "string",
+                    "description": "Scope directory path.",
+                    "default": "",
+                },
+            },
+        },
+    },
+    {
+        "name": "ssd_undo_organize",
+        "description": (
+            "Rolls back a previous organization run using its journal ID in reverse order, verifying destination "
+            "file presence and source vacancy. Runs in simulation mode by default (apply=false). ONLY pass apply=true "
+            "after user confirmation. "
+            "Workflow: ssd_survey -> ssd_plan_organize -> review/adjust -> ssd_validate_moves -> ssd_apply_moves -> "
+            "ssd_undo_organize if needed. Files are NEVER renamed or deleted."
+        ),
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": True,
+        "openWorldHint": False,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "journal_id": {
+                    "type": "string",
+                    "description": "Journal ID (e.g. 20261008-004500-a1b2c3) to undo.",
+                },
+                "apply": {
+                    "type": "boolean",
+                    "description": "If true, executes physical rollback. If false (default), previews undo.",
+                    "default": False,
+                },
+            },
+            "required": ["journal_id"],
+        },
+    },
+    {
+        "name": "ssd_list_journals",
+        "description": (
+            "Lists past organization journals recorded on the SSD with execution status, timestamp, scope, mode, "
+            "and move counts. "
+            "Workflow: ssd_survey -> ssd_plan_organize -> review/adjust -> ssd_validate_moves -> ssd_apply_moves -> "
+            "ssd_undo_organize if needed. Files are NEVER renamed or deleted."
+        ),
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
         },
     },
 ]
@@ -440,6 +709,12 @@ class SmartDriveMCPServer:
         "ssd_check_safety": "handle_ssd_check_safety",
         "ssd_status": "handle_ssd_status",
         "ssd_auto_organize": "handle_ssd_auto_organize",
+        "ssd_survey": "handle_ssd_survey",
+        "ssd_plan_organize": "handle_ssd_plan_organize",
+        "ssd_validate_moves": "handle_ssd_validate_moves",
+        "ssd_apply_moves": "handle_ssd_apply_moves",
+        "ssd_undo_organize": "handle_ssd_undo_organize",
+        "ssd_list_journals": "handle_ssd_list_journals",
     }
 
     def __init__(
@@ -1064,6 +1339,96 @@ class SmartDriveMCPServer:
             }
         return {"status": "dry_run", "plan_count": len(plan), "actions": [a.to_dict() for a in plan]}
 
+    def handle_ssd_survey(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        root = self._ensure_root()
+        raw_scope = args.get("scope") or args.get("path") or ""
+        limit = self._parse_int(args.get("limit"), default=200, min_val=1)
+        safe_path = self._resolve_safe_path(raw_scope) if raw_scope else root
+        rel_scope = normalize_rel_path(safe_path, root)
+        return survey(root, scope=rel_scope, limit=limit)
+
+    def handle_ssd_plan_organize(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        root = self._ensure_root()
+        raw_scope = args.get("scope") or args.get("path") or ""
+        mode = str(args.get("mode") or "auto").lower()
+        if mode not in ("auto", "zones", "in_place"):
+            mode = "auto"
+        detect_dups = self._parse_bool(args.get("detect_duplicates"), default=False)
+        min_conf = str(args.get("min_confidence") or "low").lower()
+        limit = self._parse_int(args.get("limit"), default=500, min_val=1)
+
+        safe_path = self._resolve_safe_path(raw_scope) if raw_scope else root
+        rel_scope = normalize_rel_path(safe_path, root)
+
+        plan = propose_plan(
+            root,
+            scope=rel_scope,
+            mode=mode,
+            detect_duplicates=detect_dups,
+            min_confidence=min_conf,
+        )
+        plan_dict = plan.to_dict()
+        moves = plan_dict["moves"]
+        total_moves = len(moves)
+        truncated = total_moves > limit
+        if truncated:
+            plan_dict["moves"] = moves[:limit]
+        plan_dict["truncated"] = truncated
+        plan_dict["total_moves"] = total_moves
+
+        dest_counts: Dict[str, int] = collections.defaultdict(int)
+        for m in moves:
+            dst_dir = os.path.dirname(m.get("dst", ""))
+            dest_counts[dst_dir] += 1
+        plan_dict["destination_counts"] = dict(dest_counts)
+
+        return plan_dict
+
+    def handle_ssd_validate_moves(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        root = self._ensure_root()
+        moves = args.get("moves")
+        if moves is None or not isinstance(moves, list):
+            return {"error": "Missing or invalid required argument 'moves' (must be a list)"}
+        return validate_moves(root, moves)
+
+    def handle_ssd_apply_moves(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        root = self._ensure_root()
+        moves = args.get("moves")
+        if moves is None or not isinstance(moves, list):
+            return {"error": "Missing or invalid required argument 'moves' (must be a list)"}
+
+        dry_run = self._parse_bool(args.get("dry_run"), default=True)
+        if "apply" in args:
+            dry_run = not self._parse_bool(args["apply"], default=False)
+        apply_mode = not dry_run
+
+        write_index = self._parse_bool(args.get("write_index"), default=True)
+        mode = str(args.get("mode") or "auto").lower()
+        scope = str(args.get("scope") or "")
+
+        return apply_moves(
+            root,
+            moves=moves,
+            apply=apply_mode,
+            write_index=write_index,
+            mode=mode,
+            scope=scope,
+        )
+
+    def handle_ssd_undo_organize(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        root = self._ensure_root()
+        journal_id = args.get("journal_id")
+        if not journal_id or not isinstance(journal_id, str):
+            return {"error": "Missing required argument 'journal_id'"}
+
+        apply_mode = self._parse_bool(args.get("apply"), default=False)
+        return undo_journal(root, journal_id=journal_id, apply=apply_mode)
+
+    def handle_ssd_list_journals(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        root = self._ensure_root()
+        journals = list_journals(root)
+        return {"journals": journals, "count": len(journals)}
+
     def dispatch_tool(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Dispatches a tool call with 100% static AST-resolvable branching."""
         if name == "ssd_search":
@@ -1082,6 +1447,18 @@ class SmartDriveMCPServer:
             return self.handle_ssd_status(args)
         elif name == "ssd_auto_organize":
             return self.handle_ssd_auto_organize(args)
+        elif name == "ssd_survey":
+            return self.handle_ssd_survey(args)
+        elif name == "ssd_plan_organize":
+            return self.handle_ssd_plan_organize(args)
+        elif name == "ssd_validate_moves":
+            return self.handle_ssd_validate_moves(args)
+        elif name == "ssd_apply_moves":
+            return self.handle_ssd_apply_moves(args)
+        elif name == "ssd_undo_organize":
+            return self.handle_ssd_undo_organize(args)
+        elif name == "ssd_list_journals":
+            return self.handle_ssd_list_journals(args)
         else:
             raise ValueError(f"Unknown tool '{name}'")
 

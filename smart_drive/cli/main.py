@@ -56,6 +56,7 @@ from smart_drive.cli.cmd_search import cmd_search
 from smart_drive.cli.cmd_sentinel import cmd_sentinel
 from smart_drive.cli.cmd_snapshot import cmd_snapshot
 from smart_drive.cli.cmd_status import cmd_status
+from smart_drive.cli.cmd_tidy import cmd_tidy
 from smart_drive.cli.cmd_ui import cmd_ui
 from smart_drive.core.duplicates import DuplicateDetector
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
@@ -389,6 +390,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_health.add_argument("--root", help="Alias for target drive root")
     p_health.add_argument("--json", action="store_true", help="Output health report in structured JSON format")
 
+    # 19. tidy
+    p_tidy = subparsers.add_parser(
+        "tidy",
+        help="Agent-driven and interactive drive organization, validation, and journaling",
+    )
+    p_tidy.add_argument("path", nargs="?", default=None, help="Target subdirectory to tidy (default: root)")
+    p_tidy.add_argument("--root", help="Root directory of the SSD / workspace")
+    p_tidy.add_argument(
+        "--mode",
+        default="auto",
+        choices=["auto", "zones", "in_place"],
+        help="Target layout: 'auto' (in place inside a zone folder, zones elsewhere), 'zones' or 'in_place'",
+    )
+    p_tidy.add_argument("--duplicates", action="store_true", help="Detect duplicates and propose redundant copies to _Duplicates_Review")
+    p_tidy.add_argument(
+        "--min-confidence",
+        default="low",
+        choices=["high", "medium", "low"],
+        help="Minimum classification confidence threshold",
+    )
+    p_tidy.add_argument("--apply", action="store_true", help="Execute validated move plan with journal logging")
+    p_tidy.add_argument("--undo", help="Roll back an organization run by journal ID")
+    p_tidy.add_argument("--journals", action="store_true", help="List previous organization journals")
+    p_tidy.add_argument("--json", action="store_true", help="Output plan or result in JSON format")
+
     # self-path-check subcommand
     p_path_check = subparsers.add_parser(
         "self-path-check",
@@ -429,6 +455,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "classify": cmd_classify,
         "offload": cmd_offload,
         "health": cmd_health,
+        "tidy": cmd_tidy,
         "self-path-check": cmd_path_check,
         "path-check": cmd_path_check,
         "self_path_check": cmd_path_check,
