@@ -5,9 +5,8 @@
 [![NTFS 4KB Native](https://img.shields.io/badge/filesystem-NTFS%204KB%20Native-blueviolet.svg)](#)
 [![Zero-Elevation Junctions](https://img.shields.io/badge/junctions-NTFS%20Reparse%20(No%20Admin)-green.svg)](#)
 [![TRIM & S.M.A.R.T Verified](https://img.shields.io/badge/SSD-TRIM%20%26%20Geometry-orange.svg)](#)
-[![Tests: 100% Pass](https://img.shields.io/badge/tests-725%2F725%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 100% Pass](https://img.shields.io/badge/tests-750%2F750%20passed%20(100%25)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
-[![Branch: internal-secondary-drive](https://img.shields.io/badge/branch-internal--secondary--drive-purple.svg)](https://github.com/DuongNAD/smart-drive-os/tree/internal-secondary-drive)
 
 > **High-performance autonomous architecture for internal secondary SSDs (`D:`, `E:`, etc.), deep NTFS 4KB geometry optimization, zero-data-loss C-drive cache offloading via non-elevated NTFS Directory Junctions (`mklink /J`), workstation developer profile initialization, and SSD TRIM health diagnostics.**
 
@@ -399,8 +398,8 @@ python -m unittest discover tests -v
 - **`test_cli_internal_e2e.py`**: End-to-end CLI integration testing (`smart-drive offload`, `smart-drive health`, `smart-drive init`).
 
 ```text
-714 passed, 11 skipped, 93 subtests passed in ~35s
-100% Pass Rate (725 total tests, 0 failures, 0 errors)
+739 passed, 11 skipped, 93 subtests passed in ~36s
+100% Pass Rate (750 total tests, 0 failures, 0 errors)
 ```
 
 ---

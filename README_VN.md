@@ -10,7 +10,7 @@
 [![Giao thức MCP: JSON-RPC 2.0](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
 [![Kiểm định Bảo mật MCP: Hạng A (100/100)](https://img.shields.io/badge/MCP%20Audit-H%E1%BA%A1ng%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
-[![Kiểm thử: 725/725 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-725%2F725%20passed%20(100%25)-brightgreen.svg)](#)
+[![Kiểm thử: 750/750 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-750%2F750%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Launcher Portable](https://img.shields.io/badge/launchers-20%20t%E1%BB%87p%20kh%E1%BB%9Fi%20ch%E1%BA%A1y-blue.svg)](#)
 [![Phiên bản: v1.1.0](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![Giấy phép: MIT](https://img.shields.io/badge/Gi%E1%BA%A5y%20ph%C3%A9p-MIT-yellow.svg)](LICENSE)
@@ -49,7 +49,7 @@
 8. [Cú Pháp Tìm Kiếm Nâng Cao](#8-cú-pháp-tìm-kiếm-nâng-cao)
 9. [Cơ Chế Dọn Rác An Toàn 3 Tầng & Danh Sách Bảo Vệ Whitelist](#9-cơ-chế-dọn-rác-an-toàn-3-tầng--danh-sách-bảo-vệ-whitelist)
 10. [Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình](#10-tích-hợp-máy-chủ-mcp-với-các-trợ-lý-ai-lập-trình)
-11. [Báo Cáo Kiểm Thử Tự Động (725 Bài Test, Pass 100%)](#11-báo-cáo-kiểm-thử-tự-động-725-bài-test-pass-100)
+11. [Báo Cáo Kiểm Thử Tự Động (750 Bài Test, Pass 100%)](#11-báo-cáo-kiểm-thử-tự-động-750-bài-test-pass-100)
 12. [Bảo Mật & Quyền Riêng Tư Dữ Liệu](#12-bảo-mật--quyền-riêng-tư-dữ-liệu)
 13. [Đóng Góp Mã Nguồn & Giấy Phép](#13-đóng-góp-mã-nguồn--giấy-phép)
 
@@ -432,9 +432,9 @@ SmartDrive-OS được kiểm định độc lập và xếp hạng chính thứ
 
 ---
 
-## 11. Báo Cáo Kiểm Thử Tự Động (725 Bài Test, Pass 100%)
+## 11. Báo Cáo Kiểm Thử Tự Động (750 Bài Test, Pass 100%)
 
-Hệ thống được bảo vệ và kiểm chứng bởi **725 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
+Hệ thống được bảo vệ và kiểm chứng bởi **750 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
 
 ```bash
 # Chạy toàn bộ bài test bằng pytest:
@@ -447,22 +447,23 @@ python -m unittest discover tests -v
 ### Kết Quả Kiểm Thử Thực Tế:
 ```text
 ============================= test session starts ==============================
-collected 725 items
+collected 750 items
 
 ........................................................................ [  9%]
-........................................................................ [ 19%]
-........................................................................ [ 29%]
-......................s.....s........................................... [ 42%]
+.................................. [ 14%]
+........................................................................ [ 23%]
+........................................................................ [ 33%]
+........................................................................ [ 42%]
 ........................................................................ [ 52%]
-..................................................sss....ssssss......... [ 66%]
-........................................................................ [ 76%]
-........................................................................ [ 86%]
-........................................................................ [ 96%]
-..........................                                               [100%]
-================== 714 passed, 11 skipped, 93 subtests passed ==================
+........................................................................ [ 62%]
+.............................................ssssss........sss.....ss.................... [ 74%]
+........................................................................ [ 83%]
+........................................................................ [ 93%]
+...................................................                      [100%]
+================== 739 passed, 11 skipped, 93 subtests passed ==================
 ```
 
-- **Tỷ lệ đậu**: **100.0%** (714 passed, 11 bài bỏ qua do đặc thù nền tảng Windows trên máy Mac/Linux, 0 failures, 0 errors).
+- **Tỷ lệ đậu**: **100.0%** (739 passed, 11 bài bỏ qua do đặc thù nền tảng Windows trên máy Mac/Linux, 0 failures, 0 errors).
 - **Độ bao phủ đối kháng**: Kiểm tra các kích thước cluster khắc nghiệt từ 512B đến 32MB, các giá trị biên (0B, 1B, 512KB-1B, 512KB, 512KB+1B) và kiểm toán ứng suất hàng triệu tệp tin.
 - **Độ bao phủ tự bảo vệ**: Kiểm chứng cơ chế tự bảo vệ repo, thư mục Windows Apps, thư mục Game và database SQL Server.
 - **Độ bao phủ AcademicClassifier**: Kiểm chứng trích xuất regex mã môn học, sửa lỗi font mojibake và quy hoạch học kỳ.
