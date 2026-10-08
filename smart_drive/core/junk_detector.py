@@ -36,7 +36,11 @@ from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOption
 # Data Models
 # ---------------------------------------------------------------------------
 
-@dataclass(slots=True if sys.version_info >= (3, 10) else False)
+# dataclass() only accepts `slots` on Python 3.10+; even slots=False raises TypeError on 3.9.
+_SLOTS_KWARGS = {"slots": True} if sys.version_info >= (3, 10) else {}
+
+
+@dataclass(**_SLOTS_KWARGS)
 class JunkItem:
     """Represents a filesystem entry identified as system or developer junk.
 
