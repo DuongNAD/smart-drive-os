@@ -1,0 +1,59 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# The jobs only read the repository.
+permissions:
+  contents: read
+
+# A newer push to the same ref makes the older run pointless.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unittest:
+    # The documented way to run the suite (CONTRIBUTING.md). Nothing is pip-installed,
+    # so this job also guards the "standard library only" promise.
+    name: unittest / ${{ matrix.os }} / py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-24.04 rather than ubuntu-latest: Python 3.9 has no build for Ubuntu 26.04,
+        # so the matrix would break if ubuntu-latest moves there.
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+        # 3.9 is the documented minimum; 3.13 is the newest version in the pyproject classifiers.
+        python-version: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run the test suite
+        run: python -m unittest discover tests
+
+  pytest:
+    # The README's other documented runner; one job is enough to keep it working.
+    name: pytest / ubuntu-24.04 / py3.13
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install pytest
+        run: python -m pip install pytest
+      - name: Run the test suite
+        run: python -m pytest -q -rfEs
