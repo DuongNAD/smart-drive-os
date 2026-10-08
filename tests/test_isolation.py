@@ -6,10 +6,20 @@ Ensures no test execution writes to the user's real HOME, APPDATA, or global age
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
 from pathlib import Path
 
 from smart_drive.mcp.registrar import get_agent_config_paths
+
+
+def _inside_system_temp(path: Path) -> bool:
+    """True when path is under the OS temp dir (/tmp, %TEMP%, /var/folders/.../T on macOS)."""
+    try:
+        path.relative_to(Path(tempfile.gettempdir()).resolve())
+    except ValueError:
+        return False
+    return True
 
 
 class TestSuiteIsolation(unittest.TestCase):
@@ -23,17 +33,15 @@ class TestSuiteIsolation(unittest.TestCase):
         """Path.home(), USERPROFILE, and APPDATA point inside temporary sandboxed paths."""
         home = Path.home().resolve()
         # Ensure home is in a temp directory structure
-        home_str = str(home).lower()
         self.assertTrue(
-            "temp" in home_str or "tmp" in home_str or "appdata" in home_str,
+            _inside_system_temp(home),
             f"Path.home() '{home}' does not appear to be inside a sandboxed temp directory",
         )
 
         if "APPDATA" in os.environ:
             appdata = Path(os.environ["APPDATA"]).resolve()
-            appdata_str = str(appdata).lower()
             self.assertTrue(
-                "temp" in appdata_str or "tmp" in appdata_str or "appdata" in appdata_str,
+                _inside_system_temp(appdata),
                 f"APPDATA '{appdata}' does not appear to be inside a sandboxed temp directory",
             )
 
