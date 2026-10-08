@@ -45,11 +45,15 @@ import json
 import os
 import sys
 import tempfile
-import tomllib
 import unittest
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
+
+try:
+    import tomllib
+except ImportError:  # Python < 3.11: no stdlib TOML parser, the packaging-metadata tests are skipped
+    tomllib = None  # type: ignore[assignment]
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -782,6 +786,7 @@ class TestNetworkLoopbackGuardAndCORS(SmartDriveTestCase):
 # 5. Domain Consistency & Packaging Metadata
 # ==============================================================================
 
+@unittest.skipIf(tomllib is None, "tomllib requires Python 3.11+")
 class TestDomainConsistencyAndPackagingMetadata(unittest.TestCase):
     """Verifies packaging metadata, domain consistency, and zero runtime dependencies."""
 

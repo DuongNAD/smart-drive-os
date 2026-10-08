@@ -39,7 +39,12 @@ if str(PROJECT_ROOT) not in sys.path:
 try:
     import tomllib
 except ImportError:  # Python < 3.11 fallback
-    import tomli as tomllib  # type: ignore
+    try:
+        import tomli as tomllib  # type: ignore
+    except ImportError:  # no TOML parser available: the pyproject metadata tests are skipped
+        tomllib = None  # type: ignore
+
+_NO_TOML = "TOML parsing needs Python 3.11+ (tomllib) or the tomli package"
 
 from smart_drive.core.config import (
     PROTECTED_ROOT_FILES,
@@ -156,6 +161,7 @@ class TestPrivacyPolicyCompliance(SmartDriveTestCase):
         self.assertTrue(is_protected_root_file("root/PRIVACY.MD"))
 
 
+@unittest.skipIf(tomllib is None, _NO_TOML)
 class TestMarketplaceMetadataCompliance(SmartDriveTestCase):
     """Verifies pyproject.toml compliance with PyPI, OpenAI, and Claude marketplace specs."""
 
@@ -241,6 +247,7 @@ class TestMarketplaceMetadataCompliance(SmartDriveTestCase):
 class TestZeroDependencyInvariant(SmartDriveTestCase):
     """Hard invariant verification: strictly zero external runtime dependencies."""
 
+    @unittest.skipIf(tomllib is None, _NO_TOML)
     def test_runtime_dependencies_strictly_empty(self) -> None:
         """pyproject.toml must define runtime dependencies as an empty list."""
         pyproject_path = PROJECT_ROOT / "pyproject.toml"
@@ -258,6 +265,10 @@ class TestZeroDependencyInvariant(SmartDriveTestCase):
             "Raw pyproject.toml does not contain literal 'dependencies = []'",
         )
 
+    @unittest.skipUnless(
+        hasattr(sys, "stdlib_module_names"),
+        "sys.stdlib_module_names needs Python 3.10+ (test_e2e_mcp_distribution audits imports on 3.9)",
+    )
     def test_no_external_runtime_imports_across_codebase(self) -> None:
         """Every import across smart_drive must belong to Python Standard Library."""
         stdlib_modules: Set[str] = set(sys.stdlib_module_names)
