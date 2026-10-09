@@ -46,14 +46,16 @@ FPTU_SUBJECT_PREFIXES = frozenset({
     "ECO", "ENW", "EXE", "FIN", "HCI", "HCM", "HRM", "IOT", "ISM", "ITE", "JPD", "LAB", "LAW", "MAD", "MAE",
     "MAS", "MGT", "MKT", "MLN", "MLP", "NLP", "NWC", "OJT", "OSG", "PHE", "PMG", "PRF", "PRJ", "PRN", "PRO",
     "SEP", "SSB", "SSG", "SSL", "SWD", "SWE", "SWP", "SWR", "SWT", "VNR", "WDU", "WED",
+    "PFP", "PRU", "SYB",
 })
 NON_ACADEMIC_CODE_PREFIXES = NON_ACADEMIC_CODE_PREFIXES - FPTU_SUBJECT_PREFIXES  # EXE101 is a course; a prefix on both lists is one
 
-# Vietnamese semesters, matched on lower-case text without diacritics: "hoc ky 3" (and "hoc ki"), the
+# Vietnamese semesters, matched on lower-case text without diacritics: "hoc ky 3" (and "hoc ki"; a bare "ki" is
+# not accepted, it is also a word: "Ki 5 inhibitor"), the
 # font-damaged "h?c k? 3", "hk4" and "ky 1". The number is one digit (FPTU has semesters 0 to 9), so "HK45" and
 # "K 20" are not semesters. Every alternative must start a token, so "Task 3" and "Book 1" are not either.
 # Explicit enough to stand alone.
-SEMESTER_PATTERN = re.compile(r"(?<![a-z0-9])(?:h[o?]c\s*k[yi?]|hk|ky|ki)\s*[_.\-]?\s*(\d)(?![0-9])")
+SEMESTER_PATTERN = re.compile(r"(?<![a-z0-9])(?:h[o?]c\s*k[yi?]|hk|ky)\s*[_.\-]?\s*(\d)(?![0-9])")
 
 # A bare "k8" or "k 3" (the "kỳ" that lost its accent): Kubernetes, K-12, "Grade K 2", K9 Mail ... only a weak
 # hint, and only as a whole token (so "K8s" and "k3s" are not semesters either).

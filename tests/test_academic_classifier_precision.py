@@ -36,6 +36,7 @@ NOT_ACADEMIC = [
     "K8 Lab", "k8-lab", "lab-k8", "My Home Lab K3", "lab pe_tools", "k5 lab", "pe_k3",
     "SP24 Lookbook", "SP26 Lookbook", "SU25 notes", "Su-27", "FA-18C Hornet", "fa 12",
     "HK45", "Grade K 2", "K 20", "k 4", "Pro100", "ACC100",
+    "KI 2", "Ki 5 inhibitor",  # "ki" is a word as well; only "hoc ki 3" is a semester
 ]
 
 # (folder name, expected sub-path fragments)
@@ -59,6 +60,9 @@ ACADEMIC = [
     ("XYZ123_SP26", ("FPTU", "XYZ123")),
     ("EXE101", ("FPTU", "EXE101")),  # EXE is also a file type, but it is an FPTU subject prefix too
     ("ACC101", ("FPTU", "ACC101")),
+    ("PRU211m", ("FPTU", "PRU211M")),  # real subjects that an earlier list did not know
+    ("PFP191", ("FPTU", "PFP191")),
+    ("SYB302c", ("FPTU", "SYB302C")),
     ("lab1", ("Java_Labs",)),
     ("testjava", ("Java_Labs",)),
     ("Lab 3", ("FPTU", "Lab_3")),  # a name that starts with "lab" and a number is a lab course
