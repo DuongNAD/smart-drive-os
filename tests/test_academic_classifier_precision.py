@@ -4,6 +4,11 @@ Regression for an over-eager AcademicClassifier: `k\\s*\\d+` matched any "k" fol
 the course-code regex matched "Win10", "mp3" and "CS6", the "lab" keyword matched "Colab", and the
 mojibake rewrite of "k 1" turned "Book 1" into "BooKy_1". `organize` would then move and rename
 such folders into the FPTU tree.
+
+A second pass (found by an independent review of `organize`) still moved Kubernetes' "K8s" and "k3s",
+"K9 Mail", "Home Lab", "SHA256" and "net472". A single weak hint (a bare "k8", the word "lab", "pe_" or a
+code with an unknown prefix) no longer moves a folder: strong signals (the word FPTU, a semester spelled
+out, a season code, a subject code with an FPTU prefix) are enough on their own, weak ones need two.
 """
 
 from __future__ import annotations
@@ -21,6 +26,9 @@ NOT_ACADEMIC = [
     "Family Photos", "Music Collection", "Stack3", "Hack2", "Pack 4", "Labels", "Collaboration",
     "iOS17", "x86", "h264", "utf8", "ps5", "Ubuntu2204", "IMG123", "DSC001", "GTX970", "SSD512",
     "Project Alpha", "Taxes 2024", "Receipts", "Downloads",
+    # the second pass: one weak hint is not enough
+    "K8s", "k3s", "K9 Mail", "K12", "k1", "Home Lab", "homelab", "My Lab", "Lab Reports", "labs",
+    "SHA256", "SHA512", "net472", "AES256", "XYZ123", "pe_notes",
 ]
 
 # (folder name, expected sub-path fragments)
@@ -43,7 +51,12 @@ ACADEMIC = [
     ("FA27", ("FPTU", "FA27")),  # not limited to the years that used to be hard-coded
     ("lab1", ("Java_Labs",)),
     ("testjava", ("Java_Labs",)),
-    ("Lab Reports", ("FPTU",)),
+    ("Lab 3", ("FPTU", "Lab_3")),  # a name that starts with "lab" and a number is a lab course
+    ("K5 DBI202", ("Ky_5", "K5_DBI202")),
+    # two weak hints together are enough
+    ("XYZ123 lab", ("FPTU", "XYZ123")),
+    ("PE_XYZ123", ("FPTU", "XYZ123")),
+    ("k5 lab", ("Ky_5",)),
 ]
 
 
@@ -52,6 +65,20 @@ class TestNotMistakenForCoursework(unittest.TestCase):
         for name in NOT_ACADEMIC:
             with self.subTest(name=name):
                 self.assertIsNone(AcademicClassifier.classify_folder(name))
+
+
+class TestWeakHintsNeedACompanion(unittest.TestCase):
+    def test_each_weak_hint_alone_is_not_enough_but_the_pair_is(self) -> None:
+        for alone, pair in (("k5", "k5 lab"), ("lab", "k5 lab"), ("pe_notes", "pe_notes lab"), ("XYZ123", "XYZ123 lab")):
+            with self.subTest(alone=alone):
+                self.assertIsNone(AcademicClassifier.classify_folder(alone))
+                self.assertIsNotNone(AcademicClassifier.classify_folder(pair))
+
+    def test_a_known_subject_prefix_is_strong_but_a_look_alike_prefix_never_counts(self) -> None:
+        self.assertIsNotNone(AcademicClassifier.classify_folder("PRN211"))
+        self.assertIsNone(AcademicClassifier.classify_folder("SHA256"))
+        self.assertIsNone(AcademicClassifier.classify_folder("SHA256 lab"))  # SHA is a known look-alike: no hint at all
+        self.assertIsNone(AcademicClassifier.classify_folder("net472_pe_old"))
 
 
 class TestRealCourseworkIsStillRecognised(unittest.TestCase):
