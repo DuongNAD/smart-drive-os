@@ -144,6 +144,54 @@ class TestArchivedCopiesOfManagedDrives(_Fixture):
         self.assertIn("02_Learning_Knowledge/old_drive/.smart_drive", report.excluded_dirs)
 
 
+class TestFoldersOnTheExclusionListAreReported(_Fixture):
+    """Downloads, game libraries ... are always skipped by snapshot and backup, but never silently."""
+
+    KEPT_OUT = "02_Learning_Knowledge/Downloads/keep.pdf"
+
+    def setUp(self) -> None:
+        super().setUp()
+        _touch(self.root, self.KEPT_OUT, "pdf")
+        _touch(self.root, "Downloads/loose.txt", "x")
+
+    def test_a_nested_downloads_folder_is_skipped_and_named_in_the_report(self) -> None:
+        for include_hidden in (False, True):
+            with self.subTest(include_hidden=include_hidden):
+                manifest = self.mgr.create_snapshot(f"s{include_hidden}", include_hidden=include_hidden)
+                self.assertNotIn(self.KEPT_OUT, manifest.files)
+                self.assertIn("02_Learning_Knowledge/Downloads", manifest.excluded_dirs)
+
+    def test_backup_leaves_it_out_and_says_so(self) -> None:
+        report = self.mgr.incremental_backup(self.target, include_hidden=True)
+        self.assertFalse((self.target / self.KEPT_OUT).exists())
+        self.assertEqual(report.excluded_dirs, ["02_Learning_Knowledge/Downloads"])
+
+    def test_the_notes_separate_hidden_folders_from_the_exclusion_list(self) -> None:
+        manifest = self.mgr.create_snapshot("s1")
+        notes = "\n".join(self.mgr.coverage_notes(manifest.partitions, manifest.excluded_dirs, False))
+        self.assertIn("3 hidden folder(s)", notes)  # .git, .github, .vscode: --include-hidden brings these back
+        self.assertIn("Also left out: 1 folder(s) on the tool's exclusion list (Downloads)", notes)
+        with_hidden = "\n".join(self.mgr.coverage_notes(manifest.partitions, ["02_Learning_Knowledge/Downloads"], True))
+        self.assertNotIn("hidden folder", with_hidden)
+        self.assertIn("Also left out", with_hidden)  # --include-hidden does not change this one
+
+    def test_a_downloads_folder_in_the_drive_root_counts_as_not_covered(self) -> None:
+        folders, loose = self.mgr.uncovered_entries(["02_Learning_Knowledge", "03_Development_Projects"])
+        self.assertIn("Downloads", folders)
+        self.assertEqual(loose, 3)
+
+    def test_os_bookkeeping_stays_silent(self) -> None:
+        manifest = self.mgr.create_snapshot("s2")
+        self.assertFalse([d for d in manifest.excluded_dirs if "RECYCLE" in d.upper()])
+        folders, _ = self.mgr.uncovered_entries(["02_Learning_Knowledge", "03_Development_Projects"])
+        self.assertFalse([f for f in folders if f.startswith("$")])
+
+    def test_the_cli_output_carries_the_note(self) -> None:
+        code, out, _ = self.cli("backup", "--root", str(self.root), "--target", str(self.target))
+        self.assertEqual(code, 0)
+        self.assertIn("Also left out: 1 folder(s) on the tool's exclusion list (Downloads)", out)
+
+
 class TestCoverageReporting(_Fixture):
     def test_uncovered_entries_lists_folders_and_loose_files(self) -> None:
         partitions = ["02_Learning_Knowledge", "03_Development_Projects"]

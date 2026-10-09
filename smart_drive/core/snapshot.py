@@ -64,10 +64,19 @@ USER_HIDDEN_DIRS: frozenset = frozenset({".git", ".agents"})
 # include_hidden. (The live one in the drive root is never reached: only the partitions are walked.)
 _TOOL_STATE_DIRS: frozenset = frozenset({".smart_drive", ".smart_drive_manager"})
 
-# OS bookkeeping and the like: never part of a snapshot or backup, whatever the options.
-_SYSTEM_EXCLUDED_DIRS: frozenset = (
-    frozenset(d.lower() for d in DEFAULT_EXCLUDE_DIRS) - USER_HIDDEN_DIRS - _TOOL_STATE_DIRS
+# OS bookkeeping: never user data, never part of a snapshot or backup, and not worth a line in the report.
+_OS_BOOKKEEPING_DIRS: frozenset = frozenset({
+    "$recycle.bin", "system volume information", ".spotlight-v100", ".trashes", ".fseventsd",
+})
+
+# Everything else on the tool's global exclusion list (Downloads, game libraries, Program Files, database
+# service folders ...) is skipped whatever the options, but these are folders someone named, possibly
+# deep inside a partition: a run says it left them out instead of dropping them silently.
+_NAMED_EXCLUDED_DIRS: frozenset = (
+    frozenset(d.lower() for d in DEFAULT_EXCLUDE_DIRS)
+    - USER_HIDDEN_DIRS - _TOOL_STATE_DIRS - _OS_BOOKKEEPING_DIRS
 )
+_SYSTEM_EXCLUDED_DIRS: frozenset = _OS_BOOKKEEPING_DIRS | _NAMED_EXCLUDED_DIRS
 
 
 def _prune_dirs(
@@ -79,13 +88,18 @@ def _prune_dirs(
 ) -> None:
     """Filters ``dirs`` in place the way os.walk expects, recording the hidden folders left out.
 
-    System folders are skipped silently. Hidden folders (.git, .github, .vscode ...) are skipped
-    unless ``include_hidden`` is set, and every one that is skipped is appended to ``left_out`` as a
-    path relative to ``base`` so that reports can say what a run did not cover.
+    OS bookkeeping folders are skipped silently. Hidden folders (.git, .github, .vscode ...) are skipped
+    unless ``include_hidden`` is set, and folders on the global exclusion list (Downloads ...) are always
+    skipped; every one that is skipped is appended to ``left_out`` as a path relative to ``base`` so that
+    reports can say what a run did not cover.
     """
     kept: List[str] = []
     for name in dirs:
-        if name.lower() in _SYSTEM_EXCLUDED_DIRS:
+        lowered = name.lower()
+        if lowered in _OS_BOOKKEEPING_DIRS:
+            continue
+        if lowered in _NAMED_EXCLUDED_DIRS:
+            left_out.append(normalize_rel_path(Path(root_dir) / name, base))
             continue
         if name.startswith(".") and not include_hidden:
             left_out.append(normalize_rel_path(Path(root_dir) / name, base))
@@ -197,7 +211,7 @@ class SnapshotManifest:
     total_slack_bytes: int
     files: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     include_hidden: bool = False                                    # hidden folders (.git ...) were walked
-    excluded_dirs: List[str] = field(default_factory=list)          # hidden folders that were left out
+    excluded_dirs: List[str] = field(default_factory=list)          # folders that were left out (hidden, or on the exclusion list)
 
     @property
     def total_bytes(self) -> int:
@@ -300,7 +314,7 @@ class BackupReport:
     failed_files: List[Dict[str, str]] = field(default_factory=list)
     manifest_path: str = ""
     include_hidden: bool = False
-    excluded_dirs: List[str] = field(default_factory=list)          # hidden folders that were left out
+    excluded_dirs: List[str] = field(default_factory=list)          # folders that were left out (hidden, or on the exclusion list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -761,7 +775,7 @@ class SnapshotManager:
     def uncovered_entries(self, partitions: List[str]) -> Tuple[List[str], int]:
         """Top-level folders (and a count of loose files) that a run limited to ``partitions`` skips.
 
-        Hidden and system entries are not counted: they are never part of a run anyway.
+        Hidden entries and OS bookkeeping are not counted: they are never part of a run anyway.
         """
         covered = {p.lower() for p in partitions}
         folders: List[str] = []
@@ -771,7 +785,7 @@ class SnapshotManager:
                 for entry in sorted(entries, key=lambda e: e.name.lower()):
                     name = entry.name
                     lowered = name.lower()
-                    if name.startswith(".") or lowered in covered or lowered in _SYSTEM_EXCLUDED_DIRS:
+                    if name.startswith(".") or lowered in covered or lowered in _OS_BOOKKEEPING_DIRS:
                         continue
                     if entry.is_symlink():
                         continue
@@ -800,11 +814,20 @@ class SnapshotManager:
             if loose_files:
                 parts.append(f"{loose_files} loose file(s) at the root")
             notes.append(f"Not covered: {'; '.join(parts)} (add them with --partitions)")
-        if excluded_dirs and not include_hidden:
-            names = sorted({e.rsplit("/", 1)[-1] for e in excluded_dirs})
+        hidden = [e for e in excluded_dirs if e.rsplit("/", 1)[-1].startswith(".")]
+        named = [e for e in excluded_dirs if e not in hidden]
+        if hidden and not include_hidden:
+            names = sorted({e.rsplit("/", 1)[-1] for e in hidden})
             shown_names = ", ".join(names[:5]) + (" ..." if len(names) > 5 else "")
             notes.append(
-                f"Left out: {len(excluded_dirs)} hidden folder(s) ({shown_names}) - use --include-hidden to include them"
+                f"Left out: {len(hidden)} hidden folder(s) ({shown_names}) - use --include-hidden to include them"
+            )
+        if named:
+            names = sorted({e.rsplit("/", 1)[-1] for e in named})
+            shown_names = ", ".join(names[:5]) + (" ..." if len(names) > 5 else "")
+            notes.append(
+                f"Also left out: {len(named)} folder(s) on the tool's exclusion list ({shown_names}); "
+                "they are never part of a snapshot or backup"
             )
         return notes
 
