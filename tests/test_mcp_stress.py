@@ -199,40 +199,33 @@ class TestRateLimiterResetAndRecovery(SmartDriveTestCase):
 
     def test_staggered_timestamps_sliding_window(self) -> None:
         """Verify continuous sliding eviction where older requests expire while newer ones remain."""
+        # The limiter takes the clock as an argument, so the timeline is exact instead of depending on how
+        # promptly a (possibly overloaded) CI runner wakes up from sleep().
         limiter = SlidingWindowRateLimiter(max_requests=4, window_seconds=0.30)
 
         # Send 2 requests at t=0
-        self.assertTrue(limiter.acquire()[0])
-        self.assertTrue(limiter.acquire()[0])
+        self.assertTrue(limiter.acquire(now=0.0)[0])
+        self.assertTrue(limiter.acquire(now=0.0)[0])
         self.assertEqual(limiter.current_load, 2)
 
-        # Wait 0.15s (half window)
-        time.sleep(0.15)
-
-        # Send 2 more requests at t=0.15s -> quota is now full (4/4)
-        self.assertTrue(limiter.acquire()[0])
-        self.assertTrue(limiter.acquire()[0])
+        # Send 2 more requests at t=0.15s (half window) -> quota is now full (4/4)
+        self.assertTrue(limiter.acquire(now=0.15)[0])
+        self.assertTrue(limiter.acquire(now=0.15)[0])
         self.assertEqual(limiter.current_load, 4)
 
         # 5th request at t=0.15s must be throttled
-        allowed, retry_after = limiter.acquire()
+        allowed, retry_after = limiter.acquire(now=0.15)
         self.assertFalse(allowed)
-        # Oldest was t=0, so retry_after should be approx 0.15s
-        self.assertAlmostEqual(retry_after, 0.15, delta=0.08)
+        # Oldest was t=0, so it frees up 0.30s after t=0, i.e. 0.15s from now
+        self.assertAlmostEqual(retry_after, 0.15, places=6)
 
-        # Wait 0.18s (now t=0.33s). The first 2 requests have expired, but the 2 from t=0.15s remain!
-        time.sleep(0.18)
-
-        # current_load should now reflect exactly 2 active requests
-        self.assertEqual(limiter.current_load, 2)
-
-        # We should be able to acquire exactly 2 more requests
-        self.assertTrue(limiter.acquire()[0])
-        self.assertTrue(limiter.acquire()[0])
+        # At t=0.33s the first 2 requests have expired, but the 2 from t=0.15s remain, so exactly 2 more fit
+        self.assertTrue(limiter.acquire(now=0.33)[0])
+        self.assertTrue(limiter.acquire(now=0.33)[0])
         self.assertEqual(limiter.current_load, 4)
 
         # Next request must be throttled
-        self.assertFalse(limiter.acquire()[0])
+        self.assertFalse(limiter.acquire(now=0.33)[0])
 
     def test_manual_reset_under_heavy_concurrency(self) -> None:
         """Calling reset() while threads are actively querying immediately restores full allowance."""
