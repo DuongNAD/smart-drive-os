@@ -920,7 +920,7 @@ def get_dashboard_html() -> str:
           const msg = data.index_exists === false 
             ? 'Search index does not exist yet. Run `smart-drive index` to build index.'
             : 'No matching files found.';
-          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-faint);">${msg}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-faint);">${esc(msg)}</td></tr>`;
           return;
         }
 
@@ -1013,7 +1013,7 @@ def get_dashboard_html() -> str:
       for (const item of previewItems.slice(0, 100)) {
         const row = document.createElement('tr');
         row.innerHTML = `
-          <td><span class="badge ${item.tier === 1 ? 'badge-safe' : item.tier === 2 ? 'badge-dev' : 'badge-optin'}">T${item.tier}</span></td>
+          <td><span class="badge ${item.tier === 1 ? 'badge-safe' : item.tier === 2 ? 'badge-dev' : 'badge-optin'}">T${esc(item.tier)}</span></td>
           <td class="code-font">${esc(item.rel_path)}</td>
           <td>${esc(item.description || item.rule || '')}</td>
           <td>${formatBytes(item.size)}</td>

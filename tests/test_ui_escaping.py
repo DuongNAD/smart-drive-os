@@ -31,17 +31,16 @@ from typing import Dict, List, Optional, Tuple
 
 from smart_drive.ui.dashboard import get_dashboard_html
 
-# Interpolations that cannot carry markup: numbers, byte counts, constant class names. Anything that is
-# not here and is not exactly esc(...) fails the build; add to this list only for numbers and constants.
+# Interpolations in a template literal that is assigned to innerHTML must be exactly esc(...), or something
+# that cannot carry markup: a number, a byte count, a constant class name. Add to this list only for those.
+# (Template literals that go to innerText, a toast or an alert are text, not HTML, and are not held to it.)
 SAFE_EXPRESSIONS = [
-    re.compile(r"^formatBytes\([^`]*\)$"),
     re.compile(r"^[\w.]+\.toFixed\(\d\)$"),
     re.compile(r"^\([\w.]+ \|\| 0\)\.(toFixed\(\d\)|toLocaleString\(\))$"),
-    re.compile(r"^Math\.(min|max)\(.*\)$"),
     re.compile(r"^data\.total \|\| data\.total_count \|\| 0$"),
     re.compile(r"^item\.tier === 1 \? 'badge-safe' : item\.tier === 2 \? 'badge-dev' : 'badge-optin'$"),
 ]
-SAFE_NAMES = {"latency", "msg", "item.tier", "result.total_attempted", "result.total_succeeded"}
+SAFE_CALLS = ("formatBytes", "Math.min", "Math.max")  # as the whole expression: one call that closes at the very end
 
 TEMPLATE_TAGS = {"div", "span", "tr", "td", "th"}  # what the dashboard's own row templates are made of
 SINKS_NEVER_USED = ("document.write", "outerHTML", "insertAdjacentHTML", "eval(", "new Function")
@@ -53,13 +52,15 @@ def _scripts() -> List[str]:
     return [m.group(1) for m in re.finditer(r"<script[^>]*>(.*?)</script>", html_text, re.DOTALL)]
 
 
-def _template_literals(script: str) -> List[Tuple[str, List[str]]]:
-    """Every backtick string in the script as (text with \\0 where an interpolation was, [expressions]).
+def _template_literals(script: str) -> List[Tuple[str, List[str], bool]]:
+    """Every backtick string in the script as (text with \\0 where an interpolation was, [expressions], to_html).
+
+    ``to_html`` says the literal is assigned straight to innerHTML (the only place its markup is parsed).
 
     Comments, ordinary quoted strings (one of them contains backticks) and regex literals (esc() has one with
     both kinds of quote in it) are skipped, so only real template literals are reported.
     """
-    found: List[Tuple[str, List[str]]] = []
+    found: List[Tuple[str, List[str], bool]] = []
     i, n, previous = 0, len(script), ""  # previous: last significant character, to tell a regex from a division
     while i < n:
         ch = script[i]
@@ -89,6 +90,7 @@ def _template_literals(script: str) -> List[Tuple[str, List[str]]]:
             i += 1
             previous = "/"
         elif ch == "`":
+            to_html = re.search(r"innerHTML\s*=\s*$", script[max(0, i - 40):i]) is not None
             j, text, exprs = i + 1, [], []
             while j < n and script[j] != "`":
                 if script[j] == "\\":
@@ -105,7 +107,7 @@ def _template_literals(script: str) -> List[Tuple[str, List[str]]]:
                 else:
                     text.append(script[j])
                     j += 1
-            found.append(("".join(text), exprs))
+            found.append(("".join(text), exprs, to_html))
             i = j + 1
             previous = "`"
         else:
@@ -115,16 +117,28 @@ def _template_literals(script: str) -> List[Tuple[str, List[str]]]:
     return found
 
 
-def _is_exactly_esc(expression: str) -> bool:
-    """`esc(...)` as the WHOLE expression: the call opened at the start closes at the very end."""
-    if not (expression.startswith("esc(") and expression.endswith(")")):
+def _is_single_call(expression: str, name: str) -> bool:
+    """`name(...)` as the WHOLE expression: the call opened at the start closes at the very end."""
+    if not (expression.startswith(name + "(") and expression.endswith(")")):
         return False
     depth = 0
-    for index, ch in enumerate(expression[3:], start=3):
+    for index, ch in enumerate(expression[len(name):], start=len(name)):
         depth += {"(": 1, ")": -1}.get(ch, 0)
         if depth == 0:
             return index == len(expression) - 1
     return False
+
+
+def _is_exactly_esc(expression: str) -> bool:
+    return _is_single_call(expression, "esc")
+
+
+def _is_vetted(expression: str) -> bool:
+    return (
+        _is_exactly_esc(expression)
+        or any(_is_single_call(expression, call) for call in SAFE_CALLS)
+        or any(pattern.match(expression) for pattern in SAFE_EXPRESSIONS)
+    )
 
 
 def _inside_a_tag(text: str, position: int) -> bool:
@@ -137,37 +151,41 @@ class TestEveryInterpolationIsEscapedOrHarmless(unittest.TestCase):
     def setUp(self) -> None:
         self.scripts = _scripts()
         self.literals = [lit for script in self.scripts for lit in _template_literals(script)]
-        self.expressions = [e for _, exprs in self.literals for e in exprs]
+        self.html_literals = [(text, exprs) for text, exprs, to_html in self.literals if to_html]
 
     def test_there_is_something_to_check(self) -> None:
         self.assertGreaterEqual(len(self.scripts), 1)
-        self.assertGreater(len(self.expressions), 20)
-        self.assertTrue(any(_is_exactly_esc(e) for e in self.expressions))
+        self.assertGreaterEqual(len(self.html_literals), 5)  # taxonomy card, hotspot row, search row, empty row, junk row
+        expressions = [e for _, exprs in self.html_literals for e in exprs]
+        self.assertGreater(len(expressions), 20)
+        self.assertTrue(any(_is_exactly_esc(e) for e in expressions))
 
-    def test_no_interpolation_is_unvetted(self) -> None:
-        offenders = [
-            e for e in self.expressions
-            if not _is_exactly_esc(e) and e not in SAFE_NAMES and not any(p.match(e) for p in SAFE_EXPRESSIONS)
-        ]
+    def test_no_interpolation_in_html_is_unvetted(self) -> None:
+        offenders = [e for _, exprs in self.html_literals for e in exprs if not _is_vetted(e)]
         self.assertEqual(
             offenders, [],
-            "wrap strings that come from the drive or the API in esc(...); add to SAFE_EXPRESSIONS/SAFE_NAMES "
+            "wrap strings that come from the drive or the API in esc(...); add to SAFE_EXPRESSIONS/SAFE_CALLS "
             "only an expression that is a number or a constant",
         )
 
     def test_the_scanner_would_catch_the_ways_round_a_name_based_check(self) -> None:
-        """The weak version of this test passed for every one of these."""
-        bypasses = ["m.directory", "esc(m.extension) + m.path", "n", "esc(a)  + esc(b)", "esc(m.name), m.path"]
+        """Every one of these passed an earlier, weaker version of this test."""
+        bypasses = [
+            "m.directory", "esc(m.extension) + m.path", "n", "esc(a)  + esc(b)", "esc(m.name), m.path",
+            "msg", "item.tier", "data.message || ''", "formatBytes(a) + m.path + formatBytes(1)",
+            "Math.max(1, 2) + m.path", "formatBytes(m.size)  +  m.name",
+        ]
         for expression in bypasses:
             with self.subTest(expression=expression):
-                vetted = _is_exactly_esc(expression) or expression in SAFE_NAMES or any(p.match(expression) for p in SAFE_EXPRESSIONS)
-                self.assertFalse(vetted)
-        self.assertTrue(_is_exactly_esc("esc(m.category || 'Other')"))
-        self.assertTrue(_is_exactly_esc("esc(item.description || item.rule || '')"))
+                self.assertFalse(_is_vetted(expression))
+        for expression in ("esc(m.category || 'Other')", "esc(item.description || item.rule || '')", "formatBytes(m.size)",
+                           "Math.min(100, Math.max(4, pct))", "(stat.file_count || 0).toLocaleString()"):
+            with self.subTest(expression=expression):
+                self.assertTrue(_is_vetted(expression))
 
     def test_esc_is_never_used_inside_an_html_tag(self) -> None:
         """esc() makes text safe for a text node; inside an attribute it is not enough (&#39; becomes ' again)."""
-        for text, exprs in self.literals:
+        for text, exprs, _ in self.literals:
             position = 0
             for expression in exprs:
                 position = text.index("\0", position)
@@ -244,7 +262,7 @@ const document = {
   querySelectorAll() { return []; },
 };
 const tier = { count: 1, nominal_bytes: 1, slack_bytes: 1, items: [
-  { tier: 1, rel_path: P, description: P, rule: P, size: 1, allocated_size: 2, slack_bytes: 1, name: P, path: P, category: P } ] };
+  { tier: P, rel_path: P, description: P, rule: P, size: 1, allocated_size: 2, slack_bytes: 1, name: P, path: P, category: P } ] };
 const answers = {
   '/api/status': { root: P, cluster_size_kb: 512 },
   '/api/audit': {
@@ -264,6 +282,11 @@ vm.runInContext(script, ctx);
 (async () => {
   await ctx.loadStatus(); await ctx.loadAudit(); await ctx.loadJunkPreview();
   elements['search-input'] = makeEl('search-input'); elements['search-input'].value = 'q';
+  await ctx.executeSearch();
+  // the "nothing found" and "no index yet" rows, with a poisoned server message in the answer
+  answers['/api/search'] = { results: [], total: 0, index_exists: true, message: P, warnings: [P] };
+  await ctx.executeSearch();
+  answers['/api/search'] = { results: [], total: 0, index_exists: false, message: P, warnings: [P] };
   await ctx.executeSearch();
   const others = Object.values(elements).map(e => e._c || '').filter(Boolean);
   process.stdout.write(JSON.stringify({ innerHTML: captured, textContent: others }));
@@ -290,7 +313,7 @@ class TestTheRenderedMarkupContainsNoInjection(unittest.TestCase):
 
     def test_only_the_dashboards_own_tags_and_no_event_handlers_come_out(self) -> None:
         output = self.run_dashboard()
-        self.assertGreaterEqual(len([m for m in output["innerHTML"] if m]), 6)  # taxonomy card, hotspot row, search row, 3 junk rows
+        self.assertGreaterEqual(len([m for m in output["innerHTML"] if m]), 8)  # taxonomy card, hotspot row, search row, 3 junk rows, 2 empty rows
         for markup in output["innerHTML"]:
             parser = _Tags()
             parser.feed(markup)
