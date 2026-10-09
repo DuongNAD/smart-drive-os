@@ -647,6 +647,10 @@ DEFAULT_EXCLUDE_DIRS: FrozenSet[str] = frozenset({
     "smart_drive_os",
     "smart_drive",
     "smart_drive_manager",
+    # The tool's own state (search index and its SQLite -wal/-shm files, snapshots): scanning it
+    # indexed the index, made `update` report phantom changes and listed index.db-wal as a duplicate.
+    ".smart_drive",
+    ".smart_drive_manager",
 })
 
 
