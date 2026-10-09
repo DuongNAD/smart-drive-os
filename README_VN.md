@@ -414,6 +414,8 @@ SmartDrive-OS hỗ trợ giao thức MCP tiêu chuẩn, cung cấp 8 công cụ 
 smart-drive mcp register --all
 ```
 
+Khi chạy từ mã nguồn (không `pip install`), mỗi cấu hình được ghi còn kèm `PYTHONPATH` trỏ vào thư mục dự án, nên ứng dụng khởi động được máy chủ từ bất kỳ thư mục làm việc nào. Bản đã cài bằng pip không cần thiết lập thêm.
+
 Các mẫu cấu hình dựng sẵn cũng được lưu trữ trong `configs/`:
 - `configs/.mcp.json` — Thư mục gốc dự án / workspace
 - `configs/mcp_config.json` — Google Antigravity 2.0 (`~/.gemini/antigravity/mcp_config.json`)

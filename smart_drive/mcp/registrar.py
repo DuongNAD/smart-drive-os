@@ -199,17 +199,35 @@ def save_json_config(path: Path, data: Dict[str, Any]) -> None:
         raise
 
 
+def _source_checkout_root() -> Optional[Path]:
+    """Returns the directory that must be on PYTHONPATH to import ``smart_drive``, or None.
+
+    The portable, zero-install layout is only importable while its root is on ``sys.path``.
+    ``python -m smart_drive`` finds it through the current directory, but MCP clients start
+    their servers from an arbitrary directory, so the registered entry has to carry the path
+    (the launchers do the same with PYTHONPATH). A pip-installed copy is already importable.
+    """
+    package_dir = Path(__file__).resolve().parent.parent
+    if any(part.lower() in ("site-packages", "dist-packages") for part in package_dir.parts):
+        return None
+    return package_dir.parent
+
+
 def build_mcp_entry(python_cmd: Optional[str] = None) -> Dict[str, Any]:
     """Builds standard MCP client server registration configuration dict."""
     if python_cmd is None:
         python_cmd = sys.executable or "python3"
+    env = {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
+    }
+    checkout_root = _source_checkout_root()
+    if checkout_root is not None:
+        env["PYTHONPATH"] = str(checkout_root)
     return {
         "command": python_cmd,
         "args": ["-m", "smart_drive", "mcp"],
-        "env": {
-            "PYTHONIOENCODING": "utf-8",
-            "PYTHONUTF8": "1",
-        },
+        "env": env,
     }
 
 

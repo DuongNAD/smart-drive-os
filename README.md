@@ -417,6 +417,8 @@ Register all installed AI assistants instantly:
 smart-drive mcp register --all
 ```
 
+Run from a source checkout (no `pip install`), each registered entry also sets `PYTHONPATH` to the checkout, so clients can start the server from any working directory. A pip-installed copy needs no extra setting.
+
 Pre-packaged configuration templates are also maintained in `configs/`:
 - `configs/.mcp.json` — Local project / workspace root
 - `configs/mcp_config.json` — Google Antigravity 2.0 (`~/.gemini/antigravity/mcp_config.json`)
