@@ -185,12 +185,39 @@ class ClassifierEngine:
                 return current
         return None
 
+    def _under_root(self, path: Path) -> bool:
+        """Whether ``path`` is the drive root or anywhere below it, however the root happens to be spelled.
+
+        A lexical match settles it when there is one. Otherwise the filesystem is asked: some ancestor of
+        ``path`` is the very directory that is the root. That is what makes /var/... and /private/var/...,
+        a link that points at the drive, another letter case or another Unicode form of a folder name all
+        count as "inside" - spelling the drive differently must never turn the link check off.
+        """
+        if self._rel_to_root(path) is not None:
+            return True
+        for candidate in (path, *path.parents):
+            try:
+                if os.path.samefile(candidate, self.root):
+                    return True
+            except OSError:  # this ancestor does not exist (yet)
+                continue
+        return False
+
     def _leads_outside_root(self, typed: Path, real: Path) -> bool:
         """True for a path typed inside the drive whose real location is outside it: a link in disguise.
 
         A location outside the drive that was named as such stays allowed (importing from it is deliberate).
         """
-        return self._rel_to_root(typed) is not None and self._rel_to_root(real) is None
+        return self._under_root(typed) and not self._under_root(real)
+
+    @staticmethod
+    def _plain(path: str) -> str:
+        """Drops the \\\\?\\ prefix Windows can put on long paths, so two spellings of one path compare equal."""
+        if path.startswith("\\\\?\\UNC\\"):
+            return "\\\\" + path[8:]
+        if path.startswith("\\\\?\\"):
+            return path[4:]
+        return path
 
     @staticmethod
     def _same_file(first: Path, second: Path) -> bool:
@@ -207,7 +234,7 @@ class ClassifierEngine:
             real_source = os.path.realpath(source)
         except (OSError, RuntimeError, ValueError):
             return f"cannot resolve the source: {source}"
-        if os.path.normcase(real_source) != os.path.normcase(os.path.abspath(source)):
+        if os.path.normcase(self._plain(real_source)) != os.path.normcase(self._plain(os.path.abspath(source))):
             return f"source passes through a symlink/junction (it really is {real_source})"
         link = self._link_below_root(destination)
         if link is not None:
@@ -700,7 +727,7 @@ class ClassifierEngine:
             return results
         # A link is refused when it leads out of the drive. One that stays inside (or the drive root itself
         # given through a link) is harmless: everything below is then walked by its real path.
-        inside = self._rel_to_root(scan_root) is not None
+        inside = self._under_root(scan_root)
         if self._leads_outside_root(scan_arg, scan_root) or (_is_link(scan_arg) and not inside):
             logger.warning("Refusing to classify through a symlink/junction: %s", scan_arg)
             self.skipped_links.append(scan_arg)

@@ -12,6 +12,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -254,6 +255,91 @@ class TestLinksAboveTheFileAndOnTheDestinationSide(unittest.TestCase):
         results = self.engine.scan_and_classify(target_dir=incoming)
         self.assertEqual([r.name for r in results], ["data.csv"])
         self.assertEqual({p.name for p in self.engine.skipped_links}, {"link.csv"})
+
+
+@unittest.skipIf(sys.platform == "win32", "os.symlink requires elevation on Windows")
+class TestTheDriveSpelledAnotherWay(unittest.TestCase):
+    """The link check compared the typed path with the resolved root letter by letter, so any other
+    spelling of the same drive (macOS' /var -> /private/var, a link to the drive, another letter case)
+    counted as "outside, named on purpose" and `classify <drive>/linkdir/dir --apply` moved outside files in.
+    The existing tests resolve() their temp dir, which is why they never saw it."""
+
+    def setUp(self) -> None:
+        # Deliberately NOT resolved: on macOS mkdtemp() lives under /var, an alias of /private/var.
+        self.base = Path(tempfile.mkdtemp(prefix="sd_alias_"))
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.drive = self.base / "Drive"
+        self.outside = self.base / "outside"
+        for folder in (self.drive, self.outside, self.outside / "dir"):
+            folder.mkdir(parents=True)
+        (self.outside / "dir" / "inner.csv").write_text(CSV_BODY)
+        (self.outside / "solo.csv").write_text(CSV_BODY)
+        os.symlink(self.outside, self.drive / "linkdir")
+
+    def _outside_untouched(self) -> None:
+        self.assertEqual((self.outside / "dir" / "inner.csv").read_text(), CSV_BODY)
+        self.assertEqual((self.outside / "solo.csv").read_text(), CSV_BODY)
+
+    def _refused(self, typed: Path, root: Path) -> None:
+        engine = ClassifierEngine(root_path=root)
+        self.assertEqual(engine.scan_and_classify(target_dir=typed), [], typed)
+        self.assertTrue(engine.skipped_links)
+        self.assertIsNone(engine.inspect_path(typed / "inner.csv") if typed.is_dir() else engine.inspect_path(typed))
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["classify", str(typed), "--root", str(root), "--apply", "--json"])
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertEqual(json.loads(out.getvalue())["actions"], [])
+        self._outside_untouched()
+        self.assertFalse((self.drive / "01_AI_Models").exists())
+
+    def test_the_unresolved_temp_path_is_the_same_drive(self) -> None:
+        """The reported repro: the drive and the typed path both under an alias of the real directory."""
+        self._refused(self.drive / "linkdir" / "dir", self.drive)
+        self._refused(self.drive / "linkdir" / "solo.csv", self.drive)
+
+    def test_a_link_that_points_at_the_drive_is_the_same_drive(self) -> None:
+        alias = self.base / "ssd"
+        os.symlink(self.drive, alias)
+        self._refused(alias / "linkdir" / "dir", self.drive)
+        self._refused(alias / "linkdir" / "solo.csv", alias)  # and with the root given through the link as well
+
+    def test_a_chain_of_links_to_the_drive_is_the_same_drive(self) -> None:
+        os.symlink(self.drive, self.base / "hop1")
+        os.symlink(self.base / "hop1", self.base / "hop2")
+        self._refused(self.base / "hop2" / "linkdir" / "dir", self.drive)
+
+    def test_another_letter_case_of_the_drive_is_the_same_drive(self) -> None:
+        shouted = self.base / "DRIVE"
+        try:
+            same = os.path.samefile(shouted, self.drive)
+        except OSError:
+            same = False
+        if not same:
+            self.skipTest("this volume is case-sensitive")
+        self._refused(shouted / "linkdir" / "dir", self.drive)
+
+    def test_importing_from_a_named_outside_location_still_works_with_an_aliased_root(self) -> None:
+        alias = self.base / "ssd"
+        os.symlink(self.drive, alias)
+        incoming = self.base / "incoming"
+        incoming.mkdir()
+        (incoming / "data.csv").write_text(CSV_BODY)
+        engine = ClassifierEngine(root_path=alias)
+        results = engine.scan_and_classify(target_dir=incoming)
+        self.assertEqual([r.name for r in results], ["data.csv"])
+        actions = engine.execute_relocation(results, dry_run=False)
+        self.assertEqual([a.status for a in actions], ["MOVED"])
+        self.assertTrue((self.drive / "01_AI_Models" / "Datasets" / "data.csv").is_file())
+
+    def test_a_folder_inside_the_drive_reached_through_an_alias_is_classified_normally(self) -> None:
+        alias = self.base / "ssd"
+        os.symlink(self.drive, alias)
+        (self.drive / "real").mkdir()
+        (self.drive / "real" / "data.csv").write_text(CSV_BODY)
+        engine = ClassifierEngine(root_path=self.drive)
+        results = engine.scan_and_classify(target_dir=alias / "real")
+        self.assertEqual([r.name for r in results], ["data.csv"])
 
 
 if __name__ == "__main__":
