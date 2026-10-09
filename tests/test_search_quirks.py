@@ -257,6 +257,19 @@ class TestCategoryTypos(_Drive):
         _, _, err = self.cli("search", "--root", str(self.root), "--json", "--category", "Documents")
         self.assertIn("No file has category 'Documents'", err)
 
+    def test_only_a_real_typo_pays_for_listing_the_categories(self) -> None:
+        """Telling a typo from an emptied-out real category is an index seek; the full listing is for typos."""
+        engine = self.engine()
+        statements: List[str] = []
+        engine.db.get_connection().set_trace_callback(statements.append)
+
+        engine.search(parse_search_query("category:Code ext:zzz"))
+        self.assertEqual([s for s in statements if "DISTINCT" in s.upper()], [])
+
+        statements.clear()
+        engine.search(parse_search_query("category:Documents"))
+        self.assertEqual(len([s for s in statements if "DISTINCT" in s.upper()]), 1)
+
 
 class TestCategorySpellings(_Drive):
     def test_underscores_hyphens_and_spaces_name_the_same_category(self) -> None:

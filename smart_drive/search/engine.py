@@ -287,11 +287,15 @@ class SearchEngine:
 
         if target_cat is not None and total_count == 0:
             # An empty answer for a category nobody has is a typo, not a finding: say which ones exist.
+            # An index seek tells the two apart for free; the listing is only paid for on a real typo.
             try:
-                present = [row[0] for row in cur.execute("SELECT DISTINCT category FROM files ORDER BY category")]
+                has_rows = cur.execute("SELECT 1 FROM files WHERE category = ? LIMIT 1", (target_cat,)).fetchone()
+                present = [] if has_rows else [
+                    row[0] for row in cur.execute("SELECT DISTINCT category FROM files ORDER BY category")
+                ]
             except sqlite3.Error:
                 present = []
-            if present and target_cat not in present:
+            if present:
                 warnings.append(
                     f"No file has category {params.category!r}; categories in this index: {', '.join(present)}"
                 )
