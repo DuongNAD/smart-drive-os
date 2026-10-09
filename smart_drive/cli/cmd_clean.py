@@ -17,8 +17,10 @@ from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 def _purge(root: str, junk_items: List[Any], log_path: Optional[str]) -> Tuple[int, List[Dict[str, Any]]]:
     """Deletes the detected junk through the PurgeEngine (all its safety guards apply).
 
-    Returns (deleted_count, one result dict per item). Shared by the text and JSON output modes so
-    that `--apply` does the same thing whichever way the result is printed.
+    Returns (deleted_count, one result dict per item). Each result carries the engine's own status:
+    DELETED, BLOCKED (the safety guard refused: expected, not an error) or FAILED (the OS refused).
+    Shared by the text and JSON output modes so that `--apply` does the same thing whichever way the
+    result is printed.
     """
     purge_engine = PurgeEngine(root, dry_run=False)
     deleted_count = 0
@@ -31,14 +33,23 @@ def _purge(root: str, junk_items: List[Any], log_path: Optional[str]) -> Tuple[i
         success, reason = purge_engine.delete_item(path, size=size, is_dir=is_dir, tier=tier_val)
         if success:
             deleted_count += 1
+        status = purge_engine.audit_records[-1].status if purge_engine.audit_records else ("DELETED" if success else "FAILED")
         results.append({
             "rel_path": getattr(j, "rel_path", j.get("rel_path", "")),
             "deleted": bool(success),
+            "status": status,
             "reason": reason,
         })
     if log_path:
         purge_engine.export_audit_log(log_path)
     return deleted_count, results
+
+
+def _tally(results: List[Dict[str, Any]]) -> Tuple[int, int, int]:
+    """(deleted, blocked by the safety guard, failed) over the results of `_purge`."""
+    deleted = sum(1 for r in results if r["deleted"])
+    blocked = sum(1 for r in results if r["status"] == "BLOCKED")
+    return deleted, blocked, len(results) - deleted - blocked
 
 
 def cmd_clean(args: argparse.Namespace) -> int:
@@ -71,11 +82,15 @@ def cmd_clean(args: argparse.Namespace) -> int:
         if not is_dry_run:
             # `--apply --json` used to print dry_run=false and return without deleting anything.
             deleted_count, results = _purge(root, junk_items, log_path)
+            _, blocked_count, failed_count = _tally(results)
             data["deleted_count"] = deleted_count
-            data["failed_count"] = len(results) - deleted_count
+            data["blocked_count"] = blocked_count
+            data["failed_count"] = failed_count
             data["results"] = results
             if log_path:
                 data["log"] = log_path
+            print(json.dumps(data, indent=2, ensure_ascii=False))
+            return 0 if failed_count == 0 else 1
         print(json.dumps(data, indent=2, ensure_ascii=False))
         return 0
 
@@ -87,10 +102,9 @@ def cmd_clean(args: argparse.Namespace) -> int:
         print("✓ No system junk files detected. Drive is clean.")
         return 0
 
-    total_bytes = 0
+    total_bytes = sum(j["size"] for j in junk_items)  # every item, not just the 30 listed below
     for j in junk_items[:30]:
         sz = j["size"]
-        total_bytes += sz
         desc = getattr(j, "description", j.get("description", j["name"]))
         rel = getattr(j, "rel_path", j.get("rel_path", ""))
         print(f"  [{desc}] {rel} ({sz:,} B)")
@@ -103,11 +117,22 @@ def cmd_clean(args: argparse.Namespace) -> int:
 
     if is_dry_run:
         print("\n[DRY RUN] No files were deleted. Run with --apply to execute purge.")
-    else:
-        deleted_count, _ = _purge(root, junk_items, log_path)
-        print(f"✓ Purged {deleted_count} junk files successfully.")
+        return 0
 
-    return 0
+    deleted_count, results = _purge(root, junk_items, log_path)
+    _, blocked_count, failed_count = _tally(results)
+    if not blocked_count and not failed_count:
+        print(f"✓ Purged {deleted_count} junk files successfully.")
+        return 0
+    print(f"{'✓' if not failed_count else '✗'} Purged {deleted_count} of {len(results)} junk files.")
+    if blocked_count:
+        print(f"  {blocked_count} item(s) kept by the safety guard (protected paths).")
+    failures = [r for r in results if r["status"] == "FAILED"]
+    for r in failures[:10]:
+        print(f"  ✗ {r['rel_path']}: {r['reason']}")
+    if len(failures) > 10:
+        print(f"  ... and {len(failures) - 10} more failures.")
+    return 1 if failed_count else 0
 
 
 __all__ = ["cmd_clean"]
