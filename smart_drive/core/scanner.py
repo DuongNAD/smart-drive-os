@@ -296,7 +296,9 @@ class FastDirectoryScanner:
                     if is_sym and not self.follow_symlinks:
                         self.skipped_symlinks.append(entry.path)
                         self.stats.symlinks_skipped += 1
-                        logger.warning("Skipping symlink on exFAT: %s", entry.path)
+                        # Counted and reported by the audit; a line per link flooded the terminal (and said
+                        # "exFAT" on every filesystem) wherever there are virtualenvs or node_modules/.bin.
+                        logger.debug("Skipping symlink (links are never followed): %s", entry.path)
                         continue
 
                     # 2. Directory probe

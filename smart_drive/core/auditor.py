@@ -639,6 +639,7 @@ class StorageAuditor:
                 "total_files": total_files,
                 "total_directories": total_directories,
                 "throughput_fps": round(total_files / elapsed_time, 1) if elapsed_time > 0 else 0.0,
+                "symlinks_skipped": int(getattr(getattr(scanner, "stats", None), "symlinks_skipped", 0) or 0),
             },
             "summary": {
                 "total_files": total_files,
@@ -702,6 +703,9 @@ class StorageAuditor:
         buf.write(f"  Wasted Cluster Slack:    {format_bytes(summary.get('total_slack_bytes', 0))} ({format_percentage(summary.get('total_slack_percentage', 0.0))} waste)\n")
         buf.write(f"  Zero-Byte Files:         {format_count(summary.get('empty_files_count', 0))} (0 clusters allocated)\n")
         buf.write(f"  Allocated 512KB Clusters:{format_count(summary.get('total_clusters', 0))}\n")
+        skipped_links = (data.get("scan_stats") or {}).get("symlinks_skipped", 0)
+        if skipped_links:
+            buf.write(f"  Symlinks Skipped:        {format_count(skipped_links)} (links are never followed or counted)\n")
         buf.write("-" * 80 + "\n\n")
 
         # 2. Taxonomy Breakdown Table
@@ -775,7 +779,11 @@ class StorageAuditor:
         buf.write(f"| **Physical Allocated Size** | {format_bytes(summary.get('total_allocated_bytes', 0))} ({summary.get('total_allocated_bytes', 0):,} bytes) |\n")
         buf.write(f"| **Wasted Cluster Slack** | {format_bytes(summary.get('total_slack_bytes', 0))} ({format_percentage(summary.get('total_slack_percentage', 0.0))} overhead) |\n")
         buf.write(f"| **Allocated 512KB Clusters** | {format_count(summary.get('total_clusters', 0))} |\n")
-        buf.write(f"| **Zero-Byte Files** | {format_count(summary.get('empty_files_count', 0))} (0 physical bytes) |\n\n")
+        buf.write(f"| **Zero-Byte Files** | {format_count(summary.get('empty_files_count', 0))} (0 physical bytes) |\n")
+        skipped_links = (data.get("scan_stats") or {}).get("symlinks_skipped", 0)
+        if skipped_links:
+            buf.write(f"| **Symlinks Skipped** | {format_count(skipped_links)} (never followed or counted) |\n")
+        buf.write("\n")
 
         buf.write("## 2. Taxonomy Storage Breakdown\n\n")
         buf.write("| Taxonomy | Files | Logical Size | Physical Allocated | Cluster Slack | Waste % |\n")
