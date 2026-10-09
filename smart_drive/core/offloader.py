@@ -132,6 +132,7 @@ CACHE_CATALOG: Dict[str, CacheDefinition] = {
         relative_paths=[
             ("local_app_data", "pip/cache"),
             ("local_app_data", "pip"),
+            ("user_cache", "pip"),  # macOS ~/Library/Caches/pip, Linux ~/.cache/pip
         ],
     ),
     "npm": CacheDefinition(
@@ -143,6 +144,7 @@ CACHE_CATALOG: Dict[str, CacheDefinition] = {
         relative_paths=[
             ("app_data", "npm-cache"),
             ("local_app_data", "npm-cache"),
+            ("user_home", ".npm"),  # macOS and Linux
         ],
     ),
     "uv": CacheDefinition(
@@ -154,6 +156,7 @@ CACHE_CATALOG: Dict[str, CacheDefinition] = {
         relative_paths=[
             ("local_app_data", "uv/cache"),
             ("local_app_data", "uv"),
+            ("user_cache", "uv"),  # macOS ~/Library/Caches/uv, Linux ~/.cache/uv
         ],
     ),
     "conda": CacheDefinition(
@@ -206,6 +209,9 @@ CACHE_CATALOG: Dict[str, CacheDefinition] = {
 # 2. PATH RESOLUTION & DISK MEASUREMENT HELPERS
 # ==============================================================================
 
+# On Windows the link left behind is an NTFS directory junction; elsewhere it is a symbolic link.
+LINK_NAME = "NTFS Directory Junction" if sys.platform == "win32" else "symbolic link"
+
 def _get_base_directories() -> Dict[str, Path]:
     """Resolves base user directories supporting test environment overrides."""
     mock_user = os.environ.get("SMART_DRIVE_MOCK_USERPROFILE")
@@ -228,10 +234,18 @@ def _get_base_directories() -> Dict[str, Path]:
     app_data_str = os.environ.get("APPDATA") or str(user_home / "AppData" / "Roaming")
     app_data = Path(os.path.abspath(app_data_str))
 
+    if sys.platform == "darwin":
+        user_cache = user_home / "Library" / "Caches"
+    elif sys.platform == "win32":
+        user_cache = local_app_data
+    else:
+        user_cache = Path(os.path.abspath(os.environ.get("XDG_CACHE_HOME") or str(user_home / ".cache")))
+
     return {
         "user_home": user_home,
         "local_app_data": local_app_data,
         "app_data": app_data,
+        "user_cache": user_cache,
     }
 
 
@@ -557,7 +571,7 @@ def offload_cache(
             }
         else:
             raise RuntimeError(
-                f"Cache '{clean_name}' is already an active NTFS Directory Junction pointing to '{current}'. "
+                f"Cache '{clean_name}' is already an active {LINK_NAME} pointing to '{current}'. "
                 "Use 'smart-drive offload --revert' first if you wish to relocate it."
             )
 
@@ -592,7 +606,7 @@ def offload_cache(
             "size_formatted": format_bytes(size_bytes),
             "file_count": file_count,
             "phases_planned": 7,
-            "message": f"[DRY-RUN] Would safely offload {format_bytes(size_bytes)} ({file_count} files) to '{target_cache_dir}' and create NTFS Directory Junction.",
+            "message": f"[DRY-RUN] Would safely offload {format_bytes(size_bytes)} ({file_count} files) to '{target_cache_dir}' and create a {LINK_NAME}.",
         }
 
     # Ensure parent offload root directory exists
@@ -623,7 +637,7 @@ def offload_cache(
         junction_ok = create_directory_junction(source_path, target_cache_dir)
         if not junction_ok:
             raise RuntimeError(
-                f"Failed to create NTFS directory junction from '{source_path}' to '{target_cache_dir}'."
+                f"Failed to create {LINK_NAME} from '{source_path}' to '{target_cache_dir}'."
             )
 
         # [Phase 6: Integrity Verification Probe]
@@ -669,7 +683,7 @@ def offload_cache(
             "phases_completed": 7,
             "message": (
                 f"✓ Successfully offloaded '{clean_name}' cache ({format_bytes(size_bytes)}) "
-                f"to '{target_cache_dir}' and created NTFS Directory Junction."
+                f"to '{target_cache_dir}' and created a {LINK_NAME}."
             ),
         }
 

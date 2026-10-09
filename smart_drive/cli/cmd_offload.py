@@ -89,7 +89,10 @@ def cmd_offload(args: argparse.Namespace) -> int:
 
     # Human-readable table rendering
     caches = summary.get("caches", [])
-    print("\nC-Drive Developer & AI Cache Offload Scanner")
+    on_windows = sys.platform == "win32"
+    print("\nC-Drive Developer & AI Cache Offload Scanner" if on_windows else "\nDeveloper & AI Cache Offload Scanner")
+    if not on_windows:
+        print("(Off Windows an offloaded cache is replaced by a symbolic link instead of an NTFS junction.)")
     print("=" * 96)
     print(f"{'Name':<14} {'Category':<22} {'Status':<12} {'Size (C:)':<14} {'Target / Location'}")
     print("-" * 96)
@@ -100,6 +103,8 @@ def cmd_offload(args: argparse.Namespace) -> int:
         status = c.get("status", "")
         size_str = c.get("size_formatted", "-") if status == "FOUND" else ("0 B (linked)" if status == "OFFLOADED" else "-")
         target_str = c.get("current_target") or c.get("source_path", "")
+        if status == "NOT FOUND" and not on_windows and "appdata" in str(target_str).lower():
+            target_str = "n/a (Windows location)"
         print(f"{name:<14} {cat:<22} {status:<12} {size_str:<14} {target_str}")
 
     print("-" * 96)

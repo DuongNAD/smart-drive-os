@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 
 from smart_drive.core.config import CLUSTER_SIZE_BYTES
 from smart_drive.core.exfat_compat import ExFatEngine
+from smart_drive.core.fsinfo import detect_filesystem, slack_model_note
 
 
 def get_default_db_path(root: str) -> str:
@@ -335,15 +336,22 @@ class SentinelEngine:
         if is_healthy and shields_info["auto_healed"]:
             status_str = "healed"
 
+        # What the volume really is (this used to be the literal "exFAT" whatever the drive was).
+        fs_info = detect_filesystem(target_root)
+
         report_data = {
             "status": status_str,
             "is_healthy": is_healthy,
             "drive_root": target_root,
             "mount": {
                 "is_mounted": True,
-                "filesystem": "exFAT",
+                "filesystem": fs_info.display_name,
+                "filesystem_type": fs_info.fs_type,
+                "allocation_unit_bytes": fs_info.block_size,
+                # The cluster size the slack figures MODEL (512 KB exFAT), not necessarily this volume's.
                 "cluster_size_bytes": CLUSTER_SIZE_BYTES,
                 "cluster_size_kb": CLUSTER_SIZE_BYTES // 1024,
+                "slack_model_note": slack_model_note(fs_info, CLUSTER_SIZE_BYTES),
             },
             "anti_indexing_shields": shields_info,
             "database": db_info,

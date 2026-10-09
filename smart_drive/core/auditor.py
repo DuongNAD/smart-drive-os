@@ -40,6 +40,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOptions, ScanStats
 from smart_drive.core.exfat_compat import ExFatEngine, normalize_rel_path
+from smart_drive.core.fsinfo import detect_filesystem, slack_model_note
 
 logger = logging.getLogger("smart_drive.core.auditor")
 
@@ -668,6 +669,11 @@ class StorageAuditor:
             "tree": root_node.to_dict(max_depth=self.max_depth or 3),
         }
 
+        # The slack figures model self.cluster_size; say when this volume is something else.
+        fs_info = detect_filesystem(self.root_path)
+        report_data["filesystem"] = fs_info.to_dict()
+        report_data["slack_model_note"] = slack_model_note(fs_info, self.cluster_size)
+
         return AuditResult(report_data, auditor=self)
 
     # --------------------------------------------------------------------------
@@ -683,6 +689,10 @@ class StorageAuditor:
         buf.write("=" * 80 + "\n")
         buf.write("SMART DRIVE OS - STORAGE AUDIT REPORT\n")
         buf.write(f"Root: {data.get('root_path')} | Cluster Size: {cluster_kb} KB ({data.get('cluster_size')} B)\n")
+        if data.get("filesystem"):
+            buf.write(f"Filesystem: {data['filesystem'].get('summary')}\n")
+        if data.get("slack_model_note"):
+            buf.write(f"Note: {data['slack_model_note']}\n")
         buf.write(f"Generated: {data.get('generated_at')}\n")
         buf.write("=" * 80 + "\n\n")
 
@@ -754,6 +764,10 @@ class StorageAuditor:
         buf.write(f"# Storage Audit Report\n\n")
         buf.write(f"- **Root Path**: `{data.get('root_path')}`\n")
         buf.write(f"- **Volume Cluster Geometry**: `{cluster_kb} KB` ({data.get('cluster_size'):,} bytes per allocation unit)\n")
+        if data.get("filesystem"):
+            buf.write(f"- **Filesystem**: `{data['filesystem'].get('summary')}`\n")
+        if data.get("slack_model_note"):
+            buf.write(f"- **Note**: {data['slack_model_note']}\n")
         buf.write(f"- **Timestamp**: `{data.get('generated_at')}`\n\n")
 
         buf.write("## 1. Executive Summary\n\n")

@@ -9,6 +9,7 @@ import sys
 from typing import Optional
 
 from smart_drive.core.config import CLUSTER_SIZE_BYTES, TAXONOMY_ROOT_DIRS, PROTECTED_CORE_TAXONOMIES
+from smart_drive.core.fsinfo import detect_filesystem, slack_model_note
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.sentinel import get_default_db_path
 
@@ -48,12 +49,17 @@ def cmd_status(args: argparse.Namespace) -> int:
     db_exists = os.path.exists(db_path)
     db_size = os.path.getsize(db_path) if db_exists else 0
 
+    fs_info = detect_filesystem(root)
+    fs_note = slack_model_note(fs_info, CLUSTER_SIZE_BYTES)
+
     if getattr(args, "json", False):
         status_data = {
             "status": "ready",
             "root": root,
             "cluster_size_bytes": CLUSTER_SIZE_BYTES,
             "cluster_size_kb": CLUSTER_SIZE_BYTES // 1024,
+            "filesystem": fs_info.to_dict(),
+            "slack_model_note": fs_note,
             "database": {
                 "path": db_path,
                 "exists": db_exists,
@@ -67,6 +73,9 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     print(f"SmartDrive-OS Status: Ready (Root: {root})")
     print(f"Cluster Size: {CLUSTER_SIZE_BYTES:,} bytes ({CLUSTER_SIZE_BYTES // 1024} KB)")
+    print(f"Filesystem: {fs_info.summary()}")
+    if fs_note:
+        print(f"Note: {fs_note}")
     print(f"Search Database: {'Ready (' + str(db_size // 1024) + ' KB)' if db_exists else 'Not found'}")
     print("Anti-indexing markers:")
     for m, ok in markers.items():

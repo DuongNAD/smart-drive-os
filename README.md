@@ -346,12 +346,12 @@ All commands can be invoked via `smart-drive <command>` or `python -m smart_driv
 | `self-path-check` | *(none)* | Inspects Python CLI script paths on system `PATH` and outputs 1-click configuration commands. |
 | `ui` | `--port <n>`, `--no-browser`, `--root <path>`, `--db <path>` | Launches the zero-dependency Web Dashboard & interactive visual UI on port 8765. |
 | `init` | `--profile <name>`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
-| `status` | `--root <path>`, `--json` | Inspect SSD mount point, geometry, shield health, and taxonomy status. |
-| `audit` | `--root <path>`, `--json`, `--markdown`, `--export <file>` | Detailed storage breakdown and cluster slack metrics (512KB or 4KB adaptive). |
+| `status` | `--root <path>`, `--json` | Inspect SSD mount point, detected filesystem, geometry, shield health, and taxonomy status. |
+| `audit` | `--root <path>`, `--json`, `--markdown`, `--export <file>` | Detailed storage breakdown and cluster slack metrics, modelled at 512 KB exFAT clusters; the report names the detected filesystem and says when that model does not apply (APFS, NTFS, ext4 ...). |
 | `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run safeguard and inviolable whitelist protection. |
 | `search` | `<query>`, `--ext <ext>`, `--size <spec>`, `--category <cat>`, `--limit <n>`, `--json` | Sub-10ms SQLite FTS5 multi-criteria query parser with BM25 ranking. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Autonomous drive auto-zoning, loose-file relocation, AcademicClassifier routing, and slack rebalancing. |
-| `sentinel` | `--root <path>`, `--auto-heal`, `--no-heal`, `--json` | 1-touch health audit, git repo status, and shield self-healing (alias: `agent-check`). |
+| `sentinel` | `--root <path>`, `--auto-heal`, `--no-heal`, `--json` | 1-touch health audit (detected filesystem, git repo status) and shield self-healing (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <path>`, `--all`, `--auth-token <token>`, `--require-auth` | Starts the JSON-RPC 2.0 stdio MCP server (`serve`) or registers configs for AI agents (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Auto-registers SmartDrive MCP Server in standard AI coding agent config files. |
 | `snapshot create` | `[name]`, `--partitions <list>`, `--include-hidden`, `--root <path>`, `--json` | Generates a point-in-time manifest with 64KB-chunk streaming SHA-256 hashes. |
@@ -359,8 +359,8 @@ All commands can be invoked via `smart-drive <command>` or `python -m smart_driv
 | `snapshot verify` | `<name>`, `--no-untracked`, `--root <path>`, `--json` | Validates data integrity of files against snapshot manifest to detect tampering or bit rot. |
 | `backup` | `--target <path>`, `--dry-run`, `--hash`, `--partitions <list>`, `--include-hidden`, `--json` | Safe incremental backup copying only modified/new files to target directory. |
 | `classify` | `[path]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Deep content inspection (magic bytes & markers) for AI models, datasets, docs, and code repos. |
-| `offload` | `--scan`, `--move <name>`, `--target <drive>`, `--revert <name>`, `--dry-run`, `--json` | C-Drive developer cache discovery and transactional NTFS junction offloading to secondary drive. |
-| `health` | `[drive]`, `--root <path>`, `--json` | SSD health, TRIM verification, partition geometry, and storage utilization monitor. |
+| `offload` | `--scan`, `--move <name>`, `--target <drive>`, `--revert <name>`, `--dry-run`, `--json` | Developer/AI cache discovery and transactional offloading to a secondary drive (NTFS junction on Windows, symbolic link on macOS/Linux). |
+| `health` | `[drive]`, `--root <path>`, `--json` | SSD health, TRIM verification (Windows), partition geometry, and storage utilization monitor. Takes a drive letter on Windows or a volume path (`/Volumes/MySSD`) on macOS/Linux. |
 | `dup` | `--root <path>`, `--json` | 3-phase SHA-256 duplicate candidate detector with cluster slack reclamation preview. |
 | `index` | `--root <path>`, `--db <path>`, `--batch <n>` | Full SQLite FTS5 index creation (>15,000 files/sec). |
 | `update` | `--root <path>`, `--db <path>`, `--json` | Fast $O(1)$ incremental search index synchronization (<2s). |

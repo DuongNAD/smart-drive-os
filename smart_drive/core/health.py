@@ -34,7 +34,9 @@ from smart_drive.core.drive_detector import (
     normalize_drive_letter,
     use_mock_backend,
     verify_trim_support,
+    Win32DriveBackend,
 )
+from smart_drive.core.fsinfo import detect_filesystem
 
 
 # ==============================================================================
@@ -198,6 +200,49 @@ def evaluate_health_warnings(
 # 4. PRIMARY HEALTH CHECK FUNCTION
 # ==============================================================================
 
+def _empty_report(label: str, message: str, warning: str) -> SSDHealthReport:
+    """A report for a volume that could not be inspected."""
+    return SSDHealthReport(
+        drive_letter=label,
+        filesystem="unknown",
+        trim_enabled=None,
+        trim_status_message=message,
+        total_bytes=0,
+        free_bytes=0,
+        free_percent=0.0,
+        cluster_size_bytes=0,
+        warnings=[warning],
+    )
+
+
+def _check_path_health(path: str) -> SSDHealthReport:
+    """Health of the volume that holds ``path`` on macOS/Linux, where there are no drive letters."""
+    info = detect_filesystem(path)
+    try:
+        usage = shutil.disk_usage(path)
+    except OSError as exc:
+        return _empty_report(path, f"Cannot read capacity: {exc}", f"Failed to inspect '{path}': {exc}")
+    free_percent = round(usage.free / usage.total * 100.0, 2) if usage.total else 0.0
+    return SSDHealthReport(
+        drive_letter=info.mount_point or path,
+        filesystem=info.display_name,
+        trim_enabled=None,
+        trim_status_message="TRIM is not queried on this OS",
+        total_bytes=usage.total,
+        free_bytes=usage.free,
+        free_percent=free_percent,
+        cluster_size_bytes=info.block_size,
+        warnings=evaluate_health_warnings(
+            free_percent=free_percent,
+            free_bytes=usage.free,
+            total_bytes=usage.total,
+            trim_enabled=None,
+            filesystem=info.display_name,
+            cluster_size_bytes=info.block_size,
+        ),
+    )
+
+
 def check_drive_health(
     drive_letter: Optional[Union[str, os.PathLike[str]]] = None,
     backend: Optional[DriveDetectorBackend] = None,
@@ -214,6 +259,20 @@ def check_drive_health(
         SSDHealthReport conforming to PROJECT.md § Interface Contracts.
     """
     active_backend = backend or get_backend()
+
+    # Off Windows there are no drive letters: a path on the volume is the natural specifier.
+    # (Only with the real backend; the pluggable mock backends keep their drive-letter flow.)
+    if backend is None and sys.platform != "win32" and isinstance(active_backend, Win32DriveBackend):
+        if drive_letter is None:
+            return _empty_report(
+                "", "No volume given",
+                "Pass the volume to check as a path, e.g. /Volumes/MySSD (drive letters exist only on Windows).",
+            )
+        spec = os.fspath(drive_letter)
+        if os.path.isdir(spec):
+            return _check_path_health(spec)
+        if os.sep in spec or spec.startswith(("~", ".")):
+            return _empty_report(spec, "Volume path not found", f"Volume path '{spec}' does not exist or is not a directory.")
 
     # Step 1: Default drive letter resolution
     target_letter: Optional[str] = None

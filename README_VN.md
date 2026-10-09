@@ -344,12 +344,12 @@ Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `pyth
 | `self-path-check` | *(không có)* | Kiểm tra đường dẫn PATH của hệ thống và đưa ra câu lệnh PowerShell cấu hình 1-chạm. |
 | `ui` | `--port <cổng>`, `--no-browser`, `--root <đường_dẫn>`, `--db <đường_dẫn>` | Khởi chạy Web Dashboard giao diện Dark Mode trực quan trên cổng 8765. |
 | `init` | `--profile <tên>`, `--root <đường_dẫn>`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo 6 nhóm thư mục, cài khiên và gieo cơ sở dữ liệu FTS5. |
-| `status` | `--root <đường_dẫn>`, `--json` | Kiểm tra tình trạng điểm gắn ổ đĩa, cấu trúc hình học, khiên bảo vệ và phân vùng. |
-| `audit` | `--root <đường_dẫn>`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán chi tiết dung lượng và tỷ lệ lãng phí cluster slack (thích ứng 512KB hoặc 4KB). |
+| `status` | `--root <đường_dẫn>`, `--json` | Kiểm tra tình trạng điểm gắn ổ đĩa, hệ tệp được nhận diện, cấu trúc hình học, khiên bảo vệ và phân vùng. |
+| `audit` | `--root <đường_dẫn>`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán chi tiết dung lượng và tỷ lệ lãng phí cluster slack, mô hình hoá theo cụm exFAT 512 KB; báo cáo nêu hệ tệp được nhận diện và cho biết khi nào mô hình đó không áp dụng (APFS, NTFS, ext4 ...). |
 | `clean` | `--dry-run` *(mặc định)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Dọn rác hệ thống với cơ chế bắt buộc chạy thử trước và bảo vệ whitelist bất biến. |
 | `search` | `<từ_khóa>`, `--ext <đuôi>`, `--size <kích_thước>`, `--category <nhóm>`, `--limit <n>`, `--json` | Tìm kiếm siêu tốc (<10ms) bằng SQLite FTS5 kết hợp thuật toán xếp hạng BM25. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Tự động phân loại file tự do, định tuyến môn học FPTU bằng AcademicClassifier và giảm lãng phí slack. |
-| `sentinel` | `--root <đường_dẫn>`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng, phục hồi khiên bảo vệ bị thiếu (alias: `agent-check`). |
+| `sentinel` | `--root <đường_dẫn>`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng (hệ tệp được nhận diện, trạng thái git), phục hồi khiên bảo vệ bị thiếu (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <đường_dẫn>`, `--all`, `--auth-token <token>`, `--require-auth` | Khởi chạy máy chủ MCP stdio (`serve`) hoặc đăng ký cấu hình cho các AI agent (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Tự động đăng ký máy chủ MCP vào các tệp cấu hình của các IDE và AI Agent. |
 | `snapshot create` | `[tên]`, `--partitions <danh_sách>`, `--include-hidden`, `--root <đường_dẫn>`, `--json` | Tạo bản ghi nhận trạng thái kèm băm SHA-256 dạng dòng cho các phân vùng chỉ định. |
@@ -357,8 +357,8 @@ Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `pyth
 | `snapshot verify` | `<tên>`, `--no-untracked`, `--root <đường_dẫn>`, `--json` | Kiểm toán tính toàn vẹn dữ liệu so với bản snapshot để phát hiện tệp bị sửa đổi hoặc suy thoái (bit rot). |
 | `backup` | `--target <đích>`, `--dry-run`, `--hash`, `--partitions <danh_sách>`, `--include-hidden`, `--json` | Sao lưu tăng số thông minh, chỉ sao chép các tệp mới hoặc có thay đổi sang ổ đích. |
 | `classify` | `[đường_dẫn]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Nhận diện sâu magic bytes và cấu trúc tệp để phân loại mô hình AI, dataset, tài liệu, dự án. |
-| `offload` | `--scan`, `--move <tên>`, `--target <ổ>`, `--revert <tên>`, `--dry-run`, `--json` | Quét và di chuyển các cache khổng lồ từ ổ C: sang ổ phụ qua NTFS Directory Junctions. |
-| `health` | `[ổ_đĩa]`, `--root <đường_dẫn>`, `--json` | Kiểm tra sức khỏe ổ cứng SSD, trạng thái kích hoạt TRIM, cluster geometry và dung lượng trống. |
+| `offload` | `--scan`, `--move <tên>`, `--target <ổ>`, `--revert <tên>`, `--dry-run`, `--json` | Quét và di chuyển các cache khổng lồ sang ổ phụ (NTFS junction trên Windows, symbolic link trên macOS/Linux). |
+| `health` | `[ổ_đĩa]`, `--root <đường_dẫn>`, `--json` | Kiểm tra sức khỏe ổ cứng SSD, trạng thái TRIM (Windows), cluster geometry và dung lượng trống. Nhận ký tự ổ đĩa trên Windows hoặc đường dẫn ổ (`/Volumes/MySSD`) trên macOS/Linux. |
 | `dup` | `--root <đường_dẫn>`, `--json` | Tìm kiếm tệp tin trùng lặp qua 3 giai đoạn SHA-256 kèm thống kê dung lượng slack thu hồi được. |
 | `index` | `--root <đường_dẫn>`, `--db <đường_dẫn>`, `--batch <n>` | Lập chỉ mục toàn bộ ổ đĩa với SQLite FTS5 (tốc độ >15.000 tệp/giây). |
 | `update` | `--root <đường_dẫn>`, `--db <đường_dẫn>`, `--json` | Đồng bộ chỉ mục tìm kiếm tăng số siêu nhanh với độ phức tạp $O(1)$ (<2 giây). |

@@ -423,7 +423,8 @@ class TestLauncherMasterMenuMapping(unittest.TestCase):
             check=False,
         )
         self.assertEqual(proc.returncode, 0)
-        self.assertIn("KINGSTON XS2000 SSD HEALTH", proc.stdout)
+        self.assertIn("SSD HEALTH & SELF-HEALING AUDIT", proc.stdout)
+        self.assertNotIn("KINGSTON XS2000", proc.stdout, "the banner must not name a specific drive model")
         self.assertIn("Exiting SmartDrive-OS. Goodbye!", proc.stdout)
 
 

@@ -12,23 +12,33 @@ from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.sentinel import SentinelEngine
 
 
-def format_ansi_report(report: dict) -> str:
-    """Renders human-readable ANSI terminal output from health report dictionary."""
-    C_CYAN = "\033[1;36m"
-    C_GREEN = "\033[1;32m"
-    C_YELLOW = "\033[1;33m"
-    C_RED = "\033[1;31m"
-    C_RESET = "\033[0m"
+def _use_color() -> bool:
+    """ANSI colours only for a real terminal that has not opted out (https://no-color.org)."""
+    return sys.stdout.isatty() and "NO_COLOR" not in os.environ
+
+
+def format_ansi_report(report: dict, color: bool = True) -> str:
+    """Renders human-readable terminal output from health report dictionary (ANSI colours if ``color``)."""
+    C_CYAN = "\033[1;36m" if color else ""
+    C_GREEN = "\033[1;32m" if color else ""
+    C_YELLOW = "\033[1;33m" if color else ""
+    C_RED = "\033[1;31m" if color else ""
+    C_RESET = "\033[0m" if color else ""
 
     lines = []
     lines.append(f"\n{C_CYAN}======================================================================{C_RESET}")
-    lines.append(f"{C_CYAN}         KINGSTON XS2000 SSD HEALTH & SELF-HEALING AUDIT              {C_RESET}")
+    lines.append(f"{C_CYAN}            SMARTDRIVE-OS SSD HEALTH & SELF-HEALING AUDIT             {C_RESET}")
     lines.append(f"{C_CYAN}======================================================================{C_RESET}")
 
     root = report.get("drive_root", "unknown")
-    cluster_kb = report.get("mount", {}).get("cluster_size_kb", CLUSTER_SIZE_BYTES // 1024)
+    mount = report.get("mount", {})
+    fs_name = mount.get("filesystem", "unknown")
+    unit = mount.get("allocation_unit_bytes") or 0
+    unit_text = f", {unit // 1024} KB allocation unit" if unit >= 1024 and unit % 1024 == 0 else ""
     lines.append(f"[{C_GREEN}✓{C_RESET}] Drive Mount & Geometry:")
-    lines.append(f"    - Root: {root} (exFAT, {cluster_kb} KB cluster)")
+    lines.append(f"    - Root: {root} ({fs_name}{unit_text})")
+    if mount.get("slack_model_note"):
+        lines.append(f"    - Note: {mount['slack_model_note']}")
 
     shields_info = report.get("anti_indexing_shields", {})
     if shields_info.get("all_healthy"):
@@ -111,5 +121,5 @@ def cmd_sentinel(args: argparse.Namespace) -> int:
         print(json.dumps(dict(report), indent=2, ensure_ascii=False))
         return 0 if report.is_healthy else 1
 
-    print(format_ansi_report(report))
+    print(format_ansi_report(report, color=_use_color()))
     return 0 if report.is_healthy else 1
