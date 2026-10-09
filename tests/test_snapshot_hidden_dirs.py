@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -164,6 +165,13 @@ class TestTheLiveStateFolderIsNeverSnapshotted(_Fixture):
         self.mgr.incremental_backup(self.target, partitions=["."], include_hidden=True)
         self.assertFalse((self.target / ".smart_drive").exists())
         self.assertTrue((self.target / HIDDEN[0]).is_file())
+
+    def test_the_drive_root_is_recognised_by_what_it_is_not_how_it_is_spelled(self) -> None:
+        alias = self.root.parent / "ssd_alias"
+        os.symlink(self.root, alias)
+        manifest = self.mgr.create_snapshot("via_alias", partitions=[str(alias)], include_hidden=True)
+        self.assertFalse([f for f in manifest.files if ".smart_drive" in f], sorted(manifest.files)[:6])
+        self.assertTrue(any(f.endswith("src/a.py") for f in manifest.files))  # and the user's files are there
 
     def test_a_nested_copy_is_still_user_data(self) -> None:
         _touch(self.root, "02_Learning_Knowledge/old_drive/.smart_drive/index.db", "archived")

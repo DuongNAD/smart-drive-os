@@ -31,6 +31,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.exfat_compat import detect_drive_root
 from smart_drive.core.junction import is_directory_junction
+from smart_drive.core.root import same_file
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,14 @@ def _is_link(path: Union[str, Path]) -> bool:
         return os.path.islink(path) or is_directory_junction(path)
     except (OSError, ValueError):
         return True  # cannot tell, so treat it as unsafe
+
+
+def _exists(path: Path) -> bool:
+    """Path.exists() that answers False instead of raising for an unreadable ancestor or an embedded NUL."""
+    try:
+        return path.exists()
+    except (OSError, ValueError):
+        return False
 
 
 @dataclass
@@ -203,10 +212,7 @@ class ClassifierEngine:
         if self._rel_to_root(path) is not None:
             answer = True
         else:
-            try:
-                answer = os.path.samefile(path, self.root)
-            except OSError:  # this one does not exist (yet)
-                answer = False
+            answer = same_file(path, self.root)  # False for a folder that does not exist (yet)
             if not answer:
                 parent = path.parent
                 answer = parent != path and self._under_root(parent)
@@ -232,10 +238,7 @@ class ClassifierEngine:
 
     @staticmethod
     def _same_file(first: Path, second: Path) -> bool:
-        try:
-            return os.path.exists(second) and os.path.samefile(first, second)
-        except OSError:
-            return False
+        return same_file(first, second)
 
     def _unsafe_reason(self, source: Path, destination: Path) -> Optional[str]:
         """Why this move must not happen (a link anywhere on either side), or None when it is safe."""
@@ -659,11 +662,11 @@ class ClassifierEngine:
             return None
         try:
             p = raw.resolve()  # raw is not a link, so this only normalizes symlinked parents
-        except (OSError, RuntimeError):
+        except (OSError, RuntimeError, ValueError):
             return None
         if self._leads_outside_root(raw, p):
             return None  # e.g. <drive>/linkdir/file.csv with linkdir pointing elsewhere
-        if not p.exists():
+        if not _exists(p):
             return None
 
         # Check protected files/dirs against inviolable safeguards
@@ -740,7 +743,7 @@ class ClassifierEngine:
         scan_arg = self.root if target_dir is None else Path(os.path.abspath(str(target_dir)))
         try:
             scan_root = scan_arg.resolve()
-        except (OSError, RuntimeError):  # a looping link
+        except (OSError, RuntimeError, ValueError):  # a looping link, or a name no filesystem can hold
             self.skipped_links.append(scan_arg)
             return results
         # A link is refused when it leads out of the drive. One that stays inside (or the drive root itself
@@ -751,7 +754,7 @@ class ClassifierEngine:
             self.skipped_links.append(scan_arg)
             return results
 
-        if not scan_root.exists():
+        if not _exists(scan_root):
             return results
 
         if scan_root.is_file():

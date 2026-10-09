@@ -17,6 +17,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from smart_drive.cli.main import main
 from smart_drive.core.classifier import ClassifierEngine
@@ -343,6 +344,37 @@ class TestTheDriveSpelledAnotherWay(unittest.TestCase):
         os.symlink(self.outside, self.drive / "real")  # the same typed path now leads outside
         self.assertEqual(engine.scan_and_classify(target_dir=self.drive / "real" / "dir"), [])
         self._outside_untouched()
+
+    def test_a_nul_byte_or_an_unreadable_ancestor_is_an_answer_not_a_crash(self) -> None:
+        engine = ClassifierEngine(root_path=self.drive)
+        self.assertEqual(engine.scan_and_classify(target_dir="bad\0name"), [])
+        self.assertIsNone(engine.inspect_path("bad\0name"))
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root can read everything")
+        locked = self.base / "locked"
+        (locked / "sub").mkdir(parents=True)
+        locked.chmod(0)
+        self.addCleanup(locked.chmod, 0o755)
+        self.assertEqual(engine.scan_and_classify(target_dir=locked / "sub"), [])  # exists() used to raise PermissionError
+
+    def test_the_link_check_still_works_on_volumes_that_report_inode_zero(self) -> None:
+        """Some network/FUSE volumes give every file inode 0; every path must not turn into 'the drive'."""
+        real_stat = os.stat
+
+        def zero_inodes(path, *args, **kwargs):  # type: ignore[no-untyped-def]
+            result = real_stat(path, *args, **kwargs)
+            return os.stat_result((*result[:1], 0, *result[2:]))
+
+        alias = self.base / "ssd"
+        os.symlink(self.drive, alias)
+        incoming = self.base / "incoming"
+        incoming.mkdir()
+        (incoming / "data.csv").write_text(CSV_BODY)
+        with patch("smart_drive.core.root.os.stat", zero_inodes):
+            self._refused(self.drive / "linkdir" / "dir", self.drive)
+            self._refused(alias / "linkdir" / "dir", self.drive)
+            engine = ClassifierEngine(root_path=self.drive)
+            self.assertEqual([r.name for r in engine.scan_and_classify(target_dir=incoming)], ["data.csv"])
 
     def test_a_folder_inside_the_drive_reached_through_an_alias_is_classified_normally(self) -> None:
         alias = self.base / "ssd"

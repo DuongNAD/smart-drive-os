@@ -19,6 +19,25 @@ class DriveRootNotFound(RuntimeError):
     pass
 
 
+def same_file(first: "os.PathLike[str] | str", second: "os.PathLike[str] | str") -> bool:
+    """Whether two paths name the very same file or folder, whatever the spelling.
+
+    Aliases (macOS' /var -> /private/var), links, another letter case or Unicode form of a name all count as the
+    same. The filesystem's own identity is used when it has one; some network and FUSE volumes report inode 0 for
+    everything, which would make every path "the same", so for those the resolved paths are compared instead.
+    """
+    try:
+        a, b = os.stat(first), os.stat(second)
+    except (OSError, ValueError):
+        return False
+    if a.st_ino and b.st_ino:
+        return a.st_dev == b.st_dev and a.st_ino == b.st_ino
+    try:
+        return os.path.normcase(os.path.realpath(first)) == os.path.normcase(os.path.realpath(second))
+    except (OSError, ValueError, RuntimeError):
+        return False
+
+
 @dataclass(frozen=True)
 class RootResolution:
     """Encapsulates resolved root directory path and resolution source."""

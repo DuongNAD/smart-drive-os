@@ -31,6 +31,7 @@ from smart_drive.core.config import (
     calculate_slack_bytes,
     match_junk_rule,
 )
+from smart_drive.core.root import same_file
 
 logger = logging.getLogger("smart_drive.core.snapshot")
 
@@ -94,13 +95,16 @@ def _prune_dirs(
     reports can say what a run did not cover.
     """
     kept: List[str] = []
-    at_drive_root = os.path.normcase(os.path.abspath(str(root_dir))) == os.path.normcase(os.path.abspath(str(base)))
+    at_drive_root: Optional[bool] = None  # worked out only if a state folder is actually here
     for name in dirs:
         lowered = name.lower()
         if lowered in _OS_BOOKKEEPING_DIRS:
             continue
-        if at_drive_root and lowered in _TOOL_STATE_DIRS:
-            continue  # this tool's own live state (index, manifests), reached when the partition is the drive root
+        if lowered in _TOOL_STATE_DIRS:
+            if at_drive_root is None:
+                at_drive_root = same_file(root_dir, base)  # by identity: an alias or another letter case still counts
+            if at_drive_root:
+                continue  # this tool's own live state (index, manifests), reached when the partition is the drive root
         if lowered in _NAMED_EXCLUDED_DIRS:
             left_out.append(normalize_rel_path(Path(root_dir) / name, base))
             continue
