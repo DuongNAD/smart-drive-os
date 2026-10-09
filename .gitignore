@@ -65,3 +65,6 @@ System Volume Information/
 # Test sandboxes & local test artifacts
 test_sandbox/
 tests/sandbox/
+
+# Machine-specific MCP registration written by `smart-drive mcp-config --workspace` (holds local interpreter paths)
+/.mcp.json
