@@ -326,29 +326,33 @@ def build_parser() -> argparse.ArgumentParser:
 
     snap_sub = p_snap.add_subparsers(dest="action", help="Snapshot action (create, list, verify)")
 
+    # --root and --json work both before and after the action. The action parsers repeat them with
+    # default=SUPPRESS: otherwise argparse overwrites the value given before the action with the
+    # default, and `snapshot --root /Volumes/X create` silently worked on whatever drive it found.
+
     # snapshot create
     p_sc = snap_sub.add_parser("create", help="Create a point-in-time snapshot with streaming SHA-256")
     p_sc.add_argument("name", nargs="?", default=None, help="Snapshot identifier name (optional)")
-    p_sc.add_argument("--root", help="Root directory of the SSD")
+    p_sc.add_argument("--root", default=argparse.SUPPRESS, help="Root directory of the SSD")
     p_sc.add_argument("--partitions", help="Comma-separated list of partitions to snapshot")
     p_sc.add_argument(
         "--include-hidden",
         action="store_true",
         help="Also snapshot hidden folders such as .git and .github (left out by default)",
     )
-    p_sc.add_argument("--json", action="store_true", help="Output manifest in JSON format")
+    p_sc.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output manifest in JSON format")
 
     # snapshot list
     p_sl = snap_sub.add_parser("list", help="List all stored snapshots")
-    p_sl.add_argument("--root", help="Root directory of the SSD")
-    p_sl.add_argument("--json", action="store_true", help="Output snapshot list in JSON format")
+    p_sl.add_argument("--root", default=argparse.SUPPRESS, help="Root directory of the SSD")
+    p_sl.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output snapshot list in JSON format")
 
     # snapshot verify
     p_sv = snap_sub.add_parser("verify", help="Verify data integrity of files against snapshot manifest")
     p_sv.add_argument("name", help="Snapshot identifier name to verify")
-    p_sv.add_argument("--root", help="Root directory of the SSD")
+    p_sv.add_argument("--root", default=argparse.SUPPRESS, help="Root directory of the SSD")
     p_sv.add_argument("--no-untracked", action="store_true", help="Do not check for untracked files")
-    p_sv.add_argument("--json", action="store_true", help="Output verification report in JSON format")
+    p_sv.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output verification report in JSON format")
 
     # 15. backup
     p_bak = subparsers.add_parser(
