@@ -8,7 +8,9 @@ such folders into the FPTU tree.
 A second pass (found by an independent review of `organize`) still moved Kubernetes' "K8s" and "k3s",
 "K9 Mail", "Home Lab", "SHA256" and "net472". A single weak hint (a bare "k8", the word "lab", "pe_" or a
 code with an unknown prefix) no longer moves a folder: strong signals (the word FPTU, a semester spelled
-out, a season code, a subject code with an FPTU prefix) are enough on their own, weak ones need two.
+out, a season code alone, a subject code with an FPTU prefix) are enough on their own; weak ones need two
+AND a subject-shaped code. A second review still found "K8 Lab", "lab pe_tools", "SP24 Lookbook", "Su-27",
+"HK45", "Grade K 2" and "Pro100" being moved, which is what the extra conditions are for.
 """
 
 from __future__ import annotations
@@ -29,6 +31,11 @@ NOT_ACADEMIC = [
     # the second pass: one weak hint is not enough
     "K8s", "k3s", "K9 Mail", "K12", "k1", "Home Lab", "homelab", "My Lab", "Lab Reports", "labs",
     "SHA256", "SHA512", "net472", "AES256", "XYZ123", "pe_notes",
+    # the third pass: two weak hints without a subject code, a season code that is not alone or not one token,
+    # semesters that are not 0-9, a subject prefix with a number no subject has
+    "K8 Lab", "k8-lab", "lab-k8", "My Home Lab K3", "lab pe_tools", "k5 lab", "pe_k3",
+    "SP24 Lookbook", "SP26 Lookbook", "SU25 notes", "Su-27", "FA-18C Hornet", "fa 12",
+    "HK45", "Grade K 2", "K 20", "k 4", "Pro100", "ACC100",
 ]
 
 # (folder name, expected sub-path fragments)
@@ -44,11 +51,14 @@ ACADEMIC = [
     ("hoc ky 3", ("Ky_3", "Hoc_Ky_3")),
     ("h?c k? 3 fptu", ("Ky_3",)),
     ("HK2", ("Ky_2",)),
-    ("k 4", ("Ky_4",)),
+    ("k 1 fptu", ("Ky_1",)),  # the "k 1" of a font-damaged "kỳ 1" is only trusted next to the word FPTU
+    ("Học kì 3", ("Ky_3",)),  # kì as well as kỳ
     ("FPTU_VuPTHE204339_HK4", ("Ky_4",)),
     ("FPTU_SP26", ("FPTU", "SP26")),
-    ("SU25 notes", ("FPTU", "SU25")),
-    ("FA27", ("FPTU", "FA27")),  # not limited to the years that used to be hard-coded
+    ("FA27", ("FPTU", "FA27")),  # a folder that is only a season code; not limited to the years once hard-coded
+    ("XYZ123_SP26", ("FPTU", "XYZ123")),
+    ("EXE101", ("FPTU", "EXE101")),  # EXE is also a file type, but it is an FPTU subject prefix too
+    ("ACC101", ("FPTU", "ACC101")),
     ("lab1", ("Java_Labs",)),
     ("testjava", ("Java_Labs",)),
     ("Lab 3", ("FPTU", "Lab_3")),  # a name that starts with "lab" and a number is a lab course
@@ -56,7 +66,7 @@ ACADEMIC = [
     # two weak hints together are enough
     ("XYZ123 lab", ("FPTU", "XYZ123")),
     ("PE_XYZ123", ("FPTU", "XYZ123")),
-    ("k5 lab", ("Ky_5",)),
+    ("k5 XYZ123", ("Ky_5",)),
 ]
 
 
@@ -69,16 +79,27 @@ class TestNotMistakenForCoursework(unittest.TestCase):
 
 class TestWeakHintsNeedACompanion(unittest.TestCase):
     def test_each_weak_hint_alone_is_not_enough_but_the_pair_is(self) -> None:
-        for alone, pair in (("k5", "k5 lab"), ("lab", "k5 lab"), ("pe_notes", "pe_notes lab"), ("XYZ123", "XYZ123 lab")):
+        pairs = (
+            ("k5", "k5 XYZ123"), ("lab", "XYZ123 lab"), ("pe_notes", "pe_notes XYZ123"),
+            ("XYZ123", "XYZ123 lab"), ("sp24 notes", "XYZ123 sp24"),
+        )
+        for alone, pair in pairs:
             with self.subTest(alone=alone):
                 self.assertIsNone(AcademicClassifier.classify_folder(alone))
                 self.assertIsNotNone(AcademicClassifier.classify_folder(pair))
+
+    def test_two_weak_hints_without_a_subject_code_are_still_not_enough(self) -> None:
+        for name in ("k5 lab", "K8 Lab", "lab pe_tools", "pe_k3", "SP24 lab"):
+            with self.subTest(name=name):
+                self.assertIsNone(AcademicClassifier.classify_folder(name))
 
     def test_a_known_subject_prefix_is_strong_but_a_look_alike_prefix_never_counts(self) -> None:
         self.assertIsNotNone(AcademicClassifier.classify_folder("PRN211"))
         self.assertIsNone(AcademicClassifier.classify_folder("SHA256"))
         self.assertIsNone(AcademicClassifier.classify_folder("SHA256 lab"))  # SHA is a known look-alike: no hint at all
         self.assertIsNone(AcademicClassifier.classify_folder("net472_pe_old"))
+        self.assertIsNotNone(AcademicClassifier.classify_folder("EXE101"))  # a prefix on the subject list beats the file-type list
+        self.assertIsNone(AcademicClassifier.classify_folder("Pro100"))  # PRO is a subject prefix, but there is no PRO100
 
 
 class TestRealCourseworkIsStillRecognised(unittest.TestCase):

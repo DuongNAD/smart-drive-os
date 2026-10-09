@@ -47,21 +47,23 @@ FPTU_SUBJECT_PREFIXES = frozenset({
     "MAS", "MGT", "MKT", "MLN", "MLP", "NLP", "NWC", "OJT", "OSG", "PHE", "PMG", "PRF", "PRJ", "PRN", "PRO",
     "SEP", "SSB", "SSG", "SSL", "SWD", "SWE", "SWP", "SWR", "SWT", "VNR", "WDU", "WED",
 })
+NON_ACADEMIC_CODE_PREFIXES = NON_ACADEMIC_CODE_PREFIXES - FPTU_SUBJECT_PREFIXES  # EXE101 is a course; a prefix on both lists is one
 
-# Vietnamese semesters, matched on lower-case text without diacritics: "hoc ky 3", the font-damaged
-# "h?c k? 3", "hk4", "ky 1" and "k 2" (the "kỳ" that lost its accent, with a space). Every alternative
-# must start a token, so "Task 3", "Book 1" and "backup2024" are not semesters. Explicit enough to
-# stand alone.
-SEMESTER_PATTERN = re.compile(
-    r"(?<![a-z0-9])(?:(?:h[o?]c\s*k[y?]|hk|ky)\s*[_.\-]?\s*|k\s+)(\d{1,2})(?![0-9])"
-)
+# Vietnamese semesters, matched on lower-case text without diacritics: "hoc ky 3" (and "hoc ki"), the
+# font-damaged "h?c k? 3", "hk4" and "ky 1". The number is one digit (FPTU has semesters 0 to 9), so "HK45" and
+# "K 20" are not semesters. Every alternative must start a token, so "Task 3" and "Book 1" are not either.
+# Explicit enough to stand alone.
+SEMESTER_PATTERN = re.compile(r"(?<![a-z0-9])(?:h[o?]c\s*k[yi?]|hk|ky|ki)\s*[_.\-]?\s*(\d)(?![0-9])")
 
-# A bare "k8" / "K12": Kubernetes, K-12, K9 Mail ... only a weak hint, and only as a whole token
-# (so "K8s" and "k3s" are not semesters either).
-SEMESTER_BARE_PATTERN = re.compile(r"(?<![a-z0-9])k(\d{1,2})(?![a-z0-9])")
+# A bare "k8" or "k 3" (the "kỳ" that lost its accent): Kubernetes, K-12, "Grade K 2", K9 Mail ... only a weak
+# hint, and only as a whole token (so "K8s" and "k3s" are not semesters either).
+SEMESTER_BARE_PATTERN = re.compile(r"(?<![a-z0-9])k\s*(\d)(?![0-9a-z])")
 
-# FPTU season codes: SP26 (spring), SU25 (summer), FA25 (fall); any year.
-SEASON_PATTERN = re.compile(r"(?<![a-z0-9])(?:sp|su|fa)\s*[_\-]?\s*\d{2}(?![0-9])")
+# FPTU season codes: SP26 (spring), SU25 (summer), FA25 (fall); any year. Written as one token: "Su-27",
+# "FA-18C" and "fa 12" are not seasons. A folder that is only the code ("FA27") is coursework; the code inside a
+# longer name ("SP24 Lookbook") is just a weak hint.
+SEASON_PATTERN = re.compile(r"(?<![a-z0-9])(?:sp|su|fa)\d{2}(?![a-z0-9])")
+SEASON_ONLY_PATTERN = re.compile(r"(?:sp|su|fa)\d{2}")
 
 # "lab", "labs", "lab1", "lab_3" as a word of its own, but not Colab, Elaboration or Label. The bare word is
 # a weak hint ("Home Lab"); a name that starts with "lab" and a number ("lab1", "Lab 3") is a lab course.
@@ -120,8 +122,9 @@ def sanitize_folder_name(name: str) -> str:
 def _find_course_code(raw_name: str) -> Tuple[Optional[str], bool]:
     """(code, known) for the first subject-like code in the name (upper-cased), ignoring look-alikes.
 
-    ``known`` is True when its prefix belongs to FPTU's curriculum (a code with a known prefix wins over
-    an earlier one without); any other prefix gives a code that is only a weak hint.
+    ``known`` is True when its prefix belongs to FPTU's curriculum and the number is one a subject can have
+    (they start at 101: "Pro100" and "ACC100" are not subjects); a code that qualifies wins over an earlier
+    one that does not. Any other code is only a weak hint.
     """
     found: Optional[str] = None
     for match in COURSE_CODE_STRICT_PATTERN.finditer(raw_name):
@@ -129,7 +132,7 @@ def _find_course_code(raw_name: str) -> Tuple[Optional[str], bool]:
         prefix = code[:3]
         if prefix in NON_ACADEMIC_CODE_PREFIXES:
             continue
-        if prefix in FPTU_SUBJECT_PREFIXES:
+        if prefix in FPTU_SUBJECT_PREFIXES and int(code[3:6]) >= 101:
             return code, True
         if found is None:
             found = code
@@ -175,29 +178,33 @@ class AcademicClassifier:
         semester_strong = SEMESTER_PATTERN.search(folded)
         semester_match = semester_strong or SEMESTER_BARE_PATTERN.search(folded)
         season_match = SEASON_PATTERN.search(folded)
+        season_alone = SEASON_ONLY_PATTERN.fullmatch(folded.strip()) is not None
 
         strong_keyword = (
             any(kw in folded for kw in ("project_osg", "testjava", "on luyen", "n luy?n", "h?c k?", "hoc ky"))
             or folded in ("java", "wed201c")
         )
 
-        # One strong signal is enough. Weak ones (a bare "k8", the word "lab", "pe_", a code with an unknown
-        # prefix) are shared by Kubernetes, home labs and checksums, so it takes two of them to move a folder.
+        # One strong signal is enough. The weak ones (a bare "k8", the word "lab", "pe_", a season code inside a
+        # longer name, a code with an unknown prefix) are shared by Kubernetes, home labs, fashion lookbooks and
+        # checksums, so they only count together AND with a subject-shaped code: "K8 Lab" and "lab pe_tools" have
+        # two hints and still no subject, so they stay where they are.
         strong = (
             is_fptu
             or semester_strong is not None
-            or season_match is not None
+            or season_alone
             or LAB_COURSE_PATTERN.search(folded) is not None
             or strong_keyword
             or (course_code is not None and known_subject)
         )
-        weak = sum((
+        unknown_code = course_code is not None and not known_subject
+        other_weak = sum((
             semester_strong is None and semester_match is not None,
             LAB_PATTERN.search(folded) is not None and LAB_COURSE_PATTERN.search(folded) is None,
             PE_PATTERN.search(folded) is not None,
-            course_code is not None and not known_subject,
+            season_match is not None and not season_alone,
         ))
-        if not (strong or weak >= 2):
+        if not (strong or (unknown_code and other_weak >= 1)):
             return None
 
         clean_name = sanitize_folder_name(raw_name)
