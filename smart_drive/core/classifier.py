@@ -29,8 +29,21 @@ from smart_drive.core.config import (
     is_protected_root_file,
 )
 from smart_drive.core.exfat_compat import detect_drive_root
+from smart_drive.core.junction import is_directory_junction
 
 logger = logging.getLogger(__name__)
+
+
+def _is_link(path: Union[str, Path]) -> bool:
+    """True for symlinks and NTFS junctions.
+
+    Links are never classified or relocated: moving one would move whatever it points to, which can
+    live outside the managed root, and resolving a looping link raises instead of returning.
+    """
+    try:
+        return os.path.islink(path) or is_directory_junction(path)
+    except (OSError, ValueError):
+        return True  # cannot tell, so treat it as unsafe
 
 
 @dataclass
@@ -136,6 +149,7 @@ class ClassifierEngine:
 
     def __init__(self, root_path: Union[str, Path]) -> None:
         self.root = Path(root_path).resolve()
+        self.skipped_links: List[Path] = []  # symlinks/junctions left alone by the last scan
 
     # --------------------------------------------------------------------------
     # Format Detectors
@@ -535,8 +549,17 @@ class ClassifierEngine:
         return self.inspect_path(filepath)
 
     def inspect_path(self, target_path: Union[str, Path]) -> Optional[ClassificationResult]:
-        """Inspects and classifies a single file or project directory."""
-        p = Path(target_path).resolve()
+        """Inspects and classifies a single file or project directory.
+
+        Symlinks and junctions are skipped (None): see ``_is_link``.
+        """
+        raw = Path(os.path.abspath(str(target_path)))
+        if _is_link(raw):
+            return None
+        try:
+            p = raw.resolve()  # raw is not a link, so this only normalizes symlinked parents
+        except (OSError, RuntimeError):
+            return None
         if not p.exists():
             return None
 
@@ -597,9 +620,22 @@ class ClassifierEngine:
         recursive: bool = True,
         suggest_only: bool = True,
     ) -> List[ClassificationResult]:
-        """Scans a directory or file, detecting project repos and inspecting files."""
-        scan_root = Path(target_dir).resolve() if target_dir else self.root
+        """Scans a directory or file, detecting project repos and inspecting files.
+
+        Symlinks and junctions are never followed or returned (they are listed in ``skipped_links``).
+        """
         results: List[ClassificationResult] = []
+        self.skipped_links = []
+
+        scan_arg = self.root if target_dir is None else Path(os.path.abspath(str(target_dir)))
+        if _is_link(scan_arg):
+            logger.warning("Refusing to classify through a symlink/junction: %s", scan_arg)
+            self.skipped_links.append(scan_arg)
+            return results
+        try:
+            scan_root = scan_arg.resolve()
+        except (OSError, RuntimeError):
+            return results
 
         if not scan_root.exists():
             return results
@@ -622,6 +658,11 @@ class ClassifierEngine:
                 and d not in DEFAULT_EXCLUDE_DIRS
                 and not is_protected_root_dir(d)
             ]
+            # Never descend into (or classify) symlinked / junctioned directories
+            linked_dirs = [d for d in dirs if _is_link(curr_dir / d)]
+            if linked_dirs:
+                self.skipped_links.extend(curr_dir / d for d in linked_dirs)
+                dirs[:] = [d for d in dirs if d not in linked_dirs]
 
             # Check if curr_dir itself is a project repo (when scanning from parent)
             if curr_dir != scan_root:
@@ -653,6 +694,9 @@ class ClassifierEngine:
                 ):
                     continue
                 file_path = curr_dir / file_name
+                if _is_link(file_path):
+                    self.skipped_links.append(file_path)
+                    continue
                 res = self.inspect_path(file_path)
                 if res:
                     results.append(res)
@@ -749,6 +793,15 @@ class ClassifierEngine:
                     relative_target=rel_target,
                     status="PLANNED",
                     collision_resolved=collision,
+                ))
+            elif _is_link(item.source_path):
+                # The entry may have been swapped for a link since the scan: never move through it.
+                actions.append(RelocationAction(
+                    source_path=item.source_path,
+                    destination_path=dest_path,
+                    relative_target=rel_target,
+                    status="SKIPPED_SYMLINK",
+                    collision_resolved=False,
                 ))
             else:
                 try:

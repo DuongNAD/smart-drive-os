@@ -47,6 +47,11 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
     engine = ClassifierEngine(root_path=root)
     results = engine.scan_and_classify(target_dir=Path(target), recursive=recursive)
+    if engine.skipped_links:
+        sys.stderr.write(
+            f"note: left {len(engine.skipped_links)} symlink(s)/junction(s) alone "
+            "(links are never classified or moved)\n"
+        )
 
     # 1. APPLY MODE
     if apply_mode:
