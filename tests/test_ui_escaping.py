@@ -31,19 +31,26 @@ from typing import Dict, List, Optional, Tuple
 
 from smart_drive.ui.dashboard import get_dashboard_html
 
-# Interpolations in a template literal that is assigned to innerHTML must be exactly esc(...), or something
-# that cannot carry markup: a number, a byte count, a constant class name. Add to this list only for those.
+# Interpolations in a template literal that is assigned to innerHTML must be exactly esc(...), one call of a
+# number formatter, or one of these exact expressions - formatted numbers and a constant class name. Exact
+# strings, not patterns: `(m.owner || 0).toLocaleString()` returns a string untouched, so a new column must be
+# looked at by a person (and, for a string, wrapped in esc()).
 # (Template literals that go to innerText, a toast or an alert are text, not HTML, and are not held to it.)
-SAFE_EXPRESSIONS = [
-    re.compile(r"^[\w.]+\.toFixed\(\d\)$"),
-    re.compile(r"^\([\w.]+ \|\| 0\)\.(toFixed\(\d\)|toLocaleString\(\))$"),
-    re.compile(r"^data\.total \|\| data\.total_count \|\| 0$"),
-    re.compile(r"^item\.tier === 1 \? 'badge-safe' : item\.tier === 2 \? 'badge-dev' : 'badge-optin'$"),
-]
+SAFE_EXPRESSIONS = {
+    "pct.toFixed(1)",
+    "(d.recursive_slack_percentage || 0).toFixed(1)",
+    "item.tier === 1 ? 'badge-safe' : item.tier === 2 ? 'badge-dev' : 'badge-optin'",
+}
 SAFE_CALLS = ("formatBytes", "Math.min", "Math.max")  # as the whole expression: one call that closes at the very end
 
 TEMPLATE_TAGS = {"div", "span", "tr", "td", "th"}  # what the dashboard's own row templates are made of
-SINKS_NEVER_USED = ("document.write", "outerHTML", "insertAdjacentHTML", "eval(", "new Function")
+# Other ways to turn data into markup, script or a navigation. The dashboard uses none of them; if one is ever
+# needed, this test is where that gets decided on purpose.
+SINKS_NEVER_USED = (
+    "document.write", "outerHTML", "insertAdjacentHTML", "eval(", "new Function", "srcdoc", "DOMParser",
+    "createContextualFragment", "setAttribute(", "Object.assign(", "location", "innerHTML:", "innerHTML :",
+)
+SINK_PATTERNS = (re.compile(r"\.href\b"), re.compile(r"\.src\b"), re.compile(r"\.on\w+\s*="))
 PAYLOAD = "<img src=x onerror=alert(1)>\"'&<script>alert(2)</script>"
 
 
@@ -52,15 +59,16 @@ def _scripts() -> List[str]:
     return [m.group(1) for m in re.finditer(r"<script[^>]*>(.*?)</script>", html_text, re.DOTALL)]
 
 
-def _template_literals(script: str) -> List[Tuple[str, List[str], bool]]:
+def _template_literals(script: str) -> List[Tuple[str, List[str], bool, str]]:
     """Every backtick string in the script as (text with \\0 where an interpolation was, [expressions], to_html).
 
-    ``to_html`` says the literal is assigned straight to innerHTML (the only place its markup is parsed).
+    ``to_html`` says the literal is assigned straight to innerHTML (the only place its markup is parsed); the
+    last item is the first non-blank character after the closing backtick, so `` `...` + m.owner `` is visible.
 
     Comments, ordinary quoted strings (one of them contains backticks) and regex literals (esc() has one with
     both kinds of quote in it) are skipped, so only real template literals are reported.
     """
-    found: List[Tuple[str, List[str], bool]] = []
+    found: List[Tuple[str, List[str], bool, str]] = []
     i, n, previous = 0, len(script), ""  # previous: last significant character, to tell a regex from a division
     while i < n:
         ch = script[i]
@@ -107,7 +115,8 @@ def _template_literals(script: str) -> List[Tuple[str, List[str], bool]]:
                 else:
                     text.append(script[j])
                     j += 1
-            found.append(("".join(text), exprs, to_html))
+            following = script[j + 1:j + 40].lstrip()[:1]
+            found.append(("".join(text), exprs, to_html, following))
             i = j + 1
             previous = "`"
         else:
@@ -137,7 +146,7 @@ def _is_vetted(expression: str) -> bool:
     return (
         _is_exactly_esc(expression)
         or any(_is_single_call(expression, call) for call in SAFE_CALLS)
-        or any(pattern.match(expression) for pattern in SAFE_EXPRESSIONS)
+        or expression in SAFE_EXPRESSIONS
     )
 
 
@@ -151,7 +160,7 @@ class TestEveryInterpolationIsEscapedOrHarmless(unittest.TestCase):
     def setUp(self) -> None:
         self.scripts = _scripts()
         self.literals = [lit for script in self.scripts for lit in _template_literals(script)]
-        self.html_literals = [(text, exprs) for text, exprs, to_html in self.literals if to_html]
+        self.html_literals = [(text, exprs) for text, exprs, to_html, _ in self.literals if to_html]
 
     def test_there_is_something_to_check(self) -> None:
         self.assertGreaterEqual(len(self.scripts), 1)
@@ -174,18 +183,20 @@ class TestEveryInterpolationIsEscapedOrHarmless(unittest.TestCase):
             "m.directory", "esc(m.extension) + m.path", "n", "esc(a)  + esc(b)", "esc(m.name), m.path",
             "msg", "item.tier", "data.message || ''", "formatBytes(a) + m.path + formatBytes(1)",
             "Math.max(1, 2) + m.path", "formatBytes(m.size)  +  m.name",
+            "(m.owner || 0).toLocaleString()", "(d.recursive_files || 0).toLocaleString()", "pct.toFixed(1) + m.path",
         ]
         for expression in bypasses:
             with self.subTest(expression=expression):
                 self.assertFalse(_is_vetted(expression))
         for expression in ("esc(m.category || 'Other')", "esc(item.description || item.rule || '')", "formatBytes(m.size)",
-                           "Math.min(100, Math.max(4, pct))", "(stat.file_count || 0).toLocaleString()"):
+                           "Math.min(100, Math.max(4, pct))", "pct.toFixed(1)",
+                           "esc((stat.file_count || 0).toLocaleString())"):
             with self.subTest(expression=expression):
                 self.assertTrue(_is_vetted(expression))
 
     def test_esc_is_never_used_inside_an_html_tag(self) -> None:
         """esc() makes text safe for a text node; inside an attribute it is not enough (&#39; becomes ' again)."""
-        for text, exprs, _ in self.literals:
+        for text, exprs, _, _after in self.literals:
             position = 0
             for expression in exprs:
                 position = text.index("\0", position)
@@ -193,11 +204,20 @@ class TestEveryInterpolationIsEscapedOrHarmless(unittest.TestCase):
                     self.assertFalse(_inside_a_tag(text, position), f"esc() inside a tag: {text[max(0, position - 40):position + 20]!r}")
                 position += 1
 
+    def test_an_html_literal_is_the_whole_right_hand_side(self) -> None:
+        """`...` + m.owner is a template literal that starts right and then appends raw data."""
+        for script in self.scripts:
+            for text, _exprs, to_html, following in _template_literals(script):
+                if to_html:
+                    self.assertEqual(following, ";", f"something follows the template literal: {text[:60]!r}")
+
     def test_the_helper_exists_and_nothing_else_writes_html(self) -> None:
         joined = "\n".join(self.scripts)
         self.assertIn("function esc(", joined)
         for sink in SINKS_NEVER_USED:
             self.assertNotIn(sink, joined)
+        for pattern in SINK_PATTERNS:
+            self.assertIsNone(pattern.search(joined), pattern.pattern)
 
     def test_inner_html_is_only_given_a_template_literal_or_a_plain_string(self) -> None:
         plain_string = re.compile(r"""'(?:[^'\\]|\\.)*'\s*;|"(?:[^"\\]|\\.)*"\s*;""", re.DOTALL)
@@ -261,17 +281,25 @@ const document = {
   createElement() { return makeEl('created'); },
   querySelectorAll() { return []; },
 };
-const tier = { count: 1, nominal_bytes: 1, slack_bytes: 1, items: [
-  { tier: P, rel_path: P, description: P, rule: P, size: 1, allocated_size: 2, slack_bytes: 1, name: P, path: P, category: P } ] };
+// A row answers ANY property it was not given with the payload, so a column added to the dashboard later
+// (m.owner, d.path ...) is fed an attack string too, whatever its name.
+const hostile = (row) => new Proxy(row, {
+  get(target, key, receiver) {
+    const value = Reflect.get(target, key, receiver);
+    const quiet = typeof key !== 'string' || ['then', 'toJSON', 'toString', 'valueOf', 'inspect', 'constructor'].includes(key);
+    return value === undefined && !quiet ? P : value;
+  },
+});
+const tier = { count: 1, nominal_bytes: 1, slack_bytes: 1, items: [ hostile({ tier: P, rel_path: P, description: P, rule: P, size: 1, allocated_size: 2, slack_bytes: 1 }) ] };
 const answers = {
   '/api/status': { root: P, cluster_size_kb: 512 },
   '/api/audit': {
     summary: { total_files: 1 },
-    taxonomies: { [P]: { slack_percentage: 5, file_count: 3, nominal_bytes: 1, allocated_bytes: 2 } },
-    top_slack_directories: [ { rel_path: P, name: P, recursive_files: 1, recursive_bytes: 1, recursive_allocated: 2, recursive_slack: 1, recursive_slack_percentage: 50 } ],
+    taxonomies: { [P]: hostile({ slack_percentage: 5, file_count: 3, nominal_bytes: 1, allocated_bytes: 2 }) },
+    top_slack_directories: [ hostile({ rel_path: P, recursive_files: 1, recursive_bytes: 1, recursive_allocated: 2, recursive_slack: 1, recursive_slack_percentage: 50 }) ],
   },
   '/api/junk': { tiers: { '1': tier, '2': tier, '3': tier } },
-  '/api/search': { results: [ { id: 1, name: P, filename: P, path: P, extension: P, category: P, size: 10, allocated_size: 20, slack_bytes: 10, rank: P, mtime: P } ], total: 1, latency_ms: 1, index_exists: true, warnings: [P] },
+  '/api/search': { results: [ hostile({ name: P, path: P, category: P, size: 10, allocated_size: 20, slack_bytes: 10, rank: P }) ], total: 1, latency_ms: 1, index_exists: true, warnings: [P] },
 };
 const ctx = {
   document, window: { addEventListener() {} }, console, performance, alert() {}, setTimeout, clearTimeout, encodeURIComponent,

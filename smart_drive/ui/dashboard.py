@@ -846,7 +846,7 @@ def get_dashboard_html() -> str:
               <div class="progress-bar-fill progress-bar-slack" style="width: ${Math.min(100, Math.max(4, pct))}%;"></div>
             </div>
             <div class="tax-metrics">
-              <span>${(stat.file_count || 0).toLocaleString()} files</span>
+              <span>${esc((stat.file_count || 0).toLocaleString())} files</span>
               <span>${formatBytes(stat.nominal_bytes)} (alloc ${formatBytes(stat.allocated_bytes)})</span>
             </div>
           `;
@@ -864,7 +864,7 @@ def get_dashboard_html() -> str:
             const row = document.createElement('tr');
             row.innerHTML = `
               <td class="code-font">${esc(d.rel_path)}</td>
-              <td>${(d.recursive_files || 0).toLocaleString()}</td>
+              <td>${esc((d.recursive_files || 0).toLocaleString())}</td>
               <td>${formatBytes(d.recursive_bytes || 0)}</td>
               <td>${formatBytes(d.recursive_allocated || 0)}</td>
               <td style="color: var(--accent-amber); font-weight: 600;">${formatBytes(d.recursive_slack || 0)}</td>

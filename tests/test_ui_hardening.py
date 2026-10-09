@@ -315,6 +315,11 @@ class TestFetchMetadata(_ServerCase):
         embedded = dict(navigation, **{"Sec-Fetch-Dest": "iframe"})
         self.assertEqual(self.request("GET", "/", headers=embedded)[0], 403)
 
+    def test_an_absolute_form_request_target_does_not_slip_through_the_navigation_exemption(self) -> None:
+        navigation = {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
+        status, _, _ = self.request("GET", f"http://127.0.0.1:{self.port}/api/status", headers=navigation)
+        self.assertEqual(status, 403)  # "/api/" is judged on the parsed path, as the router does
+
     def test_a_cross_site_post_is_refused_too(self) -> None:
         status, _, _ = self.request(
             "POST", "/api/junk/clean", headers={"Sec-Fetch-Site": "cross-site", "Content-Type": "application/json"},

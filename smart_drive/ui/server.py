@@ -183,7 +183,7 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self.command == "GET"
                 and (self.headers.get("Sec-Fetch-Mode") or "").strip().lower() == "navigate"
                 and (self.headers.get("Sec-Fetch-Dest") or "").strip().lower() == "document"
-                and not self.path.split("?", 1)[0].startswith("/api/")
+                and not urllib.parse.urlparse(self.path).path.startswith("/api/")
             )
             if not is_page_navigation:
                 self.send_error_response("Cross-site requests are not allowed", status=403)
