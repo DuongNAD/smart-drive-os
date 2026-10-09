@@ -14,7 +14,6 @@ Provides subcommands:
 - dup: 3-phase SHA-256 duplicate file detection.
 - index: Full SQLite FTS5 search index creation.
 - update: Fast incremental search index synchronization.
-- ui: Launch zero-dependency web dashboard & visual UI.
 - snapshot: Point-in-time snapshot creation, listing, and SHA-256 verification.
 - backup: Safe incremental backup to target directory or drive.
 """
@@ -56,7 +55,6 @@ from smart_drive.cli.cmd_search import cmd_search
 from smart_drive.cli.cmd_sentinel import cmd_sentinel
 from smart_drive.cli.cmd_snapshot import cmd_snapshot
 from smart_drive.cli.cmd_status import cmd_status
-from smart_drive.cli.cmd_ui import cmd_ui
 from smart_drive.core.duplicates import DuplicateDetector
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
@@ -309,14 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_upd.add_argument("--db", help="Path to SQLite index database file")
     p_upd.add_argument("--json", action="store_true", help="Output update stats in JSON format")
 
-    # 13. ui
-    p_ui = subparsers.add_parser("ui", help="Launch zero-dependency web dashboard & visual UI")
-    p_ui.add_argument("--root", help="Root directory of the SSD")
-    p_ui.add_argument("--port", type=int, default=8765, help="HTTP port to listen on (default: 8765)")
-    p_ui.add_argument("--no-browser", action="store_true", help="Do not open web browser automatically")
-    p_ui.add_argument("--db", help="Path to SQLite search database file")
-
-    # 14. snapshot
+    # 13. snapshot
     p_snap = subparsers.add_parser(
         "snapshot",
         help="Point-in-time snapshot creation, listing, and SHA-256 verification",
@@ -354,7 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_sv.add_argument("--no-untracked", action="store_true", help="Do not check for untracked files")
     p_sv.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output verification report in JSON format")
 
-    # 15. backup
+    # 14. backup
     p_bak = subparsers.add_parser(
         "backup",
         help="Safe incremental backup to target directory or drive",
@@ -372,7 +363,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_bak.add_argument("--json", action="store_true", help="Output backup report in JSON format")
 
-    # 16. classify
+    # 15. classify
     p_cls = subparsers.add_parser(
         "classify",
         help="Deep file format recognition, taxonomy auto-tagging, and safe relocation",
@@ -385,7 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_cls.add_argument("--json", action="store_true", help="Output classification report in JSON format")
     p_cls.add_argument("--no-recursive", action="store_true", help="Do not scan subdirectories recursively")
 
-    # 17. offload
+    # 16. offload
     p_off = subparsers.add_parser(
         "offload",
         help="C-Drive developer cache discovery and transactional NTFS junction offloading",
@@ -398,7 +389,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_off.add_argument("--force", "-f", action="store_true", help="Force offload even if warnings exist")
     p_off.add_argument("--json", action="store_true", help="Output results in JSON format")
 
-    # 18. health
+    # 17. health
     p_health = subparsers.add_parser(
         "health",
         help="SSD health, TRIM verification, partition geometry, and storage utilization monitor",
@@ -441,7 +432,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         "dup": cmd_dup,
         "index": cmd_index,
         "update": cmd_update,
-        "ui": cmd_ui,
         "snapshot": cmd_snapshot,
         "backup": cmd_backup,
         "classify": cmd_classify,

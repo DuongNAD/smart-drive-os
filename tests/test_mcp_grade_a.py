@@ -1,7 +1,7 @@
 """tests/test_mcp_grade_a.py - Comprehensive Test Suite for SmartDrive-OS MCP Grade A Upgrade.
 
 100% Python Standard Library unittest. Zero external runtime dependencies.
-Covers 5 core dimensions for MCP Grade A compliance (95-100/100 score):
+Covers 4 core dimensions for MCP Grade A compliance (95-100/100 score):
 1. Static AST Handler Isolation:
    - Class-level TOOL_HANDLERS mapping matching all 8 declared tools.
    - 100% static AST resolvable branching in dispatch_tool (ast.Compare with string constants).
@@ -23,12 +23,7 @@ Covers 5 core dimensions for MCP Grade A compliance (95-100/100 score):
      - Session authentication during initialize handshake.
      - Constant-time verification using hmac.compare_digest.
      - Configuration precedence and CLI argument parsing (--auth-token, --require-auth, --no-require-auth).
-4. Network Loopback Guard & Endpoint Isolation:
-   - ALLOWED_LOOPBACK_HOSTS restricted to ('127.0.0.1', 'localhost').
-   - create_server and run_server bind strictly to loopback and reject external interfaces (0.0.0.0, etc.).
-   - Normalized server URL formatting.
-   - Hardened CORS headers restricting cross-origin access to loopback origins.
-5. Domain Consistency & Packaging Metadata:
+4. Domain Consistency & Packaging Metadata:
    - Author, maintainer, and repository owner alignment with DuongNAD in pyproject.toml.
    - Privacy URL and MCP keyword tags in pyproject.toml.
    - Zero runtime dependencies invariant (dependencies = []).
@@ -47,8 +42,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
 
 try:
@@ -70,13 +63,6 @@ from smart_drive.mcp.server import (
     SERVER_VERSION,
     TOOLS,
     SmartDriveMCPServer,
-)
-from smart_drive.ui.server import (
-    ALLOWED_LOOPBACK_HOSTS,
-    SmartDriveRequestHandler,
-    ThreadingHTTPServer,
-    create_server,
-    run_server,
 )
 from tests.helpers import SmartDriveTestCase
 
@@ -695,108 +681,7 @@ class TestAuthenticationAndAccessControl(SmartDriveTestCase):
 
 
 # ==============================================================================
-# 4. Network Loopback Guard & Endpoint Isolation
-# ==============================================================================
-
-class TestNetworkLoopbackGuardAndCORS(SmartDriveTestCase):
-    """Verifies strict local loopback socket binding (127.0.0.1, localhost) and hardened CORS."""
-
-    def setUp(self) -> None:
-        super().setUp()
-        self.mock_root = self.create_mock_drive()
-
-    def test_allowed_loopback_hosts_constant(self) -> None:
-        """ALLOWED_LOOPBACK_HOSTS must contain only 127.0.0.1 and localhost."""
-        self.assertEqual(ALLOWED_LOOPBACK_HOSTS, ("127.0.0.1", "localhost"))
-
-    def test_create_server_loopback_hosts_succeed(self) -> None:
-        """create_server succeeds when host is 127.0.0.1 or localhost."""
-        for host in ("127.0.0.1", "localhost"):
-            server = create_server(self.mock_root, port=0, host=host)
-            try:
-                self.assertIsInstance(server, ThreadingHTTPServer)
-                self.assertIn(server.server_address[0], ("127.0.0.1", "127.0.0.1", host))
-            finally:
-                server.server_close()
-
-    def test_create_server_rejects_external_hosts(self) -> None:
-        """create_server raises ValueError when binding to external or non-loopback hosts."""
-        forbidden_hosts = [
-            "0.0.0.0",
-            "192.168.1.1",
-            "10.0.0.1",
-            "example.com",
-            "8.8.8.8",
-            "0000:0000:0000:0000:0000:0000:0000:0000",
-        ]
-        for host in forbidden_hosts:
-            with self.assertRaises(ValueError) as ctx:
-                create_server(self.mock_root, port=0, host=host)
-            self.assertIn("Security restriction", str(ctx.exception))
-            self.assertIn("127.0.0.1", str(ctx.exception))
-
-    def test_run_server_rejects_external_hosts(self) -> None:
-        """run_server raises ValueError if given non-loopback host."""
-        with self.assertRaises(ValueError) as ctx:
-            run_server(self.mock_root, port=0, host="0.0.0.0")
-        self.assertIn("Security restriction", str(ctx.exception))
-
-    @staticmethod
-    def _cors_handler(origin: Optional[str] = None) -> Tuple[SmartDriveRequestHandler, Dict[str, str]]:
-        """A handler bound to a dashboard on port 8765 that records the headers it would send."""
-        handler = object.__new__(SmartDriveRequestHandler)
-        handler.server = SimpleNamespace(server_address=("127.0.0.1", 8765))
-        handler.headers = {"Origin": origin} if origin is not None else {}
-        sent: Dict[str, str] = {}
-        handler.send_header = lambda key, val: sent.update({key: val})
-        return handler, sent
-
-    def test_cors_headers_only_for_the_dashboard_own_origin(self) -> None:
-        """_set_cors_headers reflects exactly the dashboard's own origin (127.0.0.1 and localhost)."""
-        for origin in ("http://127.0.0.1:8765", "http://localhost:8765"):
-            handler, sent = self._cors_handler(origin)
-            handler._set_cors_headers()
-            self.assertEqual(sent["Access-Control-Allow-Origin"], origin)
-            self.assertEqual(sent["Vary"], "Origin")
-            self.assertIn("X-MCP-Auth-Token", sent["Access-Control-Allow-Headers"])
-
-    def test_cors_headers_refuse_other_ports_and_lookalike_hosts(self) -> None:
-        """Other local apps, foreign sites and look-alike names ('localhost.evil.com') get no CORS grant."""
-        hostile = (
-            "http://127.0.0.1:3000",
-            "http://localhost:5173",
-            "http://evil-external-site.com",
-            "http://localhost.evil.com",
-            "http://127.0.0.1.attacker.net",
-            "http://127.0.0.1:8765.evil.com",
-            "https://127.0.0.1:8765",
-            "null",
-        )
-        for origin in hostile:
-            handler, sent = self._cors_handler(origin)
-            handler._set_cors_headers()
-            self.assertNotIn("Access-Control-Allow-Origin", sent, origin)
-
-    def test_cors_headers_extra_origin_is_an_explicit_opt_in(self) -> None:
-        """SMART_DRIVE_UI_ALLOWED_ORIGINS adds exact extra origins, e.g. a local front-end dev server."""
-        with patch.dict(os.environ, {"SMART_DRIVE_UI_ALLOWED_ORIGINS": "http://localhost:5173, http://127.0.0.1:3000/"}):
-            for origin in ("http://localhost:5173", "http://127.0.0.1:3000"):
-                handler, sent = self._cors_handler(origin)
-                handler._set_cors_headers()
-                self.assertEqual(sent["Access-Control-Allow-Origin"], origin)
-            handler, sent = self._cors_handler("http://localhost:5174")
-            handler._set_cors_headers()
-            self.assertNotIn("Access-Control-Allow-Origin", sent)
-
-    def test_cors_headers_without_origin_grant_nothing(self) -> None:
-        """No Origin header means no CORS request, so no CORS headers (and no wildcard) are sent."""
-        handler, sent = self._cors_handler(None)
-        handler._set_cors_headers()
-        self.assertNotIn("Access-Control-Allow-Origin", sent)
-
-
-# ==============================================================================
-# 5. Domain Consistency & Packaging Metadata
+# 4. Domain Consistency & Packaging Metadata
 # ==============================================================================
 
 @unittest.skipIf(tomllib is None, "tomllib requires Python 3.11+")
@@ -870,7 +755,7 @@ class TestDomainConsistencyAndPackagingMetadata(unittest.TestCase):
 
 
 # ==============================================================================
-# 6. Adversarial Verification & Boundary Stress
+# 5. Adversarial Verification & Boundary Stress
 # ==============================================================================
 
 class TestAdversarialHardening(SmartDriveTestCase):
@@ -1000,21 +885,6 @@ class TestAdversarialHardening(SmartDriveTestCase):
         # Non-integer string should fall back to default 0
         plan3 = server.dispatch_tool("ssd_find_duplicates", {"min_size": "not_a_valid_number"})
         self.assertIsInstance(plan3, dict)
-
-    def test_adversarial_network_loopback_unauthorized_binds(self) -> None:
-        """create_server strictly validates ALLOWED_LOOPBACK_HOSTS and rejects non-whitelisted interfaces."""
-        unauthorized_hosts = [
-            "127.0.0.2",   # In 127/8, but not in ALLOWED_LOOPBACK_HOSTS
-            "::1",         # IPv6 loopback not in whitelist
-            "[::1]",
-            "",            # Empty host
-            "0",
-            "localhost.localdomain",
-        ]
-        for host in unauthorized_hosts:
-            with self.assertRaises(ValueError) as ctx:
-                create_server(self.mock_root, port=0, host=host)
-            self.assertIn("Security restriction", str(ctx.exception))
 
     def test_adversarial_auto_organize_boolean_inputs(self) -> None:
         """_parse_bool correctly resolves truthy/falsy string variations without evaluating all strings as true."""

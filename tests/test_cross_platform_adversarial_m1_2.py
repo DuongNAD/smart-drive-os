@@ -5,25 +5,18 @@ Adversarially tests cross-platform components:
 1. smart_drive/core/drive_detector.py under malformed/strange paths, mock system drives, and cluster math.
 2. smart_drive/mcp/proxy.py under mock mount roots, working directory hierarchies, and POSIX/Windows cross-simulation.
 3. smart_drive/core/junction.py with valid symlinks, broken symlinks, real directories, and non-existent paths.
-4. smart_drive/ui/server.py under burst concurrent socket requests, malformed payloads, and host binding restrictions.
 
 100% Python Standard Library. Zero external dependencies.
 """
 
 from __future__ import annotations
 
-import concurrent.futures
-import json
 import os
 import platform
 import shutil
 import sys
 import tempfile
-import time
 import unittest
-import urllib.error
-import urllib.parse
-import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
@@ -52,7 +45,6 @@ from smart_drive.core.junction import (
     remove_directory_junction,
 )
 from smart_drive.mcp.proxy import SmartDriveProxy
-from smart_drive.ui.server import ThreadingHTTPServer, create_server
 
 
 class TestDriveDetectorCrossPlatformAdversarial(unittest.TestCase):
@@ -445,157 +437,6 @@ class TestJunctionCrossPlatformAdversarial(unittest.TestCase):
             fpath = target_dir / fname
             self.assertTrue(fpath.is_file())
             self.assertEqual(fpath.read_text(encoding="utf-8"), expected_content)
-
-
-class TestUIServerConcurrencyAndSocketBacklog(unittest.TestCase):
-    """Adversarial stress-testing of ui/server.py under burst concurrency and edge inputs."""
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.temp_dir = tempfile.mkdtemp(prefix="sd_ui_adv_")
-        cls.test_root = Path(cls.temp_dir).resolve()
-        # Create minimal structure
-        (cls.test_root / "01_AI_Models").mkdir(parents=True)
-        (cls.test_root / "02_Learning_Knowledge").mkdir(parents=True)
-        (cls.test_root / "GEMINI.md").write_text("# GEMINI", encoding="utf-8")
-        (cls.test_root / "AGENTS.md").write_text("# AGENTS", encoding="utf-8")
-
-        # Bind to port 0 for dynamic ephemeral port allocation
-        cls.server = create_server(root_path=str(cls.test_root), port=0, host="127.0.0.1")
-        cls.actual_port = cls.server.server_address[1]
-        cls.base_url = f"http://127.0.0.1:{cls.actual_port}"
-
-        import threading
-
-        cls.server_thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
-        cls.server_thread.start()
-        time.sleep(0.1)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        try:
-            cls.server.shutdown()
-            cls.server.server_close()
-        except Exception:
-            pass
-        shutil.rmtree(cls.temp_dir, ignore_errors=True)
-
-    def _raw_request(
-        self,
-        endpoint: str,
-        method: str = "GET",
-        data: Optional[bytes] = None,
-        headers: Optional[dict] = None,
-        timeout: float = 10.0,
-    ) -> tuple[int, dict, bytes]:
-        req_headers = headers or {}
-        url = urllib.parse.urljoin(self.base_url, endpoint)
-        req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                status = resp.status
-                resp_headers = dict(resp.headers)
-                body = resp.read()
-                return status, resp_headers, body
-        except urllib.error.HTTPError as exc:
-            return exc.code, dict(exc.headers), exc.read()
-
-    def test_burst_concurrent_socket_requests_backlog_resilience(self) -> None:
-        """Burst of 80 concurrent worker threads making 160 requests must not drop connections."""
-        endpoints = [
-            "/",
-            "/api/status",
-            "/api/audit",
-            "/api/search?q=test",
-            "/api/junk",
-        ]
-        # Repeat to create 160 requests
-        request_list = (endpoints * 32)[:160]
-
-        def worker_task(ep: str) -> tuple[int, float]:
-            t0 = time.perf_counter()
-            status, _, _ = self._raw_request(ep, timeout=15.0)
-            elapsed = time.perf_counter() - t0
-            return status, elapsed
-
-        results: list[tuple[int, float]] = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=80) as executor:
-            future_to_ep = [executor.submit(worker_task, ep) for ep in request_list]
-            for future in concurrent.futures.as_completed(future_to_ep):
-                results.append(future.result())
-
-        self.assertEqual(len(results), 160)
-        # All requests must succeed with HTTP 200 without connection reset or drop
-        for status, elapsed in results:
-            self.assertEqual(status, 200, f"Request failed with status {status}")
-            self.assertLess(elapsed, 15.0, f"Request latency too high: {elapsed}s")
-
-        # Verify server is still healthy
-        status, _, body = self._raw_request("/api/status")
-        self.assertEqual(status, 200)
-        data = json.loads(body.decode("utf-8"))
-        self.assertEqual(data["status"], "ready")
-
-    def test_malformed_http_payloads_and_boundaries(self) -> None:
-        """Malformed payloads in POST and edge query parameters are safely handled."""
-        # 1. Non-existent route -> 404
-        status, _, body = self._raw_request("/api/nonexistent_route_12345")
-        self.assertEqual(status, 404)
-        err = json.loads(body.decode("utf-8"))
-        self.assertIn("error", err)
-
-        # 2. Unsupported method on endpoints -> 405
-        status, _, body = self._raw_request("/api/status", method="POST", data=b"{}")
-        self.assertEqual(status, 405)
-
-        # 3. POST /api/junk/clean with empty body -> 400
-        status, _, body = self._raw_request(
-            "/api/junk/clean",
-            method="POST",
-            data=b"",
-            headers={"Content-Length": "0"},
-        )
-        self.assertEqual(status, 400)
-
-        # 4. POST /api/junk/clean with invalid JSON -> 400
-        status, _, body = self._raw_request(
-            "/api/junk/clean",
-            method="POST",
-            data=b"{not_json",
-            headers={"Content-Length": str(len(b"{not_json")), "Content-Type": "application/json"},
-        )
-        self.assertEqual(status, 400)
-
-        # 5. POST /api/junk/clean with empty tiers list -> 400
-        bad_payload = json.dumps({"tiers": []}).encode("utf-8")
-        status, _, body = self._raw_request(
-            "/api/junk/clean",
-            method="POST",
-            data=bad_payload,
-            headers={"Content-Length": str(len(bad_payload)), "Content-Type": "application/json"},
-        )
-        self.assertEqual(status, 400)
-
-        # 6. POST /api/junk/clean with non-dict JSON (e.g. list, string, number)
-        for bad_data in [b"[\"tiers\"]", b"\"just_a_string\"", b"12345", b"true"]:
-            with self.subTest(bad_data=bad_data):
-                status, _, body = self._raw_request(
-                    "/api/junk/clean",
-                    method="POST",
-                    data=bad_data,
-                    headers={"Content-Length": str(len(bad_data)), "Content-Type": "application/json"},
-                )
-                # A non-object JSON body is a client error, and must not crash the server process
-                self.assertEqual(status, 400)
-
-    def test_security_restriction_host_binding(self) -> None:
-        """create_server strictly enforces 127.0.0.1 loopback binding and prohibits external interfaces."""
-        prohibited_hosts = ["0.0.0.0", "192.168.1.100", "10.0.0.1", "public.host.com"]
-        for host in prohibited_hosts:
-            with self.subTest(host=host):
-                with self.assertRaises(ValueError) as ctx:
-                    create_server(root_path=str(self.test_root), port=8765, host=host)
-                self.assertIn("Security restriction", str(ctx.exception))
 
 
 if __name__ == "__main__":
