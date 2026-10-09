@@ -269,7 +269,7 @@ class TestMCPProtocolJSONRPC(SmartDriveTestCase):
         self.assertEqual(resp["error"]["code"], -32601)
 
     def test_protocol_initialize_includes_instructions(self) -> None:
-        """initialize response serverInfo must include agent instructions."""
+        """initialize result carries the agent instructions where the MCP spec puts them: at its top level."""
         req = {
             "jsonrpc": "2.0",
             "id": 10,
@@ -278,9 +278,9 @@ class TestMCPProtocolJSONRPC(SmartDriveTestCase):
         }
         self.server.handle_request(req)
         resp = self._get_last_response()
-        server_info = resp["result"].get("serverInfo", {})
-        self.assertIn("instructions", server_info)
-        self.assertIn("ssd_search", server_info["instructions"])
+        self.assertIn("instructions", resp["result"])
+        self.assertIn("ssd_search", resp["result"]["instructions"])
+        self.assertNotIn("instructions", resp["result"].get("serverInfo", {}))
 
     def test_protocol_compact_json_serialization(self) -> None:
         """JSON-RPC responses must use compact serialization separators without extra spaces."""

@@ -48,6 +48,28 @@ PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "smart-drive"
 SERVER_VERSION = "1.1.0"
 
+# Sent as InitializeResult.instructions: the MCP spec puts it at the top level of the result, which is where
+# clients look for it (it was nested inside serverInfo, so no client ever saw it).
+SERVER_INSTRUCTIONS = (
+    "SmartDrive-OS MCP Server governs an external high-speed SSD formatted as exFAT with a "
+    "512KB cluster allocation unit. Hard rules for autonomous coding agents:\n"
+    "1. Never run recursive find, grep, dir /s, or Get-ChildItem on this SSD. Always use the ssd_search tool (<10ms).\n"
+    "2. Call ssd_update_index after writing or modifying files to update the FTS5 index.\n"
+    "3. Never delete or relocate the 6 standard taxonomies (01_AI_Models .. 06_Archives_Storage).\n"
+    "4. Never place symlinks or Windows-illegal characters (\\ / : * ? \" < > |) on the drive.\n"
+    "5. Keep small micro-files bundled to prevent 512KB cluster slack waste."
+)
+
+# Mistakes a client can make (bad path, unknown tool, no drive configured): one log line, not a traceback.
+_CLIENT_ERRORS = (
+    ValueError,
+    PermissionError,
+    FileNotFoundError,
+    NotADirectoryError,
+    IsADirectoryError,
+    DriveRootNotFound,
+)
+
 logger = logging.getLogger("smart_drive.mcp.server")
 logger.setLevel(logging.INFO)
 stderr_handler = logging.StreamHandler(sys.stderr)
@@ -469,6 +491,7 @@ class SmartDriveMCPServer:
                 self.root_source = None
         self.use_content_length_mode = False
         self._raw_stdout: Optional[Any] = None
+        self._batch: Optional[List[Dict[str, Any]]] = None  # collects the replies of a JSON-RPC batch
         self.rate_limiter = SlidingWindowRateLimiter(
             max_requests=rate_limit_requests,
             window_seconds=rate_limit_window,
@@ -1080,14 +1103,62 @@ class SmartDriveMCPServer:
         else:
             raise ValueError(f"Unknown tool '{name}'")
 
-    def send_response(self, response: Dict[str, Any]) -> None:
-        body = json.dumps(response, separators=(",", ":"), ensure_ascii=False)
+    def send_response(self, response: Any) -> None:
+        if self._batch is not None:  # inside a JSON-RPC batch the replies leave together, as one array
+            self._batch.append(response)
+            return
+        self._write(response)
+
+    def _write(self, payload: Any) -> None:
+        body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
         out = self._raw_stdout if self._raw_stdout is not None else sys.stdout
         if self.use_content_length_mode:
             out.write(f"Content-Length: {len(body.encode('utf-8'))}\r\n\r\n{body}")
         else:
             out.write(body + "\n")
         out.flush()
+
+    def process_message(self, message: Any) -> None:
+        """Handles one decoded JSON-RPC message: a request or notification, or a batch (array) of them."""
+        if not isinstance(message, list):
+            self._process_one(message)
+            return
+        if not message:
+            self.send_response({
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32600, "message": "Invalid Request: empty batch"},
+            })
+            return
+        self._batch = []
+        try:
+            for item in message:
+                self._process_one(item)
+            replies, self._batch = self._batch, None
+        finally:
+            self._batch = None
+        if replies:  # a batch made only of notifications gets no reply at all
+            self._write(replies)
+
+    def _process_one(self, message: Any) -> None:
+        if not isinstance(message, dict):
+            self.send_response({
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32600, "message": "Invalid Request: expected a JSON object"},
+            })
+            return
+        try:
+            self.handle_request(message)
+        except Exception as e:
+            # A bug on our side must not leave the client waiting for an answer that never comes.
+            logger.exception("Unhandled error while handling %r: %s", message.get("method"), e)
+            if message.get("id") is not None:
+                self.send_response({
+                    "jsonrpc": "2.0",
+                    "id": message.get("id"),
+                    "error": {"code": -32603, "message": "Internal error"},
+                })
 
     def handle_request(self, req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         msg_id = req.get("id")
@@ -1137,19 +1208,11 @@ class SmartDriveMCPServer:
                     "serverInfo": {
                         "name": SERVER_NAME,
                         "version": SERVER_VERSION,
-                        "instructions": (
-                            "SmartDrive-OS MCP Server governs an external high-speed SSD formatted as exFAT with a "
-                            "512KB cluster allocation unit. Hard rules for autonomous coding agents:\n"
-                            "1. Never run recursive find, grep, dir /s, or Get-ChildItem on this SSD. Always use the ssd_search tool (<10ms).\n"
-                            "2. Call ssd_update_index after writing or modifying files to update the FTS5 index.\n"
-                            "3. Never delete or relocate the 6 standard taxonomies (01_AI_Models .. 06_Archives_Storage).\n"
-                            "4. Never place symlinks or Windows-illegal characters (\\ / : * ? \" < > |) on the drive.\n"
-                            "5. Keep small micro-files bundled to prevent 512KB cluster slack waste."
-                        ),
                     },
                     "capabilities": {
                         "tools": {},
                     },
+                    "instructions": SERVER_INSTRUCTIONS,
                 },
             }
             self.send_response(resp)
@@ -1264,7 +1327,10 @@ class SmartDriveMCPServer:
                 self.send_response(resp)
                 return resp
             except Exception as e:
-                logger.exception("Error executing tool %s: %s", tool_name, e)
+                if isinstance(e, _CLIENT_ERRORS):
+                    logger.warning("Tool %s refused the request: %s", tool_name, e)
+                else:
+                    logger.exception("Error executing tool %s: %s", tool_name, e)
                 err_tool_resp = {
                     "jsonrpc": "2.0",
                     "id": msg_id,
@@ -1337,8 +1403,8 @@ class SmartDriveMCPServer:
                                 "error": {"code": -32700, "message": f"Parse error: {json_err}"},
                             })
                             continue
-                        self.handle_request(req)
-                    elif line_clean.startswith("{"):
+                        self.process_message(req)
+                    elif line_clean.startswith(("{", "[")):
                         try:
                             req = json.loads(line_clean)
                         except Exception as json_err:
@@ -1348,7 +1414,7 @@ class SmartDriveMCPServer:
                                 "error": {"code": -32700, "message": f"Parse error: {json_err}"},
                             })
                             continue
-                        self.handle_request(req)
+                        self.process_message(req)
                 except Exception as e:
                     logger.error("Error in run_stdio: %s", e)
         finally:
@@ -1358,6 +1424,7 @@ class SmartDriveMCPServer:
 
 __all__ = [
     "PROTOCOL_VERSION",
+    "SERVER_INSTRUCTIONS",
     "SERVER_NAME",
     "SERVER_VERSION",
     "SlidingWindowRateLimiter",

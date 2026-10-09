@@ -161,6 +161,7 @@ PROTECTED_ROOT_DIRS: FrozenSet[str] = frozenset({
     "smart_ssd_workspace",
     "teamwork_projects",
     ".agents",
+    ".git",  # a repository's own files: PurgeEngine never deletes them, so nothing may call them safe to touch
     "python_master_final",
     # OS System Directories (Windows & Unix)
     "system volume information",
