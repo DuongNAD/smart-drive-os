@@ -11,7 +11,7 @@
 [![Kiểm định Bảo mật MCP: Hạng A (100/100)](https://img.shields.io/badge/MCP%20Audit-H%E1%BA%A1ng%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Kiểm thử: 915/915 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-915%2F915%20passed%20(100%25)-brightgreen.svg)](#)
+[![Kiểm thử: 994/994 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-994%2F994%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Launcher Portable](https://img.shields.io/badge/launchers-20%20t%E1%BB%87p%20kh%E1%BB%9Fi%20ch%E1%BA%A1y-blue.svg)](#)
 [![Phiên bản: v1.1.0](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![Giấy phép: MIT](https://img.shields.io/badge/Gi%E1%BA%A5y%20ph%C3%A9p-MIT-yellow.svg)](LICENSE)
@@ -50,7 +50,7 @@
 8. [Cú Pháp Tìm Kiếm Nâng Cao](#8-cú-pháp-tìm-kiếm-nâng-cao)
 9. [Cơ Chế Dọn Rác An Toàn 3 Tầng & Danh Sách Bảo Vệ Whitelist](#9-cơ-chế-dọn-rác-an-toàn-3-tầng--danh-sách-bảo-vệ-whitelist)
 10. [Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình](#10-tích-hợp-máy-chủ-mcp-với-các-trợ-lý-ai-lập-trình)
-11. [Báo Cáo Kiểm Thử Tự Động (915 Bài Test, Pass 100%)](#11-báo-cáo-kiểm-thử-tự-động-915-bài-test-pass-100)
+11. [Báo Cáo Kiểm Thử Tự Động (994 Bài Test, Pass 100%)](#11-báo-cáo-kiểm-thử-tự-động-994-bài-test-pass-100)
 12. [Bảo Mật & Quyền Riêng Tư Dữ Liệu](#12-bảo-mật--quyền-riêng-tư-dữ-liệu)
 13. [Đóng Góp Mã Nguồn & Giấy Phép](#13-đóng-góp-mã-nguồn--giấy-phép)
 
@@ -347,7 +347,7 @@ Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `pyth
 | `init` | `--profile <tên>`, `--root <đường_dẫn>`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo 6 nhóm thư mục, cài khiên và gieo cơ sở dữ liệu FTS5. |
 | `status` | `--root <đường_dẫn>`, `--json` | Kiểm tra tình trạng điểm gắn ổ đĩa, hệ tệp được nhận diện, cấu trúc hình học, khiên bảo vệ và phân vùng. |
 | `audit` | `--root <đường_dẫn>`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán chi tiết dung lượng và tỷ lệ lãng phí cluster slack, mô hình hoá theo cụm exFAT 512 KB; báo cáo nêu hệ tệp được nhận diện và cho biết khi nào mô hình đó không áp dụng (APFS, NTFS, ext4 ...). |
-| `clean` | `--dry-run` *(mặc định)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Dọn rác hệ thống với cơ chế bắt buộc chạy thử trước và bảo vệ whitelist bất biến. |
+| `clean` | `--dry-run` *(mặc định)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Dọn rác hệ thống với cơ chế bắt buộc chạy thử trước và bảo vệ whitelist bất biến. Với `--apply`, lệnh trả mã `1` nếu có mục xoá thất bại (mục bị lá chắn an toàn từ chối được báo riêng, không tính là thất bại). |
 | `search` | `<từ_khóa>`, `--ext <đuôi>`, `--size <kích_thước>`, `--category <nhóm>`, `--limit <n>`, `--json` | Tìm kiếm siêu tốc (<10ms) bằng SQLite FTS5 kết hợp thuật toán xếp hạng BM25. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Tự động phân loại file tự do, định tuyến môn học FPTU bằng AcademicClassifier và giảm lãng phí slack. |
 | `sentinel` | `--root <đường_dẫn>`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng (hệ tệp được nhận diện, trạng thái git), phục hồi khiên bảo vệ bị thiếu (alias: `agent-check`). |
@@ -357,7 +357,7 @@ Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `pyth
 | `snapshot list` | `--root <đường_dẫn>`, `--json` | Liệt kê toàn bộ các bản snapshot đã lưu kèm dung lượng và số lượng tệp tin. |
 | `snapshot verify` | `<tên>`, `--no-untracked`, `--root <đường_dẫn>`, `--json` | Kiểm toán tính toàn vẹn dữ liệu so với bản snapshot để phát hiện tệp bị sửa đổi hoặc suy thoái (bit rot). |
 | `backup` | `--target <đích>`, `--dry-run`, `--hash`, `--partitions <danh_sách>`, `--include-hidden`, `--json` | Sao lưu tăng số thông minh, chỉ sao chép các tệp mới hoặc có thay đổi sang ổ đích. |
-| `classify` | `[đường_dẫn]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Nhận diện sâu magic bytes và cấu trúc tệp để phân loại mô hình AI, dataset, tài liệu, dự án. |
+| `classify` | `[đường_dẫn]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Nhận diện sâu magic bytes và cấu trúc tệp để phân loại mô hình AI, dataset, tài liệu, dự án. Không bao giờ đi theo hay di chuyển symlink/junction, và không đọc hay ghi tại nơi phải đi qua chúng. |
 | `offload` | `--scan`, `--move <tên>`, `--target <ổ>`, `--revert <tên>`, `--dry-run`, `--json` | Quét và di chuyển các cache khổng lồ sang ổ phụ (NTFS junction trên Windows, symbolic link trên macOS/Linux). |
 | `health` | `[ổ_đĩa]`, `--root <đường_dẫn>`, `--json` | Kiểm tra sức khỏe ổ cứng SSD, trạng thái TRIM (Windows), cluster geometry và dung lượng trống. Nhận ký tự ổ đĩa trên Windows hoặc đường dẫn ổ (`/Volumes/MySSD`) trên macOS/Linux. |
 | `dup` | `--root <đường_dẫn>`, `--json` | Tìm kiếm tệp tin trùng lặp qua 3 giai đoạn SHA-256 kèm thống kê dung lượng slack thu hồi được. |
@@ -437,9 +437,9 @@ SmartDrive-OS được kiểm định độc lập và xếp hạng chính thứ
 
 ---
 
-## 11. Báo Cáo Kiểm Thử Tự Động (915 Bài Test, Pass 100%)
+## 11. Báo Cáo Kiểm Thử Tự Động (994 Bài Test, Pass 100%)
 
-Hệ thống được bảo vệ và kiểm chứng bởi **915 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
+Hệ thống được bảo vệ và kiểm chứng bởi **994 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
 
 ```bash
 # Chạy toàn bộ bài test bằng pytest:
@@ -452,25 +452,26 @@ python -m unittest discover tests -v
 ### Kết Quả Kiểm Thử Thực Tế:
 ```text
 ============================= test session starts ==============================
-collected 915 items
+collected 994 items
 
 ........................................................................ [  7%]
-....s......s..... [  9%]
-........................................................................ [ 17%]
-............................................................................................ [ 27%]
-.............................................................sssssssss.. [ 35%]
-........................................................................ [ 43%]
-........................................................................ [ 51%]
-......................................................... [ 57%]
-.................................................................................................................................................. [ 73%]
-........................................................................ [ 81%]
-........................................................................ [ 89%]
-........................................................................ [ 97%]
-...........................                                              [100%]
-================== 904 passed, 11 skipped, 192 subtests passed ==================
+........................................................ [ 12%]
+.................................................................... [ 19%]
+...............................................................ss........................ [ 28%]
+........................................................................ [ 35%]
+................................................................. [ 42%]
+........................................................................ [ 49%]
+............................................................ [ 55%]
+........................................ [ 59%]
+................................................................... [ 66%]
+.................................................................... [ 73%]
+........................................................................ [ 80%]
+.......ssssss.sss................................................................................................................................................ [ 96%]
+................................                                         [100%]
+================== 983 passed, 11 skipped, 262 subtests passed ==================
 ```
 
-- **Tỷ lệ đậu**: **100.0%** (904 passed, 11 bài bỏ qua do đặc thù nền tảng Windows trên máy Mac/Linux, 0 failures, 0 errors).
+- **Tỷ lệ đậu**: **100.0%** (983 passed, 11 bài bỏ qua do đặc thù nền tảng Windows trên máy Mac/Linux, 0 failures, 0 errors).
 - **Độ bao phủ đối kháng**: Kiểm tra các kích thước cluster khắc nghiệt từ 512B đến 32MB, các giá trị biên (0B, 1B, 512KB-1B, 512KB, 512KB+1B) và kiểm toán ứng suất hàng triệu tệp tin.
 - **Độ bao phủ tự bảo vệ**: Kiểm chứng cơ chế tự bảo vệ repo, thư mục Windows Apps, thư mục Game và database SQL Server.
 - **Độ bao phủ AcademicClassifier**: Kiểm chứng trích xuất regex mã môn học, sửa lỗi font mojibake và quy hoạch học kỳ.
@@ -485,7 +486,7 @@ SmartDrive-OS tuân thủ triệt để nguyên tắc **Local-First & Quyền Ri
 - **Zero Telemetry**: Hoàn toàn không chứa mã thu thập hành vi, không gửi báo cáo sử dụng và không có kết nối ngầm.
 - **Zero PII Logging**: Tuyệt đối không đọc, bóc tách hay thu thập nội dung nhạy cảm (mã nguồn bí mật, token, private key); chỉ lưu metadata tệp tin cần thiết trong cơ sở dữ liệu nội bộ `.smart_drive/index.db`.
 - **Sẵn sàng cho môi trường Air-Gap**: Không có dependencies ngoài (`dependencies = []`). Web Dashboard chỉ lắng nghe trên `127.0.0.1` (`localhost`), và máy chủ MCP giao tiếp thuần túy qua luồng `stdio`.
-- **Lá chắn yêu cầu cho Dashboard**: API của dashboard chỉ trả lời các yêu cầu có `Host` là `127.0.0.1`/`localhost` đúng cổng của nó và `Origin` (nếu có) chính là dashboard, nên một trang web đang mở trong trình duyệt không thể đọc dữ liệu hay kích hoạt xoá. Host/Origin lạ nhận `403`, các lệnh thay đổi dữ liệu bắt buộc là `application/json`, và phản hồi có `X-Frame-Options`, `nosniff` cùng Content-Security-Policy. Muốn cho giao diện dev cục bộ gọi API, hãy bật tường minh: `SMART_DRIVE_UI_ALLOWED_ORIGINS=http://localhost:5173`.
+- **Lá chắn yêu cầu cho Dashboard**: API của dashboard chỉ trả lời các yêu cầu có `Host` là `127.0.0.1`/`localhost` đúng cổng của nó và `Origin` (nếu có) chính là dashboard và trình duyệt không gắn nhãn là đến từ trang khác (`Sec-Fetch-Site`), nên một trang web đang mở trong trình duyệt không thể đọc dữ liệu, kích hoạt xoá hay bắt nó quét ổ. Host/Origin/nguồn lạ nhận `403`, các lệnh thay đổi dữ liệu bắt buộc là `application/json`, và phản hồi có `X-Frame-Options`, `nosniff` cùng Content-Security-Policy. Muốn cho giao diện dev cục bộ gọi API, hãy bật tường minh: `SMART_DRIVE_UI_ALLOWED_ORIGINS=http://localhost:5173`.
 - **Khiên Bảo vệ Bất khả Xâm phạm**: Ngăn chặn hoàn toàn việc xóa nhầm các tệp cấu hình cốt lõi (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`) và các ứng dụng hệ thống.
 
 Xem toàn văn cam kết bảo mật và quyền riêng tư tại [PRIVACY.md](PRIVACY.md).

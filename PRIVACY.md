@@ -38,7 +38,7 @@ SmartDrive-OS does not inspect, parse, harvest, or log sensitive personal data:
 ### 2.4 Zero External Network Transmission & Air-Gap Readiness
 SmartDrive-OS is designed for mission-critical, air-gapped workstations and restricted offline corporate environments:
 - **Zero Outbound Sockets**: SmartDrive-OS makes **zero outbound HTTP/HTTPS, TCP, or UDP socket connections**.
-- **Localhost Loopback Only**: The embedded visual Web Dashboard (`smart-drive ui`) binds strictly and exclusively to the local loopback interface `127.0.0.1:8765` (`localhost`). It is mathematically and architecturally unreachable from external network interfaces or remote networks. It also refuses any request that carries a foreign `Host` or `Origin` header, so a web page open in your own browser cannot read from it or drive it.
+- **Localhost Loopback Only**: The embedded visual Web Dashboard (`smart-drive ui`) binds strictly and exclusively to the local loopback interface `127.0.0.1:8765` (`localhost`). It is mathematically and architecturally unreachable from external network interfaces or remote networks. It also refuses any request that carries a foreign `Host` or `Origin` header, or that the browser labels as coming from another site (`Sec-Fetch-Site`), so a web page open in your own browser cannot read from it, drive it, or make it scan your drive.
 - **Zero External Runtime Dependencies**: SmartDrive-OS is built with **100% Python Standard Library** modules (`http.server`, `sqlite3`, `hashlib`, `json`, `pathlib`, `collections`, `threading`, `time`). The project invariant `dependencies = []` guarantees zero supply-chain attack surfaces and zero transitive dependency network calls.
 
 ---

@@ -11,7 +11,7 @@
 [![MCP Security Audit: Grade A (100/100)](https://img.shields.io/badge/MCP%20Audit-Grade%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Tests: 915/915 Passed (100%)](https://img.shields.io/badge/tests-915%2F915%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 994/994 Passed (100%)](https://img.shields.io/badge/tests-994%2F994%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Portable Launchers](https://img.shields.io/badge/launchers-20%20portable%20scripts-blue.svg)](#)
 [![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -50,7 +50,7 @@
 8. [Advanced Search Query Syntax](#advanced-search-query-syntax)
 9. [Safe Junk Cleaner & 3-Tier Protection Hierarchy](#safe-junk-cleaner--3-tier-protection-hierarchy)
 10. [Model Context Protocol (MCP) Server & AI Coding Agent Integration](#model-context-protocol-mcp-server--ai-coding-agent-integration)
-11. [Testing & Verification Record (915 Tests, 100% Pass Rate)](#testing--verification-record-915-tests-100-pass-rate)
+11. [Testing & Verification Record (994 Tests, 100% Pass Rate)](#testing--verification-record-994-tests-100-pass-rate)
 12. [Privacy, Security & Data Isolation](#privacy-security--data-isolation)
 13. [Contributing & License](#contributing--license)
 
@@ -349,7 +349,7 @@ All commands can be invoked via `smart-drive <command>` or `python -m smart_driv
 | `init` | `--profile <name>`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
 | `status` | `--root <path>`, `--json` | Inspect SSD mount point, detected filesystem, geometry, shield health, and taxonomy status. |
 | `audit` | `--root <path>`, `--json`, `--markdown`, `--export <file>` | Detailed storage breakdown and cluster slack metrics, modelled at 512 KB exFAT clusters; the report names the detected filesystem and says when that model does not apply (APFS, NTFS, ext4 ...). |
-| `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run safeguard and inviolable whitelist protection. |
+| `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run safeguard and inviolable whitelist protection. With `--apply` it exits `1` if a deletion failed (items refused by the safety guard are reported but are not failures). |
 | `search` | `<query>`, `--ext <ext>`, `--size <spec>`, `--category <cat>`, `--limit <n>`, `--json` | Sub-10ms SQLite FTS5 multi-criteria query parser with BM25 ranking. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Autonomous drive auto-zoning, loose-file relocation, AcademicClassifier routing, and slack rebalancing. |
 | `sentinel` | `--root <path>`, `--auto-heal`, `--no-heal`, `--json` | 1-touch health audit (detected filesystem, git repo status) and shield self-healing (alias: `agent-check`). |
@@ -359,7 +359,7 @@ All commands can be invoked via `smart-drive <command>` or `python -m smart_driv
 | `snapshot list` | `--root <path>`, `--json` | Lists all recorded point-in-time snapshots with sizes and file counts. |
 | `snapshot verify` | `<name>`, `--no-untracked`, `--root <path>`, `--json` | Validates data integrity of files against snapshot manifest to detect tampering or bit rot. |
 | `backup` | `--target <path>`, `--dry-run`, `--hash`, `--partitions <list>`, `--include-hidden`, `--json` | Safe incremental backup copying only modified/new files to target directory. |
-| `classify` | `[path]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Deep content inspection (magic bytes & markers) for AI models, datasets, docs, and code repos. |
+| `classify` | `[path]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Deep content inspection (magic bytes & markers) for AI models, datasets, docs, and code repos. Symlinks and junctions are never followed or moved, and nothing is read from or written to a place that is reached through one. |
 | `offload` | `--scan`, `--move <name>`, `--target <drive>`, `--revert <name>`, `--dry-run`, `--json` | Developer/AI cache discovery and transactional offloading to a secondary drive (NTFS junction on Windows, symbolic link on macOS/Linux). |
 | `health` | `[drive]`, `--root <path>`, `--json` | SSD health, TRIM verification (Windows), partition geometry, and storage utilization monitor. Takes a drive letter on Windows or a volume path (`/Volumes/MySSD`) on macOS/Linux. |
 | `dup` | `--root <path>`, `--json` | 3-phase SHA-256 duplicate candidate detector with cluster slack reclamation preview. |
@@ -440,9 +440,9 @@ SmartDrive-OS is officially certified and indexed on the [M8ven MCP Directory](h
 
 ---
 
-## Testing & Verification Record (915 Tests, 100% Pass Rate)
+## Testing & Verification Record (994 Tests, 100% Pass Rate)
 
-SmartDrive-OS is tested across **915 automated unit, integration, stress, and adversarial test cases** using **100% pure standard library `unittest`**:
+SmartDrive-OS is tested across **994 automated unit, integration, stress, and adversarial test cases** using **100% pure standard library `unittest`**:
 
 ```bash
 # Run full test suite with pytest:
@@ -455,25 +455,26 @@ python -m unittest discover tests -v
 ### Verified Test Results:
 ```text
 ============================= test session starts ==============================
-collected 915 items
+collected 994 items
 
 ........................................................................ [  7%]
-....s......s..... [  9%]
-........................................................................ [ 17%]
-............................................................................................ [ 27%]
-.............................................................sssssssss.. [ 35%]
-........................................................................ [ 43%]
-........................................................................ [ 51%]
-......................................................... [ 57%]
-.................................................................................................................................................. [ 73%]
-........................................................................ [ 81%]
-........................................................................ [ 89%]
-........................................................................ [ 97%]
-...........................                                              [100%]
-================== 904 passed, 11 skipped, 192 subtests passed ==================
+........................................................ [ 12%]
+.................................................................... [ 19%]
+...............................................................ss........................ [ 28%]
+........................................................................ [ 35%]
+................................................................. [ 42%]
+........................................................................ [ 49%]
+............................................................ [ 55%]
+........................................ [ 59%]
+................................................................... [ 66%]
+.................................................................... [ 73%]
+........................................................................ [ 80%]
+.......ssssss.sss................................................................................................................................................ [ 96%]
+................................                                         [100%]
+================== 983 passed, 11 skipped, 262 subtests passed ==================
 ```
 
-- **Pass Rate**: **100.0%** (904 passed, 11 platform-skipped on non-Windows OS, 0 failures, 0 errors).
+- **Pass Rate**: **100.0%** (983 passed, 11 platform-skipped on non-Windows OS, 0 failures, 0 errors).
 - **Adversarial Filesystem Coverage**: Cluster sizes from 512B to 32MB, boundary conditions (0B, 1B, 512KB-1B, 512KB, 512KB+1B), and large-scale stress tests.
 - **Inviolable Defense Coverage**: Complete verification of repository self-defense, Windows system folders, games, and active SQL Server database protection.
 - **AcademicClassifier Coverage**: Full course regex matching, mojibake repair, and semester routing.
@@ -488,7 +489,7 @@ SmartDrive-OS is engineered from the ground up with a strict **local-first, zero
 - **Zero Telemetry & Phone-Home**: Zero analytics, zero usage trackers, and zero background network beacons.
 - **Zero PII Logging**: File contents, credentials, and source code secrets are never parsed or harvested; only basic filesystem metadata is stored in local `.smart_drive/index.db`.
 - **Air-Gap Ready**: Zero external pip dependencies (`dependencies = []`). The embedded Web Dashboard binds exclusively to `127.0.0.1` (`localhost`), and the MCP Server operates solely over local `stdio`.
-- **Dashboard Request Guard**: The dashboard API answers only requests whose `Host` is `127.0.0.1`/`localhost` on its own port and whose `Origin`, when present, is the dashboard itself, so a web page open in your browser can neither read it nor trigger a purge. Foreign hosts/origins get `403`, state-changing calls must be `application/json`, and responses carry `X-Frame-Options`, `nosniff` and a Content-Security-Policy. To let a local front-end dev server call the API, opt in explicitly: `SMART_DRIVE_UI_ALLOWED_ORIGINS=http://localhost:5173`.
+- **Dashboard Request Guard**: The dashboard API answers only requests whose `Host` is `127.0.0.1`/`localhost` on its own port and whose `Origin`, when present, is the dashboard itself, and that browsers do not label as coming from another site (`Sec-Fetch-Site`), so a web page open in your browser can neither read it, trigger a purge, nor make it run a scan. Foreign hosts/origins/sites get `403`, state-changing calls must be `application/json`, and responses carry `X-Frame-Options`, `nosniff` and a Content-Security-Policy. To let a local front-end dev server call the API, opt in explicitly: `SMART_DRIVE_UI_ALLOWED_ORIGINS=http://localhost:5173`.
 - **Defensive Safeguards**: Inviolable whitelist protecting critical files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`), mandatory dry-run defaults for cleanup, and strict input boundary validation.
 
 For full architectural details, security models, and compliance specifications, please read our authoritative [PRIVACY.md](PRIVACY.md).
