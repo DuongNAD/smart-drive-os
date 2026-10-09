@@ -782,6 +782,12 @@ def get_dashboard_html() -> str:
       return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
     }
 
+    // File and folder names come from the drive, so they are untrusted: escape before using innerHTML.
+    function esc(value) {
+      const entities = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+      return String(value == null ? '' : value).replace(/[&<>"']/g, ch => entities[ch]);
+    }
+
     function switchTab(tabId) {
       document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
       ['overview', 'search', 'cleanup'].forEach(id => {
@@ -832,7 +838,7 @@ def get_dashboard_html() -> str:
           const pct = stat.slack_percentage || 0;
           card.innerHTML = `
             <div class="tax-head">
-              <span>${name}</span>
+              <span>${esc(name)}</span>
               <span style="color: var(--accent-amber);">${pct.toFixed(1)}% waste</span>
             </div>
             <div class="progress-bar-bg">
@@ -856,7 +862,7 @@ def get_dashboard_html() -> str:
           for (const d of topSlack.slice(0, 10)) {
             const row = document.createElement('tr');
             row.innerHTML = `
-              <td class="code-font">${d.rel_path}</td>
+              <td class="code-font">${esc(d.rel_path)}</td>
               <td>${(d.recursive_files || 0).toLocaleString()}</td>
               <td>${formatBytes(d.recursive_bytes || 0)}</td>
               <td>${formatBytes(d.recursive_allocated || 0)}</td>
@@ -915,13 +921,13 @@ def get_dashboard_html() -> str:
           const row = document.createElement('tr');
           const rankVal = typeof m.rank === 'number' ? m.rank.toFixed(2) : (m.rank || '0.00');
           row.innerHTML = `
-            <td style="font-weight: 600; color: var(--accent-cyan);">${m.name}</td>
-            <td class="code-font" style="color: var(--text-muted);">${m.path}</td>
-            <td><span class="badge badge-dev">${m.category || 'Other'}</span></td>
+            <td style="font-weight: 600; color: var(--accent-cyan);">${esc(m.name)}</td>
+            <td class="code-font" style="color: var(--text-muted);">${esc(m.path)}</td>
+            <td><span class="badge badge-dev">${esc(m.category || 'Other')}</span></td>
             <td>${formatBytes(m.size)}</td>
             <td>${formatBytes(m.allocated_size || 0)}</td>
             <td style="color: var(--accent-amber);">${formatBytes(m.slack_bytes || 0)}</td>
-            <td style="color: var(--text-faint);">${rankVal}</td>
+            <td style="color: var(--text-faint);">${esc(rankVal)}</td>
           `;
           tbody.appendChild(row);
         }
@@ -1001,8 +1007,8 @@ def get_dashboard_html() -> str:
         const row = document.createElement('tr');
         row.innerHTML = `
           <td><span class="badge ${item.tier === 1 ? 'badge-safe' : item.tier === 2 ? 'badge-dev' : 'badge-optin'}">T${item.tier}</span></td>
-          <td class="code-font">${item.rel_path}</td>
-          <td>${item.description || item.rule || ''}</td>
+          <td class="code-font">${esc(item.rel_path)}</td>
+          <td>${esc(item.description || item.rule || '')}</td>
           <td>${formatBytes(item.size)}</td>
           <td>${formatBytes(item.allocated_size)}</td>
           <td style="color: var(--accent-amber);">${formatBytes(item.slack_bytes || 0)}</td>
