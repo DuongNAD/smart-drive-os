@@ -351,7 +351,10 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
 
         db = DatabaseManager(db_path)
         engine = SearchEngine(db)
-        res = engine.search(params)
+        try:
+            res = engine.search(params)
+        finally:
+            db.close()
 
         matches_data = []
         for m in res.matches:

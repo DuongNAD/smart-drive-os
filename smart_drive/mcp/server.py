@@ -700,7 +700,10 @@ class SmartDriveMCPServer:
 
         db = DatabaseManager(db_path)
         engine = SearchEngine(db)
-        result = engine.search(params)
+        try:
+            result = engine.search(params)
+        finally:
+            db.close()
 
         MAX_CHAR_BUDGET = 4800
         serialized_matches = []

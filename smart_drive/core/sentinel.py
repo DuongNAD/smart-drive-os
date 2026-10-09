@@ -104,6 +104,7 @@ def check_search_database(root: str, db_path: Optional[str] = None) -> Dict[str,
         }
 
     size_bytes = os.path.getsize(target_db)
+    con: Optional[sqlite3.Connection] = None
     try:
         con = sqlite3.connect(target_db, timeout=5.0)
         cur = con.cursor()
@@ -119,7 +120,6 @@ def check_search_database(root: str, db_path: Optional[str] = None) -> Dict[str,
         except sqlite3.OperationalError:
             file_count = 0
 
-        con.close()
         return {
             "path": target_db,
             "exists": True,
@@ -137,6 +137,9 @@ def check_search_database(root: str, db_path: Optional[str] = None) -> Dict[str,
             "file_count": 0,
             "size_bytes": size_bytes,
         }
+    finally:
+        if con is not None:
+            con.close()  # also when quick_check itself fails on a damaged file
 
 
 def check_exfat_safety(root: str) -> Dict[str, Any]:

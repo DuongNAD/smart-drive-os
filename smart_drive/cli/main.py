@@ -128,10 +128,12 @@ def cmd_index(args: argparse.Namespace) -> int:
 
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     db = DatabaseManager(db_path)
-    db.initialize_schema()
-    mgr = IndexManager(db, root)
-
-    stats = mgr.full_index(batch_size=getattr(args, "batch", 500) or 500)
+    try:
+        db.initialize_schema()
+        mgr = IndexManager(db, root)
+        stats = mgr.full_index(batch_size=getattr(args, "batch", 500) or 500)
+    finally:
+        db.close()
     print(f"✓ Indexed {stats.indexed_files:,} files in {stats.elapsed_seconds:.2f}s ({stats.throughput_fps:,.1f} files/sec).")
     return 0
 
@@ -153,9 +155,11 @@ def cmd_update(args: argparse.Namespace) -> int:
         return 1
 
     db = DatabaseManager(db_path)
-    mgr = IndexManager(db, root)
-
-    inc = mgr.incremental_update()
+    try:
+        mgr = IndexManager(db, root)
+        inc = mgr.incremental_update()
+    finally:
+        db.close()
     if getattr(args, "json", False):
         print(json.dumps(dataclasses.asdict(inc), indent=2))
         return 0

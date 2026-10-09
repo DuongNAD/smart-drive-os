@@ -76,7 +76,10 @@ def cmd_search(args: argparse.Namespace) -> int:
     if limit_flag is not None:
         params.limit = int(limit_flag)
 
-    result = engine.search(params)
+    try:
+        result = engine.search(params)
+    finally:
+        db.close()
 
     # On stderr so that --json / --csv output stays machine-readable.
     for warning in result.warnings:

@@ -234,7 +234,10 @@ class DriveInitializer:
         os.makedirs(db_dir, exist_ok=True)
         db_path = os.path.join(db_dir, "index.db")
         db = DatabaseManager(db_path)
-        db.initialize_schema()
+        try:
+            db.initialize_schema()
+        finally:
+            db.close()
 
         return {
             "status": "initialized",

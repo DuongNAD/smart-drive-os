@@ -69,9 +69,12 @@ def cmd_organize(args: argparse.Namespace) -> int:
         if os.path.exists(db_path):
             try:
                 db = DatabaseManager(db_path)
-                mgr = IndexManager(db, root)
-                inc = mgr.incremental_update()
-                inc_res = dataclasses.asdict(inc)
+                try:
+                    mgr = IndexManager(db, root)
+                    inc = mgr.incremental_update()
+                    inc_res = dataclasses.asdict(inc)
+                finally:
+                    db.close()
             except Exception:
                 pass
 
