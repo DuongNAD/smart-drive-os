@@ -16,6 +16,7 @@ Provides subcommands:
 - update: Fast incremental search index synchronization.
 - snapshot: Point-in-time snapshot creation, listing, and SHA-256 verification.
 - backup: Safe incremental backup to target directory or drive.
+- repos: Duplicate git clones in one place, and sync state of portable-SSD mirrors (read-only).
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from smart_drive.cli.cmd_mcp_config import cmd_mcp_config
 from smart_drive.cli.cmd_offload import cmd_offload
 from smart_drive.cli.cmd_organize import cmd_organize
 from smart_drive.cli.cmd_path_check import cmd_path_check
+from smart_drive.cli.cmd_repos import cmd_repos
 from smart_drive.cli.cmd_search import cmd_search
 from smart_drive.cli.cmd_sentinel import cmd_sentinel
 from smart_drive.cli.cmd_snapshot import cmd_snapshot
@@ -398,6 +400,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_health.add_argument("--root", help="Alias for target drive root")
     p_health.add_argument("--json", action="store_true", help="Output health report in structured JSON format")
 
+    # 18. repos
+    p_repos = subparsers.add_parser(
+        "repos",
+        help="Find duplicate git clones and check portable-SSD mirrors (read-only)",
+    )
+    p_repos.add_argument(
+        "paths",
+        nargs="*",
+        help="Folders to scan (default: the SSD, your home folder and every other non-system drive)",
+    )
+    p_repos.add_argument("--root", help="Root directory of the portable SSD")
+    p_repos.add_argument(
+        "--portable",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Also count clones under PATH as being on the portable SSD (repeatable)",
+    )
+    p_repos.add_argument("--max-depth", type=int, default=12, help="How deep to look for clones (default: 12)")
+    p_repos.add_argument("--json", action="store_true", help="Output the full report in JSON format")
+
     # self-path-check subcommand
     p_path_check = subparsers.add_parser(
         "self-path-check",
@@ -437,6 +460,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "classify": cmd_classify,
         "offload": cmd_offload,
         "health": cmd_health,
+        "repos": cmd_repos,
         "self-path-check": cmd_path_check,
         "path-check": cmd_path_check,
         "self_path_check": cmd_path_check,

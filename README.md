@@ -10,7 +10,7 @@
 [![MCP Security Audit: Grade A (100/100)](https://img.shields.io/badge/MCP%20Audit-Grade%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Tests: 915/915 Passed (100%)](https://img.shields.io/badge/tests-915%2F915%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 943/943 Passed (100%)](https://img.shields.io/badge/tests-943%2F943%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Portable Launchers](https://img.shields.io/badge/launchers-20%20portable%20scripts-blue.svg)](#)
 [![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -41,6 +41,7 @@
    - [8. C-Drive Cache Offloader & NTFS Directory Junctions (`smart-drive offload`)](#8-c-drive-cache-offloader--ntfs-directory-junctions-smart-drive-offload)
    - [9. SHA-256 Snapshot Integrity & Incremental Backup Engine](#9-sha-256-snapshot-integrity--incremental-backup-engine)
    - [10. 100% Zero Pip Dependencies (`dependencies = []`)](#10-100-zero-pip-dependencies-dependencies--)
+   - [11. Duplicate Clones & Portable-SSD Mirrors (`smart-drive repos`)](#11-duplicate-clones--portable-ssd-mirrors-smart-drive-repos)
 4. [3-Step Quickstart](#3-step-quickstart)
 5. [The 5 Preset Profiles](#the-5-preset-profiles)
 6. [Cross-Platform Portable Launchers Guide](#cross-platform-portable-launchers-guide)
@@ -252,6 +253,14 @@ All 20 launchers reside both in the repository root and in `launchers/` for inst
 - Fully written using the Python Standard Library (`sqlite3`, `hashlib`, `hmac`, `json`, `urllib`, `shutil`, `pathlib`, `ctypes`, `subprocess`, `argparse`).
 - Guaranteed to run out of the box on any machine with Python 3.9+ installed.
 
+### 11. Duplicate Clones & Portable-SSD Mirrors (`smart-drive repos`)
+A project is meant to live once on the portable SSD and once on each machine it is plugged into. `smart-drive repos` scans the SSD, your home folder and every other non-system drive (or the folders you pass) and sorts every clone by project and place:
+- **Mirrors** (the same project on the SSD and on this machine) are expected. The report only says whether they are in sync and what each side needs: `commit`, `push`, `pull`, or `fetch to compare`.
+- **Duplicates** (the same project twice on the SSD, or twice on this machine's drives) get a plan: which clone to keep (the newest commit), which copies are redundant (same branch), and which should become a `git worktree` of the kept clone (another branch), with the exact command. On git 2.48+ the command uses `--relative-paths`, so worktrees on the SSD survive a new drive letter or macOS.
+- **Blocked** copies (uncommitted files, stashes, unpushed commits, linked worktrees, or no remote) are never offered for removal.
+- Linked worktrees are part of their clone, never duplicates; worktrees whose folder is gone are listed with `git worktree prune`.
+- Read-only: nothing is fetched, written, or deleted. Dependency, build, and hidden folders are not searched. `--json` returns the full report for agents.
+
 ---
 
 ## 3-Step Quickstart
@@ -349,6 +358,7 @@ All commands can be invoked via `smart-drive <command>` or `python -m smart_driv
 | `offload` | `--scan`, `--move <name>`, `--target <drive>`, `--revert <name>`, `--dry-run`, `--json` | Developer/AI cache discovery and transactional offloading to a secondary drive (NTFS junction on Windows, symbolic link on macOS/Linux). |
 | `health` | `[drive]`, `--root <path>`, `--json` | SSD health, TRIM verification (Windows), partition geometry, and storage utilization monitor. Takes a drive letter on Windows or a volume path (`/Volumes/MySSD`) on macOS/Linux. |
 | `dup` | `--root <path>`, `--json` | 3-phase SHA-256 duplicate candidate detector with cluster slack reclamation preview. Several names for the same data (hard links) are one file, never offered as copies to delete. |
+| `repos` | `[paths...]`, `--root <ssd>`, `--portable <path>`, `--max-depth <n>`, `--json` | Read-only report of git clones: duplicates of one project in the same place (with keep / remove / worktree suggestions) and the sync state of SSD-vs-machine mirrors. |
 | `index` | `--root <path>`, `--db <path>`, `--batch <n>` | Full SQLite FTS5 index creation (>15,000 files/sec). |
 | `update` | `--root <path>`, `--db <path>`, `--json` | Fast $O(1)$ incremental search index synchronization (<2s). |
 
