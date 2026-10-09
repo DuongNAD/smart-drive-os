@@ -144,6 +144,33 @@ class TestArchivedCopiesOfManagedDrives(_Fixture):
         self.assertIn("02_Learning_Knowledge/old_drive/.smart_drive", report.excluded_dirs)
 
 
+class TestTheLiveStateFolderIsNeverSnapshotted(_Fixture):
+    """With `--partitions .` the drive root itself is walked, and with --include-hidden that reached the live
+    .smart_drive: the search index was recorded and the manifest being written showed up as untracked."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _touch(self.root, ".smart_drive/index.db", "database")
+        _touch(self.root, ".smart_drive/snapshots/earlier.json", "{}")
+
+    def test_the_drive_root_as_a_partition_skips_it_even_with_include_hidden(self) -> None:
+        manifest = self.mgr.create_snapshot("whole", partitions=["."], include_hidden=True)
+        self.assertFalse([f for f in manifest.files if f.startswith(".smart_drive")], sorted(manifest.files)[:5])
+        self.assertIn(HIDDEN[0], manifest.files)  # the user's own hidden folders are in
+        report = self.mgr.verify_snapshot("whole")
+        self.assertEqual([f for f in report.untracked_files if f.startswith(".smart_drive")], [])
+
+    def test_the_backup_of_the_drive_root_skips_it_too(self) -> None:
+        self.mgr.incremental_backup(self.target, partitions=["."], include_hidden=True)
+        self.assertFalse((self.target / ".smart_drive").exists())
+        self.assertTrue((self.target / HIDDEN[0]).is_file())
+
+    def test_a_nested_copy_is_still_user_data(self) -> None:
+        _touch(self.root, "02_Learning_Knowledge/old_drive/.smart_drive/index.db", "archived")
+        manifest = self.mgr.create_snapshot("nested", partitions=["."], include_hidden=True)
+        self.assertIn("02_Learning_Knowledge/old_drive/.smart_drive/index.db", manifest.files)
+
+
 class TestFoldersOnTheExclusionListAreReported(_Fixture):
     """Downloads, game libraries ... are always skipped by snapshot and backup, but never silently."""
 

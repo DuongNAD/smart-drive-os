@@ -94,10 +94,13 @@ def _prune_dirs(
     reports can say what a run did not cover.
     """
     kept: List[str] = []
+    at_drive_root = os.path.normcase(os.path.abspath(str(root_dir))) == os.path.normcase(os.path.abspath(str(base)))
     for name in dirs:
         lowered = name.lower()
         if lowered in _OS_BOOKKEEPING_DIRS:
             continue
+        if at_drive_root and lowered in _TOOL_STATE_DIRS:
+            continue  # this tool's own live state (index, manifests), reached when the partition is the drive root
         if lowered in _NAMED_EXCLUDED_DIRS:
             left_out.append(normalize_rel_path(Path(root_dir) / name, base))
             continue
