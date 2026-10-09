@@ -384,7 +384,7 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
             "pprint", "queue", "random", "re", "select", "shlex", "shutil", "signal",
             "socket", "socketserver", "sqlite3", "stat", "string", "struct", "subprocess",
             "sys", "tempfile", "textwrap", "threading", "time", "timeit", "traceback",
-            "types", "typing", "unittest", "urllib", "uuid", "warnings", "weakref", "webbrowser",
+            "types", "typing", "unicodedata", "unittest", "urllib", "uuid", "warnings", "weakref", "webbrowser",
             "xml", "zipfile", "zlib",
         }
 
