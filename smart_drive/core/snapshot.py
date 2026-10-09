@@ -58,8 +58,16 @@ PARTITION_ALIASES: Dict[str, str] = {
 # opt in with include_hidden / --include-hidden.
 USER_HIDDEN_DIRS: frozenset = frozenset({".git", ".agents"})
 
+# This tool's own state folders (search index, snapshot manifests). Everywhere else they are bookkeeping
+# that is never scanned, but inside a snapshot or backup a nested one is an archived copy of another
+# managed drive: it is an ordinary hidden folder, left out and reported by default, kept with
+# include_hidden. (The live one in the drive root is never reached: only the partitions are walked.)
+_TOOL_STATE_DIRS: frozenset = frozenset({".smart_drive", ".smart_drive_manager"})
+
 # OS bookkeeping and the like: never part of a snapshot or backup, whatever the options.
-_SYSTEM_EXCLUDED_DIRS: frozenset = frozenset(d.lower() for d in DEFAULT_EXCLUDE_DIRS) - USER_HIDDEN_DIRS
+_SYSTEM_EXCLUDED_DIRS: frozenset = (
+    frozenset(d.lower() for d in DEFAULT_EXCLUDE_DIRS) - USER_HIDDEN_DIRS - _TOOL_STATE_DIRS
+)
 
 
 def _prune_dirs(

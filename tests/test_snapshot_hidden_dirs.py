@@ -112,6 +112,38 @@ class TestBackupHiddenFolders(_Fixture):
         self.assertEqual(again.copied_count, 0)
 
 
+class TestArchivedCopiesOfManagedDrives(_Fixture):
+    """A nested .smart_drive is another managed drive's state, archived inside a partition: user data."""
+
+    NESTED = "02_Learning_Knowledge/old_drive/.smart_drive/snapshots/s1.json"
+
+    def setUp(self) -> None:
+        super().setUp()
+        _touch(self.root, self.NESTED, "{}")
+        _touch(self.root, "02_Learning_Knowledge/old_drive/.smart_drive_manager/index.db", "db")
+
+    def test_default_snapshot_reports_them_instead_of_dropping_them_silently(self) -> None:
+        manifest = self.mgr.create_snapshot("s1")
+        self.assertNotIn(self.NESTED, manifest.files)
+        self.assertIn("02_Learning_Knowledge/old_drive/.smart_drive", manifest.excluded_dirs)
+        self.assertIn("02_Learning_Knowledge/old_drive/.smart_drive_manager", manifest.excluded_dirs)
+
+    def test_include_hidden_keeps_them(self) -> None:
+        manifest = self.mgr.create_snapshot("s2", include_hidden=True)
+        self.assertIn(self.NESTED, manifest.files)
+        self.assertIn("02_Learning_Knowledge/old_drive/.smart_drive_manager/index.db", manifest.files)
+
+    def test_include_hidden_backup_copies_them(self) -> None:
+        report = self.mgr.incremental_backup(self.target, include_hidden=True)
+        self.assertEqual((self.target / self.NESTED).read_text(encoding="utf-8"), "{}")
+        self.assertEqual(report.excluded_dirs, [])
+
+    def test_default_backup_names_them_in_what_it_left_out(self) -> None:
+        report = self.mgr.incremental_backup(self.target)
+        self.assertFalse((self.target / self.NESTED).exists())
+        self.assertIn("02_Learning_Knowledge/old_drive/.smart_drive", report.excluded_dirs)
+
+
 class TestCoverageReporting(_Fixture):
     def test_uncovered_entries_lists_folders_and_loose_files(self) -> None:
         partitions = ["02_Learning_Knowledge", "03_Development_Projects"]
