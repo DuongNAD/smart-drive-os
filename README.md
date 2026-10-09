@@ -11,7 +11,7 @@
 [![MCP Security Audit: Grade A (100/100)](https://img.shields.io/badge/MCP%20Audit-Grade%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Tests: 1008/1008 Passed (100%)](https://img.shields.io/badge/tests-1008%2F1008%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 1020/1020 Passed (100%)](https://img.shields.io/badge/tests-1020%2F1020%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Portable Launchers](https://img.shields.io/badge/launchers-20%20portable%20scripts-blue.svg)](#)
 [![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -50,7 +50,7 @@
 8. [Advanced Search Query Syntax](#advanced-search-query-syntax)
 9. [Safe Junk Cleaner & 3-Tier Protection Hierarchy](#safe-junk-cleaner--3-tier-protection-hierarchy)
 10. [Model Context Protocol (MCP) Server & AI Coding Agent Integration](#model-context-protocol-mcp-server--ai-coding-agent-integration)
-11. [Testing & Verification Record (1008 Tests, 100% Pass Rate)](#testing--verification-record-1008-tests-100-pass-rate)
+11. [Testing & Verification Record (1020 Tests, 100% Pass Rate)](#testing--verification-record-1020-tests-100-pass-rate)
 12. [Privacy, Security & Data Isolation](#privacy-security--data-isolation)
 13. [Contributing & License](#contributing--license)
 
@@ -440,9 +440,9 @@ SmartDrive-OS is officially certified and indexed on the [M8ven MCP Directory](h
 
 ---
 
-## Testing & Verification Record (1008 Tests, 100% Pass Rate)
+## Testing & Verification Record (1020 Tests, 100% Pass Rate)
 
-SmartDrive-OS is tested across **1008 automated unit, integration, stress, and adversarial test cases** using **100% pure standard library `unittest`**:
+SmartDrive-OS is tested across **1020 automated unit, integration, stress, and adversarial test cases** using **100% pure standard library `unittest`**:
 
 ```bash
 # Run full test suite with pytest:
@@ -455,24 +455,28 @@ python -m unittest discover tests -v
 ### Verified Test Results:
 ```text
 ============================= test session starts ==============================
-collected 1008 items
+collected 1020 items
 
-.................................................................... [  6%]
-......................................................... [ 12%]
-........................................................................ [ 19%]
-.................................................................... [ 26%]
-............................................................ [ 32%]
-........................................................................ [ 39%]
-...............................................................................................................sss.ssssss............................................... [ 56%]
-........................................................................ [ 63%]
-........................................................................ [ 70%]
-...........................................................................................................................s....s..................................................................................... [ 91%]
-........................................................................ [ 98%]
-.............                                                            [100%]
-================== 997 passed, 11 skipped, 301 subtests passed ==================
+........................................................................ [  7%]
+........................................................................ [ 14%]
+...................................................................... [ 20%]
+............................................................ [ 26%]
+........................................................................ [ 33%]
+..................................................................... [ 40%]
+....................................................... [ 46%]
+........................................................................ [ 53%]
+................................. [ 56%]
+s..s......................sss.........ssssss............ [ 61%]
+................................... [ 65%]
+....................................................................................................... [ 75%]
+........................................................................ [ 82%]
+.......................................................................................... [ 91%]
+.................................................... [ 96%]
+.....................................                                    [100%]
+================== 1009 passed, 11 skipped, 313 subtests passed ==================
 ```
 
-- **Pass Rate**: **100.0%** (997 passed, 11 platform-skipped on non-Windows OS, 0 failures, 0 errors).
+- **Pass Rate**: **100.0%** (1009 passed, 11 platform-skipped on non-Windows OS, 0 failures, 0 errors).
 - **Adversarial Filesystem Coverage**: Cluster sizes from 512B to 32MB, boundary conditions (0B, 1B, 512KB-1B, 512KB, 512KB+1B), and large-scale stress tests.
 - **Inviolable Defense Coverage**: Complete verification of repository self-defense, Windows system folders, games, and active SQL Server database protection.
 - **AcademicClassifier Coverage**: Full course regex matching, mojibake repair, and semester routing.
