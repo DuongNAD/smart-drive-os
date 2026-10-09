@@ -29,6 +29,17 @@ def _to_sqlite_int(value: int) -> int:
     return max(-_SQLITE_MAX_INT - 1, min(int(value), _SQLITE_MAX_INT))
 
 
+MAX_WARNINGS = 10
+
+
+def _tidy_warnings(items: List[str]) -> List[str]:
+    """Each distinct warning once (a query with 140 `size:x` tokens says it once), at most MAX_WARNINGS of them."""
+    unique = list(dict.fromkeys(items))
+    if len(unique) > MAX_WARNINGS:
+        unique = unique[:MAX_WARNINGS] + [f"... and {len(unique) - MAX_WARNINGS} more warning(s)"]
+    return unique
+
+
 def _category_key(text: str) -> str:
     """Spelling-insensitive form of a category: 'AI Models', 'ai_models' and 'ai-models' compare equal."""
     return re.sub(r"[\s_/\-]+", " ", text).strip().lower()
@@ -301,7 +312,7 @@ class SearchEngine:
                 )
 
         elapsed = (time.perf_counter() - t0) * 1000.0
-        return SearchResult(matches=matches, total_count=total_count, elapsed_ms=elapsed, warnings=warnings)
+        return SearchResult(matches=matches, total_count=total_count, elapsed_ms=elapsed, warnings=_tidy_warnings(warnings))
 
 
 __all__ = [

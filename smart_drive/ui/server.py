@@ -70,6 +70,20 @@ def _int_param(params: Dict[str, List[str]], name: str, default: int) -> int:
         raise _BadRequest(f"Query parameter '{name}' must be an integer") from None
 
 
+def _size_param(params: Dict[str, List[str]], name: str, warnings: List[str]) -> Optional[int]:
+    """A size bound from the query string: ASCII digits only, clamped, and a warning if it cannot be used.
+
+    str.isdigit() also accepts characters such as "²", which int() then rejects, so it is not enough.
+    """
+    raw = params.get(name, [None])[0]
+    if raw is None or raw == "":
+        return None
+    if not (raw.isascii() and raw.isdigit()):
+        warnings.append(f"Ignored {name} {raw[:40]!r}: expected a whole number of bytes")
+        return None
+    return int(raw) if len(raw) <= 18 else (1 << 63) - 1  # nothing is bigger than that, whatever the digits
+
+
 def _parse_clean_request(req_data: Any) -> Tuple[List[int], bool, Optional[List[str]]]:
     """Validates the /api/junk/clean payload: returns (tiers, dry_run, paths)."""
     if not isinstance(req_data, dict):
@@ -154,6 +168,21 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
         if origin and origin not in self._allowed_origins():
             self.send_error_response("Cross-origin requests are not allowed", status=403)
             return False
+        # A cross-site "no-cors" GET (an <img src="http://127.0.0.1:8765/api/audit"> on another site) carries no
+        # Origin, yet makes us run a full-drive scan. Browsers label it with Sec-Fetch-Site, so only the dashboard
+        # itself ("same-origin") or the user typing the address ("none") may reach the API; "same-site" is another
+        # local application on a different port. A page may still *link* to the dashboard (a top-level navigation).
+        site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
+        if site and site not in ("same-origin", "none"):
+            is_page_navigation = (
+                self.command == "GET"
+                and (self.headers.get("Sec-Fetch-Mode") or "").strip().lower() == "navigate"
+                and (self.headers.get("Sec-Fetch-Dest") or "").strip().lower() == "document"
+                and not self.path.split("?", 1)[0].startswith("/api/")
+            )
+            if not is_page_navigation:
+                self.send_error_response("Cross-site requests are not allowed", status=403)
+                return False
         return True
 
     def _set_cors_headers(self) -> None:
@@ -180,7 +209,7 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
             payload = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         except Exception as exc:
             logger.error("JSON serialization failed: %s", exc)
-            self.send_error_response(f"Serialization error: {exc}", status=500)
+            self.send_error_response("Internal server error", status=500)  # the detail stays in our log
             return
 
         self.send_response(status)
@@ -342,12 +371,13 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
                 if clean:
                     params.extensions.add(clean)
 
-        min_size = query_params.get("min_size", [None])[0]
-        max_size = query_params.get("max_size", [None])[0]
-        if min_size is not None and min_size.isdigit():
-            params.min_size = int(min_size)
-        if max_size is not None and max_size.isdigit():
-            params.max_size = int(max_size)
+        # Bounds from the URL narrow whatever the query text already asked for; they never widen it.
+        low = _size_param(query_params, "min_size", params.warnings)
+        if low is not None:
+            params.min_size = low if params.min_size is None else max(params.min_size, low)
+        high = _size_param(query_params, "max_size", params.warnings)
+        if high is not None:
+            params.max_size = high if params.max_size is None else min(params.max_size, high)
 
         db = DatabaseManager(db_path)
         engine = SearchEngine(db)

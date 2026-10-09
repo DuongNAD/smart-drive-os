@@ -39,6 +39,7 @@ SIZES = {
     "sizes/k1.bin": 1024,
     "sizes/k1plus.bin": 1025,
 }
+FRACTIONAL = {"frac/f101.frc": 101, "frac/f102.frc": 102, "frac/f103.frc": 103, "frac/f104.frc": 104}
 OTHER_FILES = {
     "my_project/a.txt": 5,
     "myXproject/b.txt": 5,
@@ -54,7 +55,7 @@ class _Drive(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="sd_quirk_")).resolve()
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
-        for rel, size in {**SIZES, **OTHER_FILES}.items():
+        for rel, size in {**SIZES, **FRACTIONAL, **OTHER_FILES}.items():
             path = self.root / rel
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"x" * size)
@@ -116,6 +117,26 @@ class TestSizeBoundsAreStrictOrInclusiveAsWritten(_Drive):
 
     def test_two_bounds_make_a_range(self) -> None:
         self.assertEqual(self.found("size:>99 size:<101", "--ext", "bin"), ["s100.bin"])
+
+    def test_a_bound_between_two_whole_sizes_is_rounded_the_way_the_comparison_needs(self) -> None:
+        """0.1KB is 102.4 bytes: no file is exactly that, 102 is below it and 103 above."""
+        cases = {
+            ">=0.1KB": ["f103.frc", "f104.frc"],
+            ">0.1KB": ["f103.frc", "f104.frc"],
+            "<0.1KB": ["f101.frc", "f102.frc"],  # used to drop the 102-byte file
+            "<=0.1KB": ["f101.frc", "f102.frc"],
+            "0.1KB": [],  # used to match the 102-byte file
+        }
+        for spec, expected in cases.items():
+            with self.subTest(spec=spec):
+                self.assertEqual(self.found(f"size:{spec}", "--ext", "frc"), expected)
+
+    def test_fractions_of_a_byte(self) -> None:
+        self.assertEqual(self.found("size:<0.5", "--ext", "dat"), ["zero.dat"])  # used to find nothing
+        self.assertEqual(self.found("size:<=0.5", "--ext", "dat"), ["zero.dat"])
+        self.assertEqual(self.found("size:>=0.5", "--ext", "dat"), [])  # used to include the empty file
+        self.assertEqual(self.found("size:>0.5", "--ext", "dat"), [])
+        self.assertEqual(self.found("size:0.5", "--ext", "dat"), [])
 
     def test_a_second_bound_can_tighten_but_never_loosen(self) -> None:
         self.assertEqual(self.found("size:>100 size:>1KB", "--ext", "bin"), ["k1plus.bin"])
@@ -184,6 +205,21 @@ class TestUnreadableFiltersAreReported(unittest.TestCase):
         self.assertEqual(len(params.warnings), 1)
         self.assertIn("size:>10MB", params.warnings[0])
 
+    def test_warnings_are_deduplicated_and_capped(self) -> None:
+        from smart_drive.search.engine import MAX_WARNINGS
+
+        tmp = tempfile.mkdtemp(prefix="sd_warn_")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        db = DatabaseManager(str(Path(tmp) / "index.db"))  # (":memory:" would become a file in the working directory)
+        db.initialize_schema()
+        self.addCleanup(db.close)
+        engine = SearchEngine(db)
+        repeated = engine.search(parse_search_query(" ".join(["size:x"] * 140)))
+        self.assertEqual(len(repeated.warnings), 1)
+        distinct = engine.search(parse_search_query(" ".join(f"size:x{i}" for i in range(30))))
+        self.assertEqual(len(distinct.warnings), MAX_WARNINGS + 1)
+        self.assertEqual(distinct.warnings[-1], "... and 20 more warning(s)")
+
     def test_ordinary_queries_have_no_warnings(self) -> None:
         for query in ("", "llama", "ext:pdf size:>1MB cat:AI dir:foo", "size:>10MB report", "report mb", "size:>10 report"):
             with self.subTest(query=query):
@@ -222,6 +258,15 @@ class TestWarningsReachTheCaller(_Drive):
         flag = server.handle_ssd_search({"query": "ext:py", "size": "abc"})
         self.assertIn("abc", flag["warnings"][0])
         self.assertNotIn("warnings", server.handle_ssd_search({"query": "ext:py"}))
+
+    def test_mcp_size_given_as_a_json_number_is_not_ignored(self) -> None:
+        """`size: 0` is falsy in Python, so the filter used to vanish without a word."""
+        server = SmartDriveMCPServer(root=str(self.root))
+        self.assertEqual(server.handle_ssd_search({"ext": "bin", "size": 0})["total_count"], 0)
+        exact = server.handle_ssd_search({"ext": "bin", "size": 100})
+        self.assertEqual([Path(m["path"]).name for m in exact["matches"]], ["s100.bin"])
+        self.assertEqual(server.handle_ssd_search({"ext": "dat", "size": 0})["total_count"], 1)  # zero.dat
+        self.assertIn("warnings", server.handle_ssd_search({"ext": "bin", "size": True}))  # nonsense is reported
 
     def test_mcp_search_applies_strict_bounds(self) -> None:
         server = SmartDriveMCPServer(root=str(self.root))
@@ -342,6 +387,29 @@ class TestDashboardSearchApi(_Drive):
         status, clean = self.get("q=" + quote("ext:py"))
         self.assertEqual(status, 200)
         self.assertNotIn("warnings", clean)
+
+    def test_url_size_bounds_narrow_the_query_and_never_widen_it(self) -> None:
+        def names(query_string: str) -> List[str]:
+            status, data = self.get(query_string)
+            self.assertEqual(status, 200, query_string)
+            return sorted(Path(m["path"]).name for m in data["matches"])
+
+        base = "ext=bin&q=" + quote("size:>100")
+        self.assertEqual(names(base), ["k1.bin", "k1plus.bin", "s101.bin"])
+        self.assertEqual(names(base + "&min_size=0"), ["k1.bin", "k1plus.bin", "s101.bin"])  # used to return all five
+        self.assertEqual(names(base + "&min_size=1025"), ["k1plus.bin"])
+        self.assertEqual(names("ext=bin&q=" + quote("size:<1KB") + "&max_size=100000"), ["s099.bin", "s100.bin", "s101.bin"])
+        self.assertEqual(names("ext=bin&q=" + quote("size:<1KB") + "&max_size=100"), ["s099.bin", "s100.bin"])
+
+    def test_digits_that_are_not_ascii_or_absurdly_many_are_not_a_server_error(self) -> None:
+        status, data = self.get("ext=bin&min_size=" + quote("\u00b2"))  # "2" with a superscript: isdigit() is True
+        self.assertEqual(status, 200)
+        self.assertIn("min_size", data["warnings"][0])
+        self.assertEqual(len(data["matches"]), 5)  # the bad bound was ignored, not applied
+        status, data = self.get("ext=bin&min_size=" + "9" * 5000)
+        self.assertEqual((status, data["total"]), (200, 0))
+        status, data = self.get("ext=bin&max_size=" + "9" * 5000)
+        self.assertEqual((status, data["total"]), (200, 5))
 
     def test_numbers_beyond_64_bits_do_not_become_a_server_error(self) -> None:
         for query_string in ("min_size=" + "9" * 30, "max_size=" + "9" * 30, "limit=" + "9" * 30, "offset=" + "9" * 30):

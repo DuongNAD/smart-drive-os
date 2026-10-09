@@ -686,8 +686,9 @@ class SmartDriveMCPServer:
             except ValueError:
                 params.directory = safe_dir
 
-        if args.get("size"):
-            apply_size_spec(params, str(args["size"]))
+        size_arg = args.get("size")
+        if size_arg is not None and size_arg != "":  # not just truthy: a JSON number 0 means "exactly 0 bytes"
+            apply_size_spec(params, str(size_arg))
 
         params.limit = self._parse_int(args.get("limit"), default=25, min_val=1, max_val=100)
         params.offset = self._parse_int(args.get("offset"), default=0, min_val=0)

@@ -15,7 +15,7 @@ import re
 import shlex
 import time
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import List, Optional, Set, Tuple
 
 
@@ -114,8 +114,8 @@ def sanitize_fts_query(query: str) -> str:
     return " ".join(safe_tokens)
 
 
-def parse_size_spec(val: str) -> Tuple[Optional[str], Optional[int]]:
-    """Parses size spec like '>1KB', '<=100MB', '0' into (operator, bytes)."""
+def _parse_size_exact(val: str) -> Tuple[Optional[str], Optional[Decimal]]:
+    """(operator, exact number of bytes) - possibly fractional, as in '0.1KB' = 102.4 bytes."""
     m = SIZE_REGEX.match(val.strip())
     if not m:
         return None, None
@@ -123,10 +123,20 @@ def parse_size_spec(val: str) -> Tuple[Optional[str], Optional[int]]:
     unit = (m.group(3) or "b").lower()
     mult = SIZE_MULTIPLIERS.get(unit, 1)
     try:
-        bytes_val = int(Decimal(m.group(2)) * mult)  # exact, and a 400-digit number is not an OverflowError
+        return op, Decimal(m.group(2)) * mult  # exact, and a 400-digit number is not an OverflowError
+    except (ArithmeticError, ValueError):
+        return None, None
+
+
+def parse_size_spec(val: str) -> Tuple[Optional[str], Optional[int]]:
+    """Parses size spec like '>1KB', '<=100MB', '0' into (operator, whole bytes, truncated)."""
+    op, exact = _parse_size_exact(val)
+    if exact is None:
+        return None, None
+    try:
+        return op, int(exact)
     except (ArithmeticError, ValueError):  # ValueError: Python's own limit on very long integers
         return None, None
-    return op, bytes_val
 
 
 def apply_size_spec(params: SearchParams, spec: str) -> bool:
@@ -134,10 +144,17 @@ def apply_size_spec(params: SearchParams, spec: str) -> bool:
 
     Sizes are whole bytes, so a strict bound is the inclusive one moved by a byte: '>10MB' means
     at least 10MB + 1 and '<10MB' at most 10MB - 1, while '>=' and '<=' keep the bound itself.
+    A bound that falls between two whole sizes ('0.1KB' = 102.4 bytes) is rounded the way the comparison
+    needs: '>= 0.1KB' starts at 103, '<= 0.1KB' ends at 102, and '= 0.1KB' matches nothing.
     Several size filters all have to hold, so a later one never loosens an earlier one.
     """
-    op, bound = parse_size_spec(spec)
-    if bound is None:
+    op, exact = _parse_size_exact(spec)
+    try:
+        floor_bound = int(exact.to_integral_value(rounding=ROUND_FLOOR)) if exact is not None else None
+        ceil_bound = int(exact.to_integral_value(rounding=ROUND_CEILING)) if exact is not None else None
+    except (ArithmeticError, ValueError):
+        floor_bound = ceil_bound = None
+    if floor_bound is None or ceil_bound is None:
         params.warnings.append(
             f"Ignored size filter {spec!r}: expected a number with an optional unit (B, KB, MB, GB, TB, PB), "
             "optionally after >, >=, <, <= or ="
@@ -146,15 +163,15 @@ def apply_size_spec(params: SearchParams, spec: str) -> bool:
     lower: Optional[int] = None
     upper: Optional[int] = None
     if op == ">":
-        lower = bound + 1
+        lower = floor_bound + 1  # more than 102.4 means at least 103; more than 102 means at least 103
     elif op == ">=":
-        lower = bound
+        lower = ceil_bound
     elif op == "<":
-        upper = bound - 1
+        upper = ceil_bound - 1
     elif op == "<=":
-        upper = bound
+        upper = floor_bound
     elif op == "=":
-        lower = upper = bound
+        lower, upper = ceil_bound, floor_bound  # for a fractional size lower > upper: no file has it
     else:
         params.warnings.append(f"Ignored size filter {spec!r}: operator {op!r} is not one of >, >=, <, <=, =")
         return False

@@ -252,5 +252,70 @@ class TestSecurityHeaders(_ServerCase):
         self.assertNotIn("Python", headers.get("server", ""))
 
 
+class TestFetchMetadata(_ServerCase):
+    """A cross-site no-cors GET carries no Origin, but the browser labels it with Sec-Fetch-Site.
+
+    Found by an independent review: an <img src="http://127.0.0.1:8765/api/audit"> on any site made the dashboard
+    run a full-drive scan (the answer is unreadable to that page, so it was a denial of service, not a leak).
+    """
+
+    API_PATHS = ("/api/status", "/api/audit", "/api/junk", "/api/search?q=x")
+
+    def test_cross_site_and_same_site_requests_to_the_api_are_refused(self) -> None:
+        for site in ("cross-site", "same-site", "something-new"):
+            for path in self.API_PATHS:
+                with self.subTest(site=site, path=path):
+                    status, headers, _ = self.request("GET", path, headers={"Sec-Fetch-Site": site})
+                    self.assertEqual(status, 403)
+                    self.assertNotIn("access-control-allow-origin", headers)
+
+    def test_a_refused_request_does_no_work(self) -> None:
+        with patch("smart_drive.ui.server.StorageAuditor") as auditor:
+            status, _, _ = self.request("GET", "/api/audit", headers={"Sec-Fetch-Site": "cross-site"})
+        self.assertEqual(status, 403)
+        auditor.assert_not_called()
+
+    def test_the_dashboards_own_requests_and_a_typed_address_are_allowed(self) -> None:
+        for site in ("same-origin", "none"):
+            for path in ("/", "/api/status"):
+                with self.subTest(site=site, path=path):
+                    status, _, _ = self.request("GET", path, headers={"Sec-Fetch-Site": site})
+                    self.assertEqual(status, 200)
+
+    def test_requests_that_carry_no_such_header_are_unchanged(self) -> None:
+        """curl, scripts and older browsers do not send it."""
+        for path in ("/", "/api/status"):
+            status, _, _ = self.request("GET", path)
+            self.assertEqual(status, 200)
+
+    def test_a_link_from_another_site_may_open_the_page_but_never_the_api(self) -> None:
+        navigation = {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
+        self.assertEqual(self.request("GET", "/", headers=navigation)[0], 200)
+        self.assertEqual(self.request("GET", "/api/status", headers=navigation)[0], 403)
+        # embedding the page (an iframe) is not a top-level navigation
+        embedded = dict(navigation, **{"Sec-Fetch-Dest": "iframe"})
+        self.assertEqual(self.request("GET", "/", headers=embedded)[0], 403)
+
+    def test_a_cross_site_post_is_refused_too(self) -> None:
+        status, _, _ = self.request(
+            "POST", "/api/junk/clean", headers={"Sec-Fetch-Site": "cross-site", "Content-Type": "application/json"},
+            body=b'{"tiers": [1], "dry_run": true}',
+        )
+        self.assertEqual(status, 403)
+
+
+class TestSerializationFailuresStayInTheLog(_ServerCase):
+    def test_an_unserialisable_answer_is_a_plain_500(self) -> None:
+        def broken(handler: object) -> None:
+            handler.send_json_response({"values": {1, 2, 3}})  # type: ignore[attr-defined]
+
+        with patch("smart_drive.ui.server.SmartDriveRequestHandler.handle_api_status", broken):
+            status, _, body = self.request("GET", "/api/status")
+        self.assertEqual(status, 500)
+        self.assertEqual(json.loads(body)["error"], "Internal server error")
+        self.assertNotIn(b"serializable", body)
+        self.assertNotIn(b"set", body.lower().replace(b"internal server error", b""))
+
+
 if __name__ == "__main__":
     unittest.main()
