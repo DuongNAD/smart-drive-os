@@ -70,6 +70,14 @@ _CLIENT_ERRORS = (
     DriveRootNotFound,
 )
 
+# A JSON-RPC batch is answered in one piece, so its size is capped (clients do not batch dozens of calls).
+MAX_BATCH_SIZE = 100
+
+
+def _is_client_error(error: BaseException) -> bool:
+    """True for a deliberate refusal; encoding and JSON decoding failures are ValueErrors too, but are bugs."""
+    return isinstance(error, _CLIENT_ERRORS) and not isinstance(error, (UnicodeError, json.JSONDecodeError))
+
 logger = logging.getLogger("smart_drive.mcp.server")
 logger.setLevel(logging.INFO)
 stderr_handler = logging.StreamHandler(sys.stderr)
@@ -1114,6 +1122,12 @@ class SmartDriveMCPServer:
 
     def _write(self, payload: Any) -> None:
         body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+        try:
+            body.encode("utf-8")
+        except UnicodeEncodeError:
+            # A lone surrogate the client itself sent (a path like "\udcff.txt") cannot be written as UTF-8;
+            # the escaped form is plain ASCII, still valid JSON, and the reply gets through.
+            body = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
         out = self._raw_stdout if self._raw_stdout is not None else sys.stdout
         if self.use_content_length_mode:
             out.write(f"Content-Length: {len(body.encode('utf-8'))}\r\n\r\n{body}")
@@ -1131,6 +1145,16 @@ class SmartDriveMCPServer:
                 "jsonrpc": "2.0",
                 "id": None,
                 "error": {"code": -32600, "message": "Invalid Request: empty batch"},
+            })
+            return
+        if len(message) > MAX_BATCH_SIZE:  # the replies are held until the whole batch is done
+            self.send_response({
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {
+                    "code": -32600,
+                    "message": f"Invalid Request: batch of {len(message)} exceeds the limit of {MAX_BATCH_SIZE}",
+                },
             })
             return
         self._batch = []
@@ -1315,22 +1339,9 @@ class SmartDriveMCPServer:
 
             try:
                 res_data = self.dispatch_tool(tool_name, arguments)
-                resp = {
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "result": {
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": json.dumps(res_data, separators=(",", ":"), ensure_ascii=False),
-                            }
-                        ],
-                    },
-                }
-                self.send_response(resp)
-                return resp
+                result_text = json.dumps(res_data, separators=(",", ":"), ensure_ascii=False)
             except Exception as e:
-                if isinstance(e, _CLIENT_ERRORS):
+                if _is_client_error(e):
                     logger.warning("Tool %s refused the request: %s", tool_name, e)
                 else:
                     logger.exception("Error executing tool %s: %s", tool_name, e)
@@ -1349,6 +1360,15 @@ class SmartDriveMCPServer:
                 }
                 self.send_response(err_tool_resp)
                 return err_tool_resp
+
+            # Outside the try on purpose: a failure to write the reply is a server problem, not a tool refusal.
+            resp = {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {"content": [{"type": "text", "text": result_text}]},
+            }
+            self.send_response(resp)
+            return resp
 
         if msg_id is not None:
             resp = {
@@ -1426,6 +1446,7 @@ class SmartDriveMCPServer:
 
 
 __all__ = [
+    "MAX_BATCH_SIZE",
     "PROTOCOL_VERSION",
     "SERVER_INSTRUCTIONS",
     "SERVER_NAME",

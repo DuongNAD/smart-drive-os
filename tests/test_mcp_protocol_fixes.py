@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 from smart_drive.core.config import is_protected_root_dir
 from smart_drive.core.purge_engine import PurgeEngine
-from smart_drive.mcp.server import SERVER_INSTRUCTIONS, SmartDriveMCPServer
+from smart_drive.mcp.server import MAX_BATCH_SIZE, SERVER_INSTRUCTIONS, SmartDriveMCPServer
 
 
 class _Server(unittest.TestCase):
@@ -80,6 +80,17 @@ class TestBatches(_Server):
         self.assertEqual(reply[0]["error"]["code"], -32600)
         self.assertEqual(reply[1]["id"], 7)
         self.assertIn("result", reply[1])
+
+    def test_a_batch_at_the_limit_is_answered_and_one_over_it_is_refused_whole(self) -> None:
+        def pings(count: int) -> list:
+            return [{"jsonrpc": "2.0", "id": i, "method": "ping"} for i in range(count)]
+
+        (answered,) = self.talk(self.line(pings(MAX_BATCH_SIZE)))
+        self.assertEqual(len(answered), MAX_BATCH_SIZE)
+        (refused,) = self.talk(self.line(pings(MAX_BATCH_SIZE + 1)))
+        self.assertEqual(refused["error"]["code"], -32600)
+        self.assertIsNone(refused["id"])
+        self.assertIn(str(MAX_BATCH_SIZE), refused["error"]["message"])
 
     def test_a_single_request_still_gets_a_single_object(self) -> None:
         (reply,) = self.talk(self.line(self.PING))
@@ -152,6 +163,29 @@ class TestClientMistakesDoNotLogTracebacks(_Server):
         self.assertTrue(result["isError"])
         self.assertEqual([r.levelname for r in logs.records], ["WARNING"])
         self.assertIsNone(logs.records[0].exc_info)
+
+    def test_encoding_and_json_failures_inside_a_tool_are_bugs_not_refusals(self) -> None:
+        """UnicodeError and JSONDecodeError are ValueErrors, but nobody deliberately raises them to refuse a call."""
+        for error in (UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad byte"), json.JSONDecodeError("bad", "x", 0)):
+            with self.subTest(error=type(error).__name__):
+                with patch.object(self.server, "dispatch_tool", side_effect=error):
+                    with self.assertLogs("smart_drive.mcp.server", level="WARNING") as logs:
+                        self.assertTrue(self.call("ssd_status", {})["isError"])
+                self.assertEqual([r.levelname for r in logs.records], ["ERROR"])
+
+    def test_a_lone_surrogate_in_the_clients_own_input_still_gets_an_answer(self) -> None:
+        """Echoing it back used to fail to encode as UTF-8; now the reply is sent with the character escaped."""
+        raw = io.BytesIO()
+        stdout = io.TextIOWrapper(raw, encoding="utf-8", newline="\n")
+        request = {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "bad\udcff", "arguments": {}}}
+        with patch("sys.stdin", io.StringIO(json.dumps(request) + "\n")), patch("sys.stdout", stdout):
+            with self.assertLogs("smart_drive.mcp.server", level="WARNING"):
+                self.server.run_stdio()
+        stdout.flush()
+        reply = json.loads(raw.getvalue().decode("utf-8"))
+        self.assertEqual(reply["id"], 5)
+        self.assertTrue(reply["result"]["isError"])
+        self.assertIn("Unknown tool", reply["result"]["content"][0]["text"])
 
     def test_a_real_bug_keeps_its_traceback(self) -> None:
         with patch.object(self.server, "dispatch_tool", side_effect=RuntimeError("boom")):
