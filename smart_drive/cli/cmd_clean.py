@@ -6,11 +6,39 @@ import argparse
 import json
 import os
 import sys
+from typing import Any, Dict, List, Optional, Tuple
 
 from smart_drive.core.config import JunkTier
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
+
+
+def _purge(root: str, junk_items: List[Any], log_path: Optional[str]) -> Tuple[int, List[Dict[str, Any]]]:
+    """Deletes the detected junk through the PurgeEngine (all its safety guards apply).
+
+    Returns (deleted_count, one result dict per item). Shared by the text and JSON output modes so
+    that `--apply` does the same thing whichever way the result is printed.
+    """
+    purge_engine = PurgeEngine(root, dry_run=False)
+    deleted_count = 0
+    results: List[Dict[str, Any]] = []
+    for j in junk_items:
+        path = getattr(j, "path", None) or j.get("path") or os.path.join(root, j["rel_path"])
+        is_dir = getattr(j, "is_dir", False) or j.get("is_dir", False)
+        size = getattr(j, "size", 0) or j.get("size", 0)
+        tier_val = getattr(j, "tier", None)
+        success, reason = purge_engine.delete_item(path, size=size, is_dir=is_dir, tier=tier_val)
+        if success:
+            deleted_count += 1
+        results.append({
+            "rel_path": getattr(j, "rel_path", j.get("rel_path", "")),
+            "deleted": bool(success),
+            "reason": reason,
+        })
+    if log_path:
+        purge_engine.export_audit_log(log_path)
+    return deleted_count, results
 
 
 def cmd_clean(args: argparse.Namespace) -> int:
@@ -29,16 +57,25 @@ def cmd_clean(args: argparse.Namespace) -> int:
     junk_items = detector.find_junk()
 
     is_dry_run = not getattr(args, "apply", False)
+    log_path = getattr(args, "log", None)
 
     if getattr(args, "json", False):
         junk_dicts = [j.to_dict() if hasattr(j, "to_dict") else j for j in junk_items]
-        data = {
+        data: Dict[str, Any] = {
             "root": root,
             "dry_run": is_dry_run,
             "junk_count": len(junk_items),
             "junk_items": junk_dicts,
             "total_reclaimable_bytes": sum(j["size"] for j in junk_items),
         }
+        if not is_dry_run:
+            # `--apply --json` used to print dry_run=false and return without deleting anything.
+            deleted_count, results = _purge(root, junk_items, log_path)
+            data["deleted_count"] = deleted_count
+            data["failed_count"] = len(results) - deleted_count
+            data["results"] = results
+            if log_path:
+                data["log"] = log_path
         print(json.dumps(data, indent=2, ensure_ascii=False))
         return 0
 
@@ -67,19 +104,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
     if is_dry_run:
         print("\n[DRY RUN] No files were deleted. Run with --apply to execute purge.")
     else:
-        purge_engine = PurgeEngine(root, dry_run=False)
-        deleted_count = 0
-        for j in junk_items:
-            path = getattr(j, "path", None) or j.get("path") or os.path.join(root, j["rel_path"])
-            is_dir = getattr(j, "is_dir", False) or j.get("is_dir", False)
-            size = getattr(j, "size", 0) or j.get("size", 0)
-            tier_val = getattr(j, "tier", None)
-            success, _ = purge_engine.delete_item(path, size=size, is_dir=is_dir, tier=tier_val)
-            if success:
-                deleted_count += 1
-        log_path = getattr(args, "log", None)
-        if log_path:
-            purge_engine.export_audit_log(log_path)
+        deleted_count, _ = _purge(root, junk_items, log_path)
         print(f"✓ Purged {deleted_count} junk files successfully.")
 
     return 0
