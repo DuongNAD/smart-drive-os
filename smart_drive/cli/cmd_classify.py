@@ -38,7 +38,6 @@ def cmd_classify(args: argparse.Namespace) -> int:
         return 2
 
     target_path = getattr(args, "path", None)
-    target = os.path.abspath(target_path) if target_path else root
 
     apply_mode = getattr(args, "apply", False)
     dry_run_mode = getattr(args, "dry_run", False)
@@ -46,6 +45,8 @@ def cmd_classify(args: argparse.Namespace) -> int:
     recursive = not getattr(args, "no_recursive", False)
 
     engine = ClassifierEngine(root_path=root)
+    # The default is the engine's own (resolved) root, so a drive reached through a link still works.
+    target = os.path.abspath(target_path) if target_path else str(engine.root)
     results = engine.scan_and_classify(target_dir=Path(target), recursive=recursive)
     if engine.skipped_links:
         sys.stderr.write(
@@ -73,6 +74,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
         moved = [a for a in actions if a.status == "MOVED"]
         skipped = [a for a in actions if a.status == "SKIPPED_ALREADY_IN_PLACE"]
+        unsafe = [a for a in actions if a.status == "SKIPPED_SYMLINK"]
         errors = [a for a in actions if a.status == "ERROR"]
 
         print(f"\nSmartDrive-OS Classification & Auto-Tagging [APPLIED]")
@@ -82,10 +84,15 @@ def cmd_classify(args: argparse.Namespace) -> int:
             print(f"  ✓ Moved: {os.path.basename(str(a.source_path))} -> {a.relative_target}{suffix}")
         for s in skipped:
             print(f"  - In place: {os.path.basename(str(s.source_path))} is already in {s.relative_target}")
+        for u in unsafe:
+            print(f"  ! Left alone (symlink/junction): {os.path.basename(str(u.source_path))}: {u.error_message}")
         for e in errors:
             print(f"  ✗ Error moving {os.path.basename(str(e.source_path))}: {e.error_message}")
         print("-" * 90)
-        print(f"Applied: {len(moved)} moved, {len(skipped)} already in place, {len(errors)} error(s).\n")
+        print(
+            f"Applied: {len(moved)} moved, {len(skipped)} already in place, "
+            f"{len(unsafe)} left alone because of symlinks, {len(errors)} error(s).\n"
+        )
         return 0 if not errors else 1
 
     # 2. DRY-RUN SIMULATION MODE

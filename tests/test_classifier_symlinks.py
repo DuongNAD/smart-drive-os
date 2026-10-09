@@ -105,5 +105,156 @@ class TestClassifierNeverFollowsLinks(unittest.TestCase):
         self._outside_untouched()
 
 
+@unittest.skipIf(sys.platform == "win32", "os.symlink requires elevation on Windows")
+class TestLinksAboveTheFileAndOnTheDestinationSide(unittest.TestCase):
+    """The first fix only looked at the last path component; a link in a parent folder or in the
+    destination still let `classify --apply` move files out of, or write files outside of, the drive."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        base = Path(self._tmp.name).resolve()
+        self.drive = base / "drive"
+        self.outside = base / "outside"
+        self.elsewhere = base / "elsewhere"
+        for folder in (self.drive, self.outside, self.elsewhere):
+            folder.mkdir()
+        (self.outside / "dir").mkdir()
+        (self.outside / "dir" / "inner.csv").write_text(CSV_BODY)
+        (self.outside / "solo.csv").write_text(CSV_BODY)
+        os.symlink(self.outside, self.drive / "linkdir")  # a folder inside the drive that really lives outside
+        self.base = base
+        self.engine = ClassifierEngine(root_path=self.drive)
+
+    def _outside_untouched(self) -> None:
+        self.assertEqual(sorted(p.name for p in self.outside.iterdir()), ["dir", "solo.csv"])
+        self.assertEqual((self.outside / "dir" / "inner.csv").read_text(), CSV_BODY)
+        self.assertEqual((self.outside / "solo.csv").read_text(), CSV_BODY)
+
+    # --- sources reached through a linked parent
+
+    def test_a_folder_typed_inside_the_drive_that_leads_outside_is_refused(self) -> None:
+        self.assertEqual(self.engine.scan_and_classify(target_dir=self.drive / "linkdir" / "dir"), [])
+        self.assertEqual(self.engine.scan_and_classify(target_dir=self.drive / "linkdir"), [])
+        self.assertTrue(self.engine.skipped_links)
+        self._outside_untouched()
+
+    def test_a_file_typed_inside_the_drive_that_leads_outside_is_refused(self) -> None:
+        self.assertEqual(self.engine.scan_and_classify(target_dir=self.drive / "linkdir" / "solo.csv"), [])
+        self.assertIsNone(self.engine.inspect_path(self.drive / "linkdir" / "solo.csv"))
+        self._outside_untouched()
+
+    def test_cli_apply_on_such_a_path_moves_nothing(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["classify", str(self.drive / "linkdir" / "dir"), "--root", str(self.drive), "--apply", "--json"])
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertEqual(json.loads(out.getvalue())["actions"], [])
+        self.assertIn("symlink", err.getvalue())
+        self._outside_untouched()
+        self.assertFalse((self.drive / "01_AI_Models").exists())
+
+    def test_a_parent_folder_swapped_for_a_link_after_the_scan_is_not_moved_through(self) -> None:
+        (self.drive / "sub").mkdir()
+        (self.drive / "sub" / "f.csv").write_text(CSV_BODY)
+        (self.outside / "f.csv").write_text(CSV_BODY)  # what the swapped folder will expose
+        results = [r for r in self.engine.scan_and_classify(recursive=True) if r.name == "f.csv"]
+        self.assertEqual(len(results), 1)
+        os.rename(self.drive / "sub", self.drive / "sub_real")
+        os.symlink(self.outside, self.drive / "sub")  # same path, now leading outside
+        actions = self.engine.execute_relocation(results, dry_run=False)
+        self.assertEqual([a.status for a in actions], ["SKIPPED_SYMLINK"])
+        self.assertIn("symlink", actions[0].error_message)
+        self.assertTrue((self.outside / "f.csv").is_file(), "an outside file was moved into the drive")
+        self.assertFalse((self.drive / "01_AI_Models").exists())
+
+    # --- destinations
+
+    def test_a_taxonomy_folder_that_is_a_link_is_not_written_through(self) -> None:
+        (self.drive / "data.csv").write_text(CSV_BODY)
+        os.symlink(self.elsewhere, self.drive / "01_AI_Models")
+        results = self.engine.scan_and_classify(recursive=True)
+        self.assertEqual([r.name for r in results], ["data.csv"])
+        actions = self.engine.execute_relocation(results, dry_run=False)
+        self.assertEqual([a.status for a in actions], ["SKIPPED_SYMLINK"])
+        self.assertIn("destination", actions[0].error_message)
+        self.assertEqual(list(self.elsewhere.iterdir()), [], "a file was written outside the drive")
+        self.assertTrue((self.drive / "data.csv").is_file())
+
+    def test_a_dangling_link_where_the_file_would_go_is_not_written_through(self) -> None:
+        (self.drive / "data.csv").write_text(CSV_BODY)
+        datasets = self.drive / "01_AI_Models" / "Datasets"
+        datasets.mkdir(parents=True)
+        victim = self.base / "outside" / "new_victim.csv"
+        os.symlink(victim, datasets / "data.csv")  # dangling: the target does not exist
+        results = self.engine.scan_and_classify(recursive=True)
+        actions = self.engine.execute_relocation(results, dry_run=False)
+        self.assertFalse(victim.exists(), "the move created a file at the link's target")
+        self.assertEqual([a.status for a in actions], ["MOVED"])
+        self.assertTrue(actions[0].collision_resolved, "the dangling link should count as occupying the name")
+        self.assertTrue((datasets / "data_1.csv").is_file())
+        self.assertTrue(os.path.islink(datasets / "data.csv"))
+
+    def test_the_dry_run_plan_shows_the_same_skips_as_apply(self) -> None:
+        (self.drive / "data.csv").write_text(CSV_BODY)
+        os.symlink(self.elsewhere, self.drive / "01_AI_Models")
+        results = self.engine.scan_and_classify(recursive=True)
+        plan = self.engine.execute_relocation(results, dry_run=True)
+        self.assertEqual([a.status for a in plan], ["SKIPPED_SYMLINK"])
+
+    def test_text_mode_apply_says_what_it_left_alone(self) -> None:
+        (self.drive / "data.csv").write_text(CSV_BODY)
+        os.symlink(self.elsewhere, self.drive / "01_AI_Models")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["classify", "--root", str(self.drive), "--apply"])
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertIn("Left alone (symlink/junction): data.csv", out.getvalue())
+        self.assertIn("1 left alone because of symlinks", out.getvalue())
+
+    # --- the drive itself reached through a link
+
+    def test_a_root_given_through_a_link_is_still_classified(self) -> None:
+        (self.drive / "data.csv").write_text(CSV_BODY)
+        os.symlink(self.drive, self.base / "drive_link")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["classify", "--root", str(self.base / "drive_link"), "--apply", "--json"])
+        self.assertEqual(code, 0, err.getvalue())
+        report = json.loads(out.getvalue())
+        self.assertEqual([a["status"] for a in report["actions"]], ["MOVED"])
+        self.assertTrue((self.drive / "01_AI_Models" / "Datasets" / "data.csv").is_file())
+        self.assertNotIn("Refusing", err.getvalue())
+
+    def test_a_link_inside_the_drive_that_stays_inside_is_harmless_as_a_scan_target(self) -> None:
+        (self.drive / "real").mkdir()
+        (self.drive / "real" / "data.csv").write_text(CSV_BODY)
+        os.symlink(self.drive / "real", self.drive / "shortcut")
+        results = self.engine.scan_and_classify(target_dir=self.drive / "shortcut")
+        self.assertEqual([r.name for r in results], ["data.csv"])
+        self.assertEqual(results[0].source_path, self.drive / "real" / "data.csv")  # the real location
+
+    # --- deliberate imports stay possible
+
+    def test_a_location_outside_the_drive_that_was_named_as_such_can_still_be_imported(self) -> None:
+        incoming = self.base / "incoming"
+        incoming.mkdir()
+        (incoming / "data.csv").write_text(CSV_BODY)
+        results = self.engine.scan_and_classify(target_dir=incoming)
+        self.assertEqual([r.name for r in results], ["data.csv"])
+        actions = self.engine.execute_relocation(results, dry_run=False)
+        self.assertEqual([a.status for a in actions], ["MOVED"])
+        self.assertTrue((self.drive / "01_AI_Models" / "Datasets" / "data.csv").is_file())
+
+    def test_links_found_while_importing_are_still_left_alone(self) -> None:
+        incoming = self.base / "incoming"
+        incoming.mkdir()
+        (incoming / "data.csv").write_text(CSV_BODY)
+        os.symlink(self.outside / "solo.csv", incoming / "link.csv")
+        results = self.engine.scan_and_classify(target_dir=incoming)
+        self.assertEqual([r.name for r in results], ["data.csv"])
+        self.assertEqual({p.name for p in self.engine.skipped_links}, {"link.csv"})
+
+
 if __name__ == "__main__":
     unittest.main()

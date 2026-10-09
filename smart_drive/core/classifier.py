@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import sys
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import zipfile
 
@@ -150,6 +151,68 @@ class ClassifierEngine:
     def __init__(self, root_path: Union[str, Path]) -> None:
         self.root = Path(root_path).resolve()
         self.skipped_links: List[Path] = []  # symlinks/junctions left alone by the last scan
+
+    # --------------------------------------------------------------------------
+    # Link safety: nothing may be read, moved or written through a symlink or junction
+    # --------------------------------------------------------------------------
+
+    def _rel_to_root(self, path: Path) -> Optional[Tuple[str, ...]]:
+        """The components of ``path`` below the drive root, or None when it is not lexically inside it.
+
+        Compared case-insensitively on Windows and macOS, where the usual volumes are.
+        """
+        fold = (lambda part: part.casefold()) if sys.platform in ("win32", "darwin") else (lambda part: part)
+        parts, root_parts = path.parts, self.root.parts
+        if len(parts) < len(root_parts):
+            return None
+        if [fold(x) for x in parts[:len(root_parts)]] != [fold(x) for x in root_parts]:
+            return None
+        return tuple(parts[len(root_parts):])
+
+    def _link_below_root(self, path: Path) -> Optional[Path]:
+        """The first symlink/junction on the way from the drive root down to ``path`` (inclusive), if any.
+
+        Components that do not exist yet are fine. A path that is not inside the root counts as a link:
+        it leads somewhere the drive does not own.
+        """
+        below = self._rel_to_root(path)
+        if below is None:
+            return path
+        current = self.root
+        for part in below:
+            current = current / part
+            if _is_link(current):
+                return current
+        return None
+
+    def _leads_outside_root(self, typed: Path, real: Path) -> bool:
+        """True for a path typed inside the drive whose real location is outside it: a link in disguise.
+
+        A location outside the drive that was named as such stays allowed (importing from it is deliberate).
+        """
+        return self._rel_to_root(typed) is not None and self._rel_to_root(real) is None
+
+    @staticmethod
+    def _same_file(first: Path, second: Path) -> bool:
+        try:
+            return os.path.exists(second) and os.path.samefile(first, second)
+        except OSError:
+            return False
+
+    def _unsafe_reason(self, source: Path, destination: Path) -> Optional[str]:
+        """Why this move must not happen (a link anywhere on either side), or None when it is safe."""
+        if _is_link(source):
+            return f"source is a symlink/junction: {source}"
+        try:
+            real_source = os.path.realpath(source)
+        except (OSError, RuntimeError, ValueError):
+            return f"cannot resolve the source: {source}"
+        if os.path.normcase(real_source) != os.path.normcase(os.path.abspath(source)):
+            return f"source passes through a symlink/junction (it really is {real_source})"
+        link = self._link_below_root(destination)
+        if link is not None:
+            return f"destination passes through a symlink/junction or leaves the drive: {link}"
+        return None
 
     # --------------------------------------------------------------------------
     # Format Detectors
@@ -560,6 +623,8 @@ class ClassifierEngine:
             p = raw.resolve()  # raw is not a link, so this only normalizes symlinked parents
         except (OSError, RuntimeError):
             return None
+        if self._leads_outside_root(raw, p):
+            return None  # e.g. <drive>/linkdir/file.csv with linkdir pointing elsewhere
         if not p.exists():
             return None
 
@@ -628,13 +693,17 @@ class ClassifierEngine:
         self.skipped_links = []
 
         scan_arg = self.root if target_dir is None else Path(os.path.abspath(str(target_dir)))
-        if _is_link(scan_arg):
-            logger.warning("Refusing to classify through a symlink/junction: %s", scan_arg)
-            self.skipped_links.append(scan_arg)
-            return results
         try:
             scan_root = scan_arg.resolve()
-        except (OSError, RuntimeError):
+        except (OSError, RuntimeError):  # a looping link
+            self.skipped_links.append(scan_arg)
+            return results
+        # A link is refused when it leads out of the drive. One that stays inside (or the drive root itself
+        # given through a link) is harmless: everything below is then walked by its real path.
+        inside = self._rel_to_root(scan_root) is not None
+        if self._leads_outside_root(scan_arg, scan_root) or (_is_link(scan_arg) and not inside):
+            logger.warning("Refusing to classify through a symlink/junction: %s", scan_arg)
+            self.skipped_links.append(scan_arg)
             return results
 
         if not scan_root.exists():
@@ -723,14 +792,16 @@ class ClassifierEngine:
         if allocated is None:
             allocated = set()
 
-        canonical_dest = (self.root / result.recommended_path).resolve()
+        # Lexical on purpose: resolve() would follow a symlink in the destination (even a dangling one) and
+        # hand back a location outside the drive; a link there has to stay visible to _unsafe_reason.
+        canonical_dest = self.root / result.recommended_path
 
         # If already at canonical location, return without collision
-        if result.source_path.resolve() == canonical_dest:
+        if self._same_file(result.source_path, canonical_dest):
             return canonical_dest, False
 
-        # If canonical dest is free on disk and not yet allocated in this batch
-        if not canonical_dest.exists() and canonical_dest not in allocated:
+        # If canonical dest is free on disk (a dangling link occupies its name too) and not yet allocated
+        if not os.path.lexists(canonical_dest) and canonical_dest not in allocated:
             allocated.add(canonical_dest)
             return canonical_dest, False
 
@@ -741,7 +812,7 @@ class ClassifierEngine:
             i = 1
             while True:
                 candidate = parent / f"{base_name}_{i}"
-                if not candidate.exists() and candidate not in allocated:
+                if not os.path.lexists(candidate) and candidate not in allocated:
                     allocated.add(candidate)
                     return candidate, True
                 i += 1
@@ -751,7 +822,7 @@ class ClassifierEngine:
             i = 1
             while True:
                 candidate = parent / f"{stem}_{i}{suffix}"
-                if not candidate.exists() and candidate not in allocated:
+                if not os.path.lexists(candidate) and candidate not in allocated:
                     allocated.add(candidate)
                     return candidate, True
                 i += 1
@@ -776,7 +847,7 @@ class ClassifierEngine:
             except ValueError:
                 rel_target = str(dest_path).replace("\\", "/")
 
-            if item.source_path.resolve() == dest_path.resolve():
+            if self._same_file(item.source_path, dest_path):
                 actions.append(RelocationAction(
                     source_path=item.source_path,
                     destination_path=dest_path,
@@ -786,22 +857,25 @@ class ClassifierEngine:
                 ))
                 continue
 
-            if dry_run:
-                actions.append(RelocationAction(
-                    source_path=item.source_path,
-                    destination_path=dest_path,
-                    relative_target=rel_target,
-                    status="PLANNED",
-                    collision_resolved=collision,
-                ))
-            elif _is_link(item.source_path):
-                # The entry may have been swapped for a link since the scan: never move through it.
+            # Same check for the plan and for the move, made right before either: a parent folder may have been
+            # swapped for a link since the scan, and the destination may pass through one. Never move through it.
+            unsafe = self._unsafe_reason(item.source_path, dest_path)
+            if unsafe:
                 actions.append(RelocationAction(
                     source_path=item.source_path,
                     destination_path=dest_path,
                     relative_target=rel_target,
                     status="SKIPPED_SYMLINK",
                     collision_resolved=False,
+                    error_message=unsafe,
+                ))
+            elif dry_run:
+                actions.append(RelocationAction(
+                    source_path=item.source_path,
+                    destination_path=dest_path,
+                    relative_target=rel_target,
+                    status="PLANNED",
+                    collision_resolved=collision,
                 ))
             else:
                 try:
