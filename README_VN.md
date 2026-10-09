@@ -198,12 +198,13 @@ Hỗ trợ kiểm tra và hướng dẫn thiết lập nhanh môi trường dòn
 smart-drive self-path-check
 ```
 - Kiểm tra biến môi trường `PATH` và xác minh xem script thực thi `smart-drive` đã có thể gọi trực tiếp từ terminal hay chưa.
+- **Tìm lệnh đúng nơi pip đã đặt**: tìm trong môi trường của chính Python đang chạy (venv, một phiên bản pyenv, ...) rồi mới đến thư mục cài theo người dùng, và chỉ gợi ý thêm vào PATH thư mục thực sự chứa lệnh. Nếu gói chưa được cài cho Python đó, tiện ích nói rõ và in sẵn lệnh `pip install`. Người dùng pyenv được hướng dẫn chạy `pyenv rehash`.
 - **Cấu hình 1-chạm cho Windows PowerShell**: Nếu chưa có trong PATH, tiện ích cung cấp sẵn câu lệnh PowerShell để người dùng dán vào là xong:
   ```powershell
   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:APPDATA\Python\Python311\Scripts", "User")
   ```
 - **Cấu hình cho macOS/Linux**: Cung cấp sẵn lệnh bổ sung vào `~/.bashrc` hoặc `~/.zshrc`.
-- **Cơ chế dự phòng vạn năng**: Khẳng định người dùng luôn có thể gọi mọi tính năng mà không cần cấu hình PATH thông qua cú pháp:
+- **Cơ chế dự phòng không cần cấu hình**: Sau khi đã cài gói, có thể gọi mọi tính năng từ bất kỳ đâu mà không cần cấu hình PATH thông qua cú pháp sau (với mã nguồn chưa cài thì chỉ chạy được bên trong thư mục dự án):
   ```bash
   python -m smart_drive <lệnh>
   ```

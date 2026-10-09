@@ -198,12 +198,13 @@ Ensures developer convenience across Windows, macOS, and Linux:
 smart-drive self-path-check
 ```
 - Inspects system `PATH` and verifies whether the `smart-drive` CLI script is discoverable.
+- **Finds the command where pip really put it**: it looks in the running Python's own environment first (a venv, a pyenv version, ...) and then in the per-user location, and only suggests adding a directory that actually holds the command. If the package is not installed for that Python it says so and prints the `pip install` command instead. pyenv users are pointed to `pyenv rehash`.
 - **1-Click Windows PowerShell Setup**: If not on PATH, provides an exact copy-paste PowerShell command:
   ```powershell
   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:APPDATA\Python\Python311\Scripts", "User")
   ```
 - **POSIX Shell Setup**: Provides the exact export line for `~/.bashrc` or `~/.zshrc`.
-- **Universal Zero-Config Fallback**: Confirms that SmartDrive-OS can always be run without any PATH setup using:
+- **Zero-Config Fallback**: Once the package is installed, SmartDrive-OS can be run from anywhere without any PATH setup using (from an uninstalled source checkout it only works inside the project folder):
   ```bash
   python -m smart_drive <subcommand>
   ```
