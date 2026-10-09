@@ -47,12 +47,17 @@ ENV = dict(
 )
 
 
+# Background maintenance can create and drop *.lock files while a repository is being copied.
+NO_LOCKS = shutil.ignore_patterns("*.lock")
+
+
 def git(cwd: Path, *args: str, date: str = "") -> str:
     env = dict(ENV)
     if date:
         env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = date
     res = subprocess.run(
-        ["git", "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", *args],
+        ["git", "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "gc.auto=0",
+         "-c", "maintenance.auto=false", *args],
         cwd=str(cwd), env=env, capture_output=True, text=True, check=True,
     )
     return res.stdout.strip()
@@ -110,7 +115,7 @@ class _Repos(unittest.TestCase):
     def make_remote(self, name: str) -> Path:
         """This test's own copy of the template remote."""
         remote = self.base / f"{name}.git"
-        shutil.copytree(_template_remote(), remote)
+        shutil.copytree(_template_remote(), remote, ignore=NO_LOCKS)
         return remote
 
     def clone(self, remote: Path, dest: Path, branch: str = "main") -> Path:
@@ -200,7 +205,7 @@ class TestReposWithoutRemote(_Repos):
         solo.mkdir()
         git(solo, "init", "-b", "main")
         commit(solo, "x.txt", "2020-01-01T00:00:00")
-        shutil.copytree(solo, self.machine / "solo-copy")
+        shutil.copytree(solo, self.machine / "solo-copy", ignore=NO_LOCKS)
         result = self.report(self.machine)
         self.assertEqual(len(result.duplicates), 1)
         self.assertTrue(result.duplicates[0].identity.startswith("root:"))

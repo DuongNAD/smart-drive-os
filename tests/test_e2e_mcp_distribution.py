@@ -376,7 +376,7 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
         # Known standard library modules across Python 3.9+
         stdlib_modules: set[str] = set(sys.stdlib_module_names) if hasattr(sys, "stdlib_module_names") else {
             "__future__", "abc", "argparse", "array", "ast", "asyncio", "base64", "binascii",
-            "collections", "contextlib", "copy", "csv", "ctypes", "dataclasses", "datetime",
+            "collections", "concurrent", "contextlib", "copy", "csv", "ctypes", "dataclasses", "datetime",
             "decimal", "difflib", "dis", "enum", "errno", "fnmatch", "fractions", "functools",
             "gc", "glob", "gzip", "hashlib", "heapq", "hmac", "html", "http", "importlib",
             "inspect", "io", "itertools", "json", "logging", "math", "mimetypes", "mmap",
