@@ -90,9 +90,17 @@ class DuplicateDetector:
             if exclude_dirs is not None
             else {d.lower() for d in DEFAULT_EXCLUDE_DIRS}
         )
+        # Extra paths of hard-linked data met during the last walk. They are the same storage as a path already
+        # yielded, so they are neither hashed again nor reported as redundant copies.
+        self.hardlinked_paths_ignored = 0
 
     def _walk_files(self) -> Iterator[Tuple[str, int]]:
-        """Fast non-recursive directory scan yielding (abs_path, size)."""
+        """Fast non-recursive directory scan yielding (abs_path, size).
+
+        Of several hard links to the same data (same device and inode) only the first is yielded.
+        """
+        self.hardlinked_paths_ignored = 0
+        seen_links: Set[Tuple[int, int]] = set()
         stack = [self.root]
         while stack:
             curr_dir = stack.pop()
@@ -104,8 +112,14 @@ class DuplicateDetector:
                                 if entry.name.lower() not in self.exclude_dirs:
                                     stack.append(entry.path)
                             elif entry.is_file(follow_symlinks=False):
-                                size = entry.stat().st_size
-                                yield entry.path, size
+                                info = entry.stat()
+                                if info.st_nlink > 1 and info.st_ino:  # (Windows leaves both at 0: "unknown")
+                                    identity = (info.st_dev, info.st_ino)
+                                    if identity in seen_links:
+                                        self.hardlinked_paths_ignored += 1
+                                        continue
+                                    seen_links.add(identity)
+                                yield entry.path, info.st_size
                         except (OSError, PermissionError):
                             continue
             except (OSError, PermissionError):
@@ -206,6 +220,7 @@ class DuplicateDetector:
             "duplicate_group_count": len(groups),
             "duplicate_file_count": total_dup_files,
             "duplicate_groups": groups,
+            "hardlinked_paths_ignored": self.hardlinked_paths_ignored,
         }
 
 

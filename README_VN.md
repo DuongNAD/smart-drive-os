@@ -346,7 +346,7 @@ Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `pyth
 | `ui` | `--port <cổng>`, `--no-browser`, `--root <đường_dẫn>`, `--db <đường_dẫn>` | Khởi chạy Web Dashboard giao diện Dark Mode trực quan trên cổng 8765. |
 | `init` | `--profile <tên>`, `--root <đường_dẫn>`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo 6 nhóm thư mục, cài khiên và gieo cơ sở dữ liệu FTS5. |
 | `status` | `--root <đường_dẫn>`, `--json` | Kiểm tra tình trạng điểm gắn ổ đĩa, hệ tệp được nhận diện, cấu trúc hình học, khiên bảo vệ và phân vùng. |
-| `audit` | `--root <đường_dẫn>`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán chi tiết dung lượng và tỷ lệ lãng phí cluster slack, mô hình hoá theo cụm exFAT 512 KB; báo cáo nêu hệ tệp được nhận diện và cho biết khi nào mô hình đó không áp dụng (APFS, NTFS, ext4 ...). |
+| `audit` | `--root <đường_dẫn>`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán chi tiết dung lượng và tỷ lệ lãng phí cluster slack, mô hình hoá theo cụm exFAT 512 KB; báo cáo nêu hệ tệp được nhận diện và cho biết khi nào mô hình đó không áp dụng (APFS, NTFS, ext4 ...). Dữ liệu có nhiều hard link chỉ được tính một lần và các đường dẫn thừa được nêu riêng ("Hard Links Not Counted"); symlink được bỏ qua và đếm. |
 | `clean` | `--dry-run` *(mặc định)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Dọn rác hệ thống với cơ chế bắt buộc chạy thử trước và bảo vệ whitelist bất biến. Với `--apply`, lệnh trả mã `1` nếu có mục xoá thất bại (mục bị lá chắn an toàn từ chối được báo riêng, không tính là thất bại). |
 | `search` | `<từ_khóa>`, `--ext <đuôi>`, `--size <kích_thước>`, `--category <nhóm>`, `--limit <n>`, `--json` | Tìm kiếm siêu tốc (<10ms) bằng SQLite FTS5 kết hợp thuật toán xếp hạng BM25. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Tự động phân loại file tự do, định tuyến môn học FPTU bằng AcademicClassifier và giảm lãng phí slack. |
@@ -360,7 +360,7 @@ Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `pyth
 | `classify` | `[đường_dẫn]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Nhận diện sâu magic bytes và cấu trúc tệp để phân loại mô hình AI, dataset, tài liệu, dự án. Không bao giờ đi theo hay di chuyển symlink/junction, và không đọc hay ghi tại nơi phải đi qua chúng. |
 | `offload` | `--scan`, `--move <tên>`, `--target <ổ>`, `--revert <tên>`, `--dry-run`, `--json` | Quét và di chuyển các cache khổng lồ sang ổ phụ (NTFS junction trên Windows, symbolic link trên macOS/Linux). |
 | `health` | `[ổ_đĩa]`, `--root <đường_dẫn>`, `--json` | Kiểm tra sức khỏe ổ cứng SSD, trạng thái TRIM (Windows), cluster geometry và dung lượng trống. Nhận ký tự ổ đĩa trên Windows hoặc đường dẫn ổ (`/Volumes/MySSD`) trên macOS/Linux. |
-| `dup` | `--root <đường_dẫn>`, `--json` | Tìm kiếm tệp tin trùng lặp qua 3 giai đoạn SHA-256 kèm thống kê dung lượng slack thu hồi được. |
+| `dup` | `--root <đường_dẫn>`, `--json` | Tìm kiếm tệp tin trùng lặp qua 3 giai đoạn SHA-256 kèm thống kê dung lượng slack thu hồi được. Nhiều tên cho cùng một dữ liệu (hard link) được coi là một tệp, không bao giờ được đề xuất như bản sao để xoá. |
 | `index` | `--root <đường_dẫn>`, `--db <đường_dẫn>`, `--batch <n>` | Lập chỉ mục toàn bộ ổ đĩa với SQLite FTS5 (tốc độ >15.000 tệp/giây). |
 | `update` | `--root <đường_dẫn>`, `--db <đường_dẫn>`, `--json` | Đồng bộ chỉ mục tìm kiếm tăng số siêu nhanh với độ phức tạp $O(1)$ (<2 giây). |
 

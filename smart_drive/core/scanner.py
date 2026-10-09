@@ -48,6 +48,9 @@ if sys.version_info >= (3, 10):
         mtime: float           # Modification timestamp (epoch seconds)
         ext: str               # Lowercase extension with leading dot (e.g. '.pdf')
         parent_dir: str        # Parent directory path
+        nlink: int             # Number of hard links to the file's data (0 where the OS does not say: Windows)
+        inode: int             # Identity of the file's data on its device (0 if unknown)
+        device: int            # Device the inode belongs to
 
         @property
         def is_empty(self) -> bool:
@@ -63,7 +66,7 @@ else:
         """Memory-efficient filesystem record for a scanned file or directory."""
         __slots__ = (
             "path", "rel_path", "name", "size", "is_dir",
-            "is_file", "is_symlink", "mtime", "ext", "parent_dir"
+            "is_file", "is_symlink", "mtime", "ext", "parent_dir", "nlink", "inode", "device"
         )
         path: str
         rel_path: str
@@ -75,6 +78,9 @@ else:
         mtime: float
         ext: str
         parent_dir: str
+        nlink: int
+        inode: int
+        device: int
 
         @property
         def is_empty(self) -> bool:
@@ -338,6 +344,9 @@ class FastDirectoryScanner:
                                 mtime=mtime,
                                 ext="",
                                 parent_dir=current_dir,
+                                nlink=0,
+                                inode=0,
+                                device=0,
                             )
                     else:
                         # 3. Regular file probe
@@ -348,12 +357,15 @@ class FastDirectoryScanner:
                             continue
 
                         if is_f and self.yield_files:
+                            nlink = inode = device = 0
                             try:
                                 st = entry.stat(follow_symlinks=self.follow_symlinks)
                                 size = st.st_size
                                 mtime = st.st_mtime
                                 if mtime <= 0:
                                     mtime = time.time()
+                                # On Windows DirEntry.stat() leaves these at 0, which simply means "unknown".
+                                nlink, inode, device = st.st_nlink, st.st_ino, st.st_dev
                             except (PermissionError, FileNotFoundError, OSError) as e:
                                 self._record_error(entry.path, "STAT_FAILED", e)
                                 size = 0
@@ -374,6 +386,9 @@ class FastDirectoryScanner:
                                 mtime=mtime,
                                 ext=ext.lower(),
                                 parent_dir=current_dir,
+                                nlink=nlink,
+                                inode=inode,
+                                device=device,
                             )
 
         self.stats.elapsed_time = time.perf_counter() - t0

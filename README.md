@@ -348,7 +348,7 @@ All commands can be invoked via `smart-drive <command>` or `python -m smart_driv
 | `ui` | `--port <n>`, `--no-browser`, `--root <path>`, `--db <path>` | Launches the zero-dependency Web Dashboard & interactive visual UI on port 8765. |
 | `init` | `--profile <name>`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
 | `status` | `--root <path>`, `--json` | Inspect SSD mount point, detected filesystem, geometry, shield health, and taxonomy status. |
-| `audit` | `--root <path>`, `--json`, `--markdown`, `--export <file>` | Detailed storage breakdown and cluster slack metrics, modelled at 512 KB exFAT clusters; the report names the detected filesystem and says when that model does not apply (APFS, NTFS, ext4 ...). |
+| `audit` | `--root <path>`, `--json`, `--markdown`, `--export <file>` | Detailed storage breakdown and cluster slack metrics, modelled at 512 KB exFAT clusters; the report names the detected filesystem and says when that model does not apply (APFS, NTFS, ext4 ...). Hard-linked data is counted once and the extra paths are reported ("Hard Links Not Counted"), and symlinks are skipped and counted. |
 | `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run safeguard and inviolable whitelist protection. With `--apply` it exits `1` if a deletion failed (items refused by the safety guard are reported but are not failures). |
 | `search` | `<query>`, `--ext <ext>`, `--size <spec>`, `--category <cat>`, `--limit <n>`, `--json` | Sub-10ms SQLite FTS5 multi-criteria query parser with BM25 ranking. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Autonomous drive auto-zoning, loose-file relocation, AcademicClassifier routing, and slack rebalancing. |
@@ -362,7 +362,7 @@ All commands can be invoked via `smart-drive <command>` or `python -m smart_driv
 | `classify` | `[path]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Deep content inspection (magic bytes & markers) for AI models, datasets, docs, and code repos. Symlinks and junctions are never followed or moved, and nothing is read from or written to a place that is reached through one. |
 | `offload` | `--scan`, `--move <name>`, `--target <drive>`, `--revert <name>`, `--dry-run`, `--json` | Developer/AI cache discovery and transactional offloading to a secondary drive (NTFS junction on Windows, symbolic link on macOS/Linux). |
 | `health` | `[drive]`, `--root <path>`, `--json` | SSD health, TRIM verification (Windows), partition geometry, and storage utilization monitor. Takes a drive letter on Windows or a volume path (`/Volumes/MySSD`) on macOS/Linux. |
-| `dup` | `--root <path>`, `--json` | 3-phase SHA-256 duplicate candidate detector with cluster slack reclamation preview. |
+| `dup` | `--root <path>`, `--json` | 3-phase SHA-256 duplicate candidate detector with cluster slack reclamation preview. Several names for the same data (hard links) are one file, never offered as copies to delete. |
 | `index` | `--root <path>`, `--db <path>`, `--batch <n>` | Full SQLite FTS5 index creation (>15,000 files/sec). |
 | `update` | `--root <path>`, `--db <path>`, `--json` | Fast $O(1)$ incremental search index synchronization (<2s). |
 

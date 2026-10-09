@@ -522,6 +522,8 @@ class StorageAuditor:
         total_allocated_bytes = 0
         empty_files_count = 0
         large_files: List[Dict[str, Any]] = []
+        seen_links: Set[Tuple[int, int]] = set()  # (device, inode) of hard-linked data already counted
+        hardlinks_not_counted = 0
 
         # Create or reuse scanner
         if self.scanner is not None:
@@ -555,11 +557,26 @@ class StorageAuditor:
             elif entry.is_file:
                 total_files += 1
                 size = entry.size
+                # Another path to data that was already counted shares its storage and adds no space: counting it
+                # again overstated a folder full of hard links by a third (265.7 GB reported, 171.8 GB on disk).
+                # The file is still listed once per path; only its bytes are counted once.
+                extra_link = False
+                if entry.nlink > 1 and entry.inode:
+                    identity = (entry.device, entry.inode)
+                    if identity in seen_links:
+                        extra_link = True
+                        hardlinks_not_counted += 1
+                    else:
+                        seen_links.add(identity)
+                if extra_link:
+                    size = 0
+                    allocated = 0
+                else:
+                    allocated = self.calculate_allocation(size)
                 total_nominal_bytes += size
-                allocated = self.calculate_allocation(size)
                 total_allocated_bytes += allocated
 
-                if size == 0:
+                if size == 0 and not extra_link:
                     empty_files_count += 1
 
                 # 1. Taxonomy Breakdown
@@ -640,6 +657,7 @@ class StorageAuditor:
                 "total_directories": total_directories,
                 "throughput_fps": round(total_files / elapsed_time, 1) if elapsed_time > 0 else 0.0,
                 "symlinks_skipped": int(getattr(getattr(scanner, "stats", None), "symlinks_skipped", 0) or 0),
+                "hardlinks_not_counted": hardlinks_not_counted,
             },
             "summary": {
                 "total_files": total_files,
@@ -706,6 +724,9 @@ class StorageAuditor:
         skipped_links = (data.get("scan_stats") or {}).get("symlinks_skipped", 0)
         if skipped_links:
             buf.write(f"  Symlinks Skipped:        {format_count(skipped_links)} (links are never followed or counted)\n")
+        extra_links = (data.get("scan_stats") or {}).get("hardlinks_not_counted", 0)
+        if extra_links:
+            buf.write(f"  Hard Links Not Counted:  {format_count(extra_links)} (extra paths to data already counted)\n")
         buf.write("-" * 80 + "\n\n")
 
         # 2. Taxonomy Breakdown Table
@@ -783,6 +804,9 @@ class StorageAuditor:
         skipped_links = (data.get("scan_stats") or {}).get("symlinks_skipped", 0)
         if skipped_links:
             buf.write(f"| **Symlinks Skipped** | {format_count(skipped_links)} (never followed or counted) |\n")
+        extra_links = (data.get("scan_stats") or {}).get("hardlinks_not_counted", 0)
+        if extra_links:
+            buf.write(f"| **Hard Links Not Counted** | {format_count(extra_links)} (extra paths to data already counted) |\n")
         buf.write("\n")
 
         buf.write("## 2. Taxonomy Storage Breakdown\n\n")
