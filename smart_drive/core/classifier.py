@@ -151,6 +151,9 @@ class ClassifierEngine:
     def __init__(self, root_path: Union[str, Path]) -> None:
         self.root = Path(root_path).resolve()
         self.skipped_links: List[Path] = []  # symlinks/junctions left alone by the last scan
+        # "Is this folder under the root" answers, kept only while one scan runs (files in the same folder share
+        # them). Never used to decide a move: execute_relocation re-checks everything right before it.
+        self._under_root_cache: Optional[Dict[str, bool]] = None
 
     # --------------------------------------------------------------------------
     # Link safety: nothing may be read, moved or written through a symlink or junction
@@ -193,15 +196,23 @@ class ClassifierEngine:
         a link that points at the drive, another letter case or another Unicode form of a folder name all
         count as "inside" - spelling the drive differently must never turn the link check off.
         """
+        key = str(path)
+        cache = self._under_root_cache
+        if cache is not None and key in cache:
+            return cache[key]
         if self._rel_to_root(path) is not None:
-            return True
-        for candidate in (path, *path.parents):
+            answer = True
+        else:
             try:
-                if os.path.samefile(candidate, self.root):
-                    return True
-            except OSError:  # this ancestor does not exist (yet)
-                continue
-        return False
+                answer = os.path.samefile(path, self.root)
+            except OSError:  # this one does not exist (yet)
+                answer = False
+            if not answer:
+                parent = path.parent
+                answer = parent != path and self._under_root(parent)
+        if cache is not None:
+            cache[key] = answer
+        return answer
 
     def _leads_outside_root(self, typed: Path, real: Path) -> bool:
         """True for a path typed inside the drive whose real location is outside it: a link in disguise.
@@ -716,6 +727,13 @@ class ClassifierEngine:
 
         Symlinks and junctions are never followed or returned (they are listed in ``skipped_links``).
         """
+        self._under_root_cache = {}
+        try:
+            return self._scan_and_classify(target_dir, recursive)
+        finally:
+            self._under_root_cache = None
+
+    def _scan_and_classify(self, target_dir: Optional[Union[str, Path]], recursive: bool) -> List[ClassificationResult]:
         results: List[ClassificationResult] = []
         self.skipped_links = []
 

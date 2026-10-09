@@ -332,6 +332,18 @@ class TestTheDriveSpelledAnotherWay(unittest.TestCase):
         self.assertEqual([a.status for a in actions], ["MOVED"])
         self.assertTrue((self.drive / "01_AI_Models" / "Datasets" / "data.csv").is_file())
 
+    def test_the_answer_cache_lives_for_one_scan_only(self) -> None:
+        """Files in one folder share the "is it under the drive" answer during a scan; nothing may outlive it."""
+        engine = ClassifierEngine(root_path=self.drive)
+        (self.drive / "real" / "dir").mkdir(parents=True)
+        (self.drive / "real" / "dir" / "data.csv").write_text(CSV_BODY)
+        self.assertEqual(len(engine.scan_and_classify(target_dir=self.drive / "real" / "dir")), 1)
+        self.assertIsNone(engine._under_root_cache)
+        shutil.rmtree(self.drive / "real")
+        os.symlink(self.outside, self.drive / "real")  # the same typed path now leads outside
+        self.assertEqual(engine.scan_and_classify(target_dir=self.drive / "real" / "dir"), [])
+        self._outside_untouched()
+
     def test_a_folder_inside_the_drive_reached_through_an_alias_is_classified_normally(self) -> None:
         alias = self.base / "ssd"
         os.symlink(self.drive, alias)
