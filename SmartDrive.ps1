@@ -83,10 +83,9 @@ while ($true) {
     Write-Host "  [5] Safe Junk Cleaner (smart-drive clean)"
     Write-Host "  [6] Auto-Zoning & Anti-Slack Rebalancer (smart-drive organize)"
     Write-Host "  [7] Register AI Coding Agents MCP (smart-drive mcp register)"
-    Write-Host "  [8] Launch Web Dashboard UI (smart-drive ui)"
     Write-Host "  [0] Exit"
     Write-Host ""
-    $Opt = Read-Host "Select an option [0-8]"
+    $Opt = Read-Host "Select an option [0-7]"
 
     switch ($Opt) {
         "1" {
@@ -161,13 +160,6 @@ while ($true) {
             } catch {
                 Run-SmartDrive @("mcp-config")
             }
-            Write-Host ""
-            Read-Host "Press Enter to return to menu..."
-        }
-        "8" {
-            Write-Host ""
-            Write-Host "Starting Web Dashboard (Press Ctrl+C to stop)..." -ForegroundColor Yellow
-            Run-SmartDrive @("ui")
             Write-Host ""
             Read-Host "Press Enter to return to menu..."
         }

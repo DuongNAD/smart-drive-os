@@ -6,12 +6,11 @@
 [![Architecture: Workstation Hybrid](https://img.shields.io/badge/architecture-Workstation%20Hybrid%20Native-blueviolet.svg)](#)
 [![Filesystem: exFAT 512KB Guard](https://img.shields.io/badge/filesystem-exFAT%20512KB%20Guard-orange.svg)](#)
 [![Filesystem: NTFS 4KB Native](https://img.shields.io/badge/filesystem-NTFS%204KB%20Native-cyan.svg)](#)
-[![Web Dashboard](https://img.shields.io/badge/UI-Embedded%20Dark%20SPA-purple.svg)](#)
 [![MCP Protocol: JSON-RPC 2.0](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
 [![MCP Security Audit: Grade A (100/100)](https://img.shields.io/badge/MCP%20Audit-Grade%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Tests: 1033/1033 Passed (100%)](https://img.shields.io/badge/tests-1033%2F1033%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 915/915 Passed (100%)](https://img.shields.io/badge/tests-915%2F915%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Portable Launchers](https://img.shields.io/badge/launchers-20%20portable%20scripts-blue.svg)](#)
 [![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -39,10 +38,9 @@
    - [5. Environment & PATH Verification CLI (`self-path-check`)](#5-environment--path-verification-cli-self-path-check)
    - [6. Model Context Protocol (MCP) Server Grade A (100/100) & Token Efficiency](#6-model-context-protocol-mcp-server-grade-a-100100--token-efficiency)
    - [7. Suite of 20 Portable Cross-Platform Launchers](#7-suite-of-20-portable-cross-platform-launchers)
-   - [8. Embedded Zero-Dependency Web Dashboard (`smart-drive ui`)](#8-embedded-zero-dependency-web-dashboard-smart-drive-ui)
-   - [9. C-Drive Cache Offloader & NTFS Directory Junctions (`smart-drive offload`)](#9-c-drive-cache-offloader--ntfs-directory-junctions-smart-drive-offload)
-   - [10. SHA-256 Snapshot Integrity & Incremental Backup Engine](#10-sha-256-snapshot-integrity--incremental-backup-engine)
-   - [11. 100% Zero Pip Dependencies (`dependencies = []`)](#11-100-zero-pip-dependencies-dependencies--)
+   - [8. C-Drive Cache Offloader & NTFS Directory Junctions (`smart-drive offload`)](#8-c-drive-cache-offloader--ntfs-directory-junctions-smart-drive-offload)
+   - [9. SHA-256 Snapshot Integrity & Incremental Backup Engine](#9-sha-256-snapshot-integrity--incremental-backup-engine)
+   - [10. 100% Zero Pip Dependencies (`dependencies = []`)](#10-100-zero-pip-dependencies-dependencies--)
 4. [3-Step Quickstart](#3-step-quickstart)
 5. [The 5 Preset Profiles](#the-5-preset-profiles)
 6. [Cross-Platform Portable Launchers Guide](#cross-platform-portable-launchers-guide)
@@ -106,20 +104,20 @@ SmartDrive-OS bridges this divide with a unified, zero-external-dependency works
 ```
 +---------------------------------------------------------------------------------------------------------+
 |                                      User & AI Agent Interfaces                                         |
-|   +-----------------------+   +-----------------------+   +---------------------+   +---------------+   |
-|   | 20 Portable Launchers |   |   Python CLI & TUI    |   |  AI Coding Agents   |   |   Web UI SPA  |   |
-|   | (.bat/.ps1/.cmd/.sh)  |   | (smart-drive CLI/TUI) |   | (Antigravity/Claude)|   |  (HTTP :8765) |   |
-|   +-----------+-----------+   +-----------+-----------+   +----------+----------+   +-------+-------+   |
-+---------------|---------------------------|--------------------------|----------------------|-----------+
-                |                           |                          |                      |
-                +---------------------------+                          | JSON-RPC 2.0 stdio   | HTTP Loopback
-                                            |                          v                      v
+|   +-----------------------+   +-----------------------+   +---------------------+                       |
+|   | 20 Portable Launchers |   |   Python CLI & TUI    |   |  AI Coding Agents   |                       |
+|   | (.bat/.ps1/.cmd/.sh)  |   | (smart-drive CLI/TUI) |   | (Antigravity/Claude)|                       |
+|   +-----------+-----------+   +-----------+-----------+   +----------+----------+                       |
++---------------|---------------------------|--------------------------|----------------------------------+
+                |                           |                          |
+                +---------------------------+                          | JSON-RPC 2.0 stdio
+                                            |                          v
                                             v             +-----------------------------------------------+
 +---------------------------------------------------------|        MCP Server Grade A (100/100)           |
 |                                                         |  - 100% AST-Resolvable Isolated Handlers      |
 |                     SmartDrive-OS Core Subsystems       |  - Token-Efficient Paged Compressed JSON      |
 |                                                         |  - Constant-Time HMAC Handshake Auth          |
-|  +--------------------------------+  +------------------+  - Strict Loopback Socket Isolation           |
+|  +--------------------------------+  +------------------+  - stdio Transport, No Network Listener       |
 |  | Drive Initializer              |  | Storage Auditor  +-----------------------------------------------+
 |  | - 5 Preset Profiles            |  | - Adaptive Geometry (512KB exFAT vs 4KB NTFS)                    |
 |  | - Anti-Indexing Shields        |  | - Precise Cluster Slack & Capacity Calculation                   |
@@ -238,26 +236,20 @@ Zero Git requirement, zero account dependencies. 5 essential workflows provided 
 
 All 20 launchers reside both in the repository root and in `launchers/` for instant execution.
 
-### 8. Embedded Zero-Dependency Web Dashboard (`smart-drive ui`)
-- **Embedded Dark Mode SPA**: Built 100% on Python's built-in `http.server.ThreadingHTTPServer`. Zero npm, zero node, zero Flask/FastAPI dependencies.
-- **Visual Analytics**: Interactive 6-taxonomy distribution charts and real-time visualization of wasted 512KB cluster slack bytes.
-- **Interactive Search**: Real-time search bar with instant filtering by extension, size threshold, and category.
-- **3-Tier Safe Cleanup Panel**: Visual dry-run preview with a 1-click confirmation dialog.
-
-### 9. C-Drive Cache Offloader & NTFS Directory Junctions (`smart-drive offload`)
+### 8. C-Drive Cache Offloader & NTFS Directory Junctions (`smart-drive offload`)
 - **7-Phase Transactional Migration**: Safe migration of heavy developer and AI caches (HuggingFace, Ollama, PyTorch, Docker WSL2, pip, uv, npm, Conda, Gradle, Cargo) from `C:` to secondary drive (`D:\04_System_Offload_Caches\<name>`).
 - **Unprivileged NTFS Directory Junctions (`mklink /J`)**: Creates transparent Windows hardware reparse points without requiring Administrator elevation or Developer Mode.
 - **Instant Rollback Safety**: Automatic transactional rollback if any step fails during offload or revert operations.
 
-### 10. SHA-256 Snapshot Integrity & Incremental Backup Engine
+### 9. SHA-256 Snapshot Integrity & Incremental Backup Engine
 - **Streaming 64KB-Chunk SHA-256 Hashing**: Constant-memory $O(1)$ SHA-256 calculation detecting silent bit rot and corruption.
 - **Point-in-Time Manifests**: Snapshot critical directories into `.smart_drive/snapshots/<name>.json`.
 - **Safe Incremental Backup**: Transfers only modified or new files to backup targets, automatically excluding OS junk.
 - **Honest Coverage**: Snapshots and backups cover `02_Learning_Knowledge`, `03_Development_Projects` and `05_Dev_Toolbox` by default (choose others with `--partitions`) and skip hidden folders such as `.git`, `.github` and `.vscode` (add them with `--include-hidden`). Every run lists what it did not cover, so a gap is never silent.
 
-### 11. 100% Zero Pip Dependencies (`dependencies = []`)
+### 10. 100% Zero Pip Dependencies (`dependencies = []`)
 - Strict architectural rule: `dependencies = []` in `pyproject.toml`.
-- Fully written using the Python Standard Library (`sqlite3`, `http.server`, `hashlib`, `hmac`, `json`, `urllib`, `shutil`, `pathlib`, `ctypes`, `subprocess`, `argparse`).
+- Fully written using the Python Standard Library (`sqlite3`, `hashlib`, `hmac`, `json`, `urllib`, `shutil`, `pathlib`, `ctypes`, `subprocess`, `argparse`).
 - Guaranteed to run out of the box on any machine with Python 3.9+ installed.
 
 ---
@@ -290,13 +282,8 @@ Initialize standard taxonomy directories, install anti-indexing shields, generat
   python -m smart_drive init --profile ai-developer
   ```
 
-### Step 3: Launch Visual Dashboard or Register AI Agents
-Start the local Web Dashboard in your browser:
-```bash
-smart-drive ui
-```
-
-Or register SmartDrive-OS as an MCP Server across all your AI coding assistants in 1 click:
+### Step 3: Register AI Agents
+Register SmartDrive-OS as an MCP Server across all your AI coding assistants in 1 click:
 ```bash
 smart-drive mcp register --all
 ```
@@ -345,7 +332,6 @@ All commands can be invoked via `smart-drive <command>` or `python -m smart_driv
 | Command | Key Arguments | Description |
 |---|---|---|
 | `self-path-check` | *(none)* | Inspects Python CLI script paths on system `PATH` and outputs 1-click configuration commands. |
-| `ui` | `--port <n>`, `--no-browser`, `--root <path>`, `--db <path>` | Launches the zero-dependency Web Dashboard & interactive visual UI on port 8765. |
 | `init` | `--profile <name>`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
 | `status` | `--root <path>`, `--json` | Inspect SSD mount point, detected filesystem, geometry, shield health, and taxonomy status. |
 | `audit` | `--root <path>`, `--json`, `--markdown`, `--export <file>` | Detailed storage breakdown and cluster slack metrics, modelled at 512 KB exFAT clusters; the report names the detected filesystem and says when that model does not apply (APFS, NTFS, ext4 ...). Hard-linked data is counted once and the extra paths are reported ("Hard Links Not Counted"), and symlinks are skipped and counted. |
@@ -374,7 +360,7 @@ The SQLite FTS5 search engine processes complex queries in under 10 milliseconds
 
 - **Free Text**: `smart-drive search "machine learning"`
 - **File Extension**: `smart-drive search "weights ext:gguf"`
-- **Size Filter**: `smart-drive search "dataset size:>100MB"` (or `size:<1MB`, `size:0`). `>` and `<` leave the bound out, `>=` and `<=` include it; units are binary (1KB = 1024 bytes). A filter that cannot be read (`size:>abc`, `size:>10 MB`) is reported as a warning (stderr in the CLI, `warnings` in MCP and the dashboard) instead of being ignored silently.
+- **Size Filter**: `smart-drive search "dataset size:>100MB"` (or `size:<1MB`, `size:0`). `>` and `<` leave the bound out, `>=` and `<=` include it; units are binary (1KB = 1024 bytes). A filter that cannot be read (`size:>abc`, `size:>10 MB`) is reported as a warning (stderr in the CLI, `warnings` in MCP) instead of being ignored silently.
 - **Taxonomy Category**: `smart-drive search "llama cat:ai_models"`
 - **Directory Constraint**: `smart-drive search "assignment dir:FPTU"`
 - **Compound Query**: `smart-drive search "exam ext:pdf size:>1MB dir:DBI202"`
@@ -489,8 +475,7 @@ SmartDrive-OS is engineered from the ground up with a strict **local-first, zero
 - **100% Local-Only Operations**: All filesystem scanning, SQLite FTS5 search indexing, and SHA-256 snapshotting occur exclusively on your local storage. No data is ever transmitted over the network.
 - **Zero Telemetry & Phone-Home**: Zero analytics, zero usage trackers, and zero background network beacons.
 - **Zero PII Logging**: File contents, credentials, and source code secrets are never parsed or harvested; only basic filesystem metadata is stored in local `.smart_drive/index.db`.
-- **Air-Gap Ready**: Zero external pip dependencies (`dependencies = []`). The embedded Web Dashboard binds exclusively to `127.0.0.1` (`localhost`), and the MCP Server operates solely over local `stdio`.
-- **Dashboard Request Guard**: The dashboard API answers only requests whose `Host` is `127.0.0.1`/`localhost` on its own port and whose `Origin`, when present, is the dashboard itself, and that browsers do not label as coming from another site (`Sec-Fetch-Site`), so a web page open in your browser can neither read it, trigger a purge, nor make it run a scan. Foreign hosts/origins/sites get `403`, state-changing calls must be `application/json`, and responses carry `X-Frame-Options`, `nosniff` and a Content-Security-Policy. To let a local front-end dev server call the API, opt in explicitly: `SMART_DRIVE_UI_ALLOWED_ORIGINS=http://localhost:5173`.
+- **Air-Gap Ready**: Zero external pip dependencies (`dependencies = []`). The MCP Server operates solely over local `stdio`, and nothing in SmartDrive-OS listens on a network port.
 - **Defensive Safeguards**: Inviolable whitelist protecting critical files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`), mandatory dry-run defaults for cleanup, and strict input boundary validation.
 
 For full architectural details, security models, and compliance specifications, please read our authoritative [PRIVACY.md](PRIVACY.md).

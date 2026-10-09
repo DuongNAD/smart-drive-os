@@ -6,7 +6,7 @@ Tier 5 Empirical Challenger Suite:
 3. Zero hardcoded machine-specific usernames or home directory paths.
 4. `PYTHONDONTWRITEBYTECODE=1` cluster slack defense verification and empirical bytecode suppression test.
 5. Host isolation verification (`GIT_TERMINAL_PROMPT=0`, `GIT_CONFIG_NOSYSTEM=1`, UTF-8).
-6. Master menu interactive options [0]-[8] CLI mapping verification and empirical execution.
+6. Master menu interactive options [0]-[7] CLI mapping verification and empirical execution.
 7. exFAT cluster geometry invariants (512KB allocation unit, cluster boundary math, edge cases).
 8. Anti-indexing shields verification and auto-healing lifecycle.
 9. Whitelist immutability for `AGENTS.md` and `GEMINI.md` across SecurityGuard, PurgeEngine, JunkDetector, and MCP.
@@ -335,7 +335,7 @@ class TestLauncherHostIsolation(unittest.TestCase):
 
 
 class TestLauncherMasterMenuMapping(unittest.TestCase):
-    """Verifies that master menu options [0]-[8] in SmartDrive.* map 1:1 to valid CLI commands."""
+    """Verifies that master menu options [0]-[7] in SmartDrive.* map 1:1 to valid CLI commands."""
 
     def setUp(self):
         self.parser = build_parser()
@@ -390,10 +390,6 @@ class TestLauncherMasterMenuMapping(unittest.TestCase):
 
         args_7_cfg = self.parser.parse_args(["mcp-config"])
         self.assertEqual(args_7_cfg.subcommand, "mcp-config")
-
-        # Option 8: ui
-        args_8 = self.parser.parse_args(["ui"])
-        self.assertEqual(args_8.subcommand, "ui")
 
     @unittest.skipIf(sys.platform == "win32", "POSIX interactive bash execution")
     def test_empirical_master_menu_loop_option_0_exit(self):

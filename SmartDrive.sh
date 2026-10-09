@@ -61,10 +61,9 @@ while true; do
     echo "  [5] Safe Junk Cleaner (smart-drive clean)"
     echo "  [6] Auto-Zoning & Anti-Slack Rebalancer (smart-drive organize)"
     echo "  [7] Register AI Coding Agents MCP (smart-drive mcp register)"
-    echo "  [8] Launch Web Dashboard UI (smart-drive ui)"
     echo "  [0] Exit"
     echo ""
-    if ! read -r -p "Select an option [0-8]: " OPT; then
+    if ! read -r -p "Select an option [0-7]: " OPT; then
         echo ""
         break
     fi
@@ -141,13 +140,6 @@ while true; do
         7)
             echo ""
             "$PYTHON_CMD" -m smart_drive mcp register 2>/dev/null || "$PYTHON_CMD" -m smart_drive mcp-config
-            echo ""
-            read -r -p "Press Enter to return to menu..."
-            ;;
-        8)
-            echo ""
-            echo "Starting Web Dashboard (Press Ctrl+C to stop)..."
-            "$PYTHON_CMD" -m smart_drive ui
             echo ""
             read -r -p "Press Enter to return to menu..."
             ;;

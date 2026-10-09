@@ -37,7 +37,6 @@ from smart_drive.core.junction import is_directory_junction
 from smart_drive.core.offloader import validate_target_drive
 from smart_drive.mcp.proxy import SmartDriveProxy
 from smart_drive.mcp.server import SmartDriveMCPServer
-from smart_drive.ui.server import ThreadingHTTPServer
 from tests.helpers import SmartDriveTestCase
 
 
@@ -388,10 +387,6 @@ class TestAdversarialWorkerRemediationsIntegrity(SmartDriveTestCase):
         path_str = str(path)
         self.assertNotIn("D:\\/", path_str)
         self.assertNotIn("D://", path_str)
-
-    def test_threading_http_server_queue_size_backlog(self) -> None:
-        """ThreadingHTTPServer must configure request_queue_size to 128 to buffer concurrency bursts."""
-        self.assertEqual(ThreadingHTTPServer.request_queue_size, 128)
 
 
 if __name__ == "__main__":

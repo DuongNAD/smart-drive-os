@@ -1,7 +1,7 @@
 """tests/test_db_connections_closed.py - Whatever opens the search database must close it.
 
-Regression: `search`, `index`, `update`, `organize --apply`, `init`, the MCP search tool, the dashboard's
-/api/search and the sentinel's database check left their SQLite connection to the garbage collector.
+Regression: `search`, `index`, `update`, `organize --apply`, `init`, the MCP search tool and the
+sentinel's database check left their SQLite connection to the garbage collector.
 Python 3.13 reports that as `ResourceWarning: unclosed database` on stderr (it surfaced as a CI failure on
 3.13 only, where a test expects a clean stderr). The check below looks at the connection objects
 themselves, so it holds on every Python version.
@@ -10,13 +10,10 @@ themselves, so it holds on every Python version.
 from __future__ import annotations
 
 import contextlib
-import http.client
 import io
-import json
 import shutil
 import sqlite3
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from typing import Iterator, List
@@ -25,7 +22,6 @@ from unittest.mock import patch
 from smart_drive.cli.main import main
 from smart_drive.core.sentinel import check_search_database
 from smart_drive.mcp.server import SmartDriveMCPServer
-from smart_drive.ui.server import create_server
 
 
 class _TrackedConnection(sqlite3.Connection):
@@ -107,23 +103,6 @@ class TestServersCloseTheirDatabase(_Drive):
         with tracked_connections() as opened:
             result = server.handle_ssd_search({"query": "ext:py"})
         self.assertEqual(result["total_count"], 1)
-        self.assert_all_closed(opened)
-
-    def test_dashboard_search(self) -> None:
-        server = create_server(root_path=str(self.root), port=0, host="127.0.0.1")
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
-        with tracked_connections() as opened:
-            conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=10)
-            try:
-                conn.request("GET", "/api/search?q=ext:py")
-                response = conn.getresponse()
-                body = json.loads(response.read())
-            finally:
-                conn.close()
-        self.assertEqual(response.status, 200)
-        self.assertEqual(body["total"], 1)
         self.assert_all_closed(opened)
 
 

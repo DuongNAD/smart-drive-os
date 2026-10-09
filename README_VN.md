@@ -6,17 +6,16 @@
 [![Kiến trúc: Workstation Hybrid](https://img.shields.io/badge/ki%E1%BA%BFn%20tr%C3%BAc-Workstation%20Hybrid%20Native-blueviolet.svg)](#)
 [![Hệ thống tệp: exFAT 512KB Guard](https://img.shields.io/badge/h%E1%BB%87%20th%E1%BB%91ng%20t%E1%BB%87p-exFAT%20512KB%20Guard-orange.svg)](#)
 [![Hệ thống tệp: NTFS 4KB Native](https://img.shields.io/badge/h%E1%BB%87%20th%E1%BB%91ng%20t%E1%BB%87p-NTFS%204KB%20Native-cyan.svg)](#)
-[![Web Dashboard](https://img.shields.io/badge/Giao%20di%E1%BB%87n-Web%20Dark%20SPA-purple.svg)](#)
 [![Giao thức MCP: JSON-RPC 2.0](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
 [![Kiểm định Bảo mật MCP: Hạng A (100/100)](https://img.shields.io/badge/MCP%20Audit-H%E1%BA%A1ng%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Kiểm thử: 1033/1033 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-1033%2F1033%20passed%20(100%25)-brightgreen.svg)](#)
+[![Kiểm thử: 915/915 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-915%2F915%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Launcher Portable](https://img.shields.io/badge/launchers-20%20t%E1%BB%87p%20kh%E1%BB%9Fi%20ch%E1%BA%A1y-blue.svg)](#)
 [![Phiên bản: v1.1.0](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![Giấy phép: MIT](https://img.shields.io/badge/Gi%E1%BA%A5y%20ph%C3%A9p-MIT-yellow.svg)](LICENSE)
 
-> **Hệ điều hành Quản trị Dữ liệu Tự hành Máy trạm (Workstation Hybrid), Giao diện Web Dashboard Trực quan, Hệ thống Snapshot Toàn vẹn Dữ liệu SHA-256 và Công cụ Tìm kiếm Siêu tốc SQLite FTS5 (<10ms) dành cho Ổ cứng Di động Ngoài (exFAT), Ổ phụ Gắn trong (NTFS) và các Trợ lý Lập trình AI.**
+> **Hệ điều hành Quản trị Dữ liệu Tự hành Máy trạm (Workstation Hybrid), Hệ thống Snapshot Toàn vẹn Dữ liệu SHA-256 và Công cụ Tìm kiếm Siêu tốc SQLite FTS5 (<10ms) dành cho Ổ cứng Di động Ngoài (exFAT), Ổ phụ Gắn trong (NTFS) và các Trợ lý Lập trình AI.**
 >
 > 🌐 **English Documentation**: Full GitHub repository documentation is available at [README.md](README.md)
 >
@@ -39,10 +38,9 @@
    - [5. Tiện ích Kiểm tra Biến Môi trường & PATH (`self-path-check`)](#5-tiện-ích-kiểm-tra-biến-môi-trường--path-self-path-check)
    - [6. Máy chủ MCP Server Hạng A (100/100) & Tối ưu Token cho AI Coding Agents](#6-máy-chủ-mcp-server-hạng-a-100100--tối-ưu-token-cho-ai-coding-agents)
    - [7. Bộ 20 Launcher Portable Độc lập Đa Nền tảng](#7-bộ-20-launcher-portable-độc-lập-đa-nền-tảng)
-   - [8. Giao diện Web Dashboard Nhúng Không Thư viện Ngoài (`smart-drive ui`)](#8-giao-diện-web-dashboard-nhúng-không-thư-viện-ngoài-smart-drive-ui)
-   - [9. Động cơ Di chuyển Cache Ổ C: & NTFS Directory Junctions (`smart-drive offload`)](#9-động-cơ-di-chuyển-cache-ổ-c--ntfs-directory-junctions-smart-drive-offload)
-   - [10. Động cơ Snapshot SHA-256 Dạng Dòng & Sao lưu Tăng số](#10-động-cơ-snapshot-sha-256-dạng-dòng--sao-lưu-tăng-số)
-   - [11. Cam kết 100% Zero External Pip Dependencies](#11-cam-kết-100-zero-external-pip-dependencies)
+   - [8. Động cơ Di chuyển Cache Ổ C: & NTFS Directory Junctions (`smart-drive offload`)](#8-động-cơ-di-chuyển-cache-ổ-c--ntfs-directory-junctions-smart-drive-offload)
+   - [9. Động cơ Snapshot SHA-256 Dạng Dòng & Sao lưu Tăng số](#9-động-cơ-snapshot-sha-256-dạng-dòng--sao-lưu-tăng-số)
+   - [10. Cam kết 100% Zero External Pip Dependencies](#10-cam-kết-100-zero-external-pip-dependencies)
 4. [Khởi Động Nhanh Trong 3 Bước](#4-khởi-động-nhanh-trong-3-bước)
 5. [5 Cấu Hình Mẫu Chuyên Biệt (Preset Profiles)](#5-5-cấu-hình-mẫu-chuyên-biệt-preset-profiles)
 6. [Hướng Dẫn Sử Dụng Bộ Khởi Chạy 1-Chạm (20 Launchers)](#6-hướng-dẫn-sử-dụng-bộ-khởi-chạy-1-chạm-20-launchers)
@@ -106,20 +104,20 @@ SmartDrive-OS thống nhất mọi thao tác trên cả hai loại ổ đĩa v�
 ```
 +---------------------------------------------------------------------------------------------------------+
 |                                    Giao diện Người dùng & AI Agents                                     |
-|   +-----------------------+   +-----------------------+   +---------------------+   +---------------+   |
-|   |  20 Launchers Tự hành |   |   Python CLI & TUI    |   |  Trợ lý Lập trình AI|   |  Web UI SPA   |   |
-|   | (.bat/.ps1/.cmd/.sh)  |   | (smart-drive CLI/TUI) |   | (Antigravity/Claude)|   |  (HTTP :8765) |   |
-|   +-----------+-----------+   +-----------+-----------+   +----------+----------+   +-------+-------+   |
-+---------------|---------------------------|--------------------------|----------------------|-----------+
-                |                           |                          |                      |
-                +---------------------------+                          | JSON-RPC 2.0 stdio   | HTTP Loopback
-                                            |                          v                      v
+|   +-----------------------+   +-----------------------+   +---------------------+                       |
+|   |  20 Launchers Tự hành |   |   Python CLI & TUI    |   |  Trợ lý Lập trình AI|                       |
+|   | (.bat/.ps1/.cmd/.sh)  |   | (smart-drive CLI/TUI) |   | (Antigravity/Claude)|                       |
+|   +-----------+-----------+   +-----------+-----------+   +----------+----------+                       |
++---------------|---------------------------|--------------------------|----------------------------------+
+                |                           |                          |
+                +---------------------------+                          | JSON-RPC 2.0 stdio
+                                            |                          v
                                             v             +-----------------------------------------------+
 +---------------------------------------------------------|        Máy chủ MCP Server Hạng A (100/100)    |
 |                                                         |  - 100% Phân tích tĩnh AST tách biệt handler |
 |                   Nhân Điều Hành SmartDrive-OS          |  - Định dạng JSON nén có phân trang tối ưu    |
 |                                                         |  - Xác thực Token Handshake HMAC bất biến     |
-|  +--------------------------------+  +------------------+  - Khóa chặt Socket trên Loopback cục bộ      |
+|  +--------------------------------+  +------------------+  - Giao tiếp stdio, không mở cổng mạng        |
 |  | Drive Initializer              |  | Storage Auditor  +-----------------------------------------------+
 |  | - 5 Cấu hình mẫu chuyên biệt   |  | - Thích ứng hình học (512KB exFAT vs 4KB NTFS)                   |
 |  | - Cài khiên chống quét rác    |  | - Đo lường chính xác Cluster Slack và dung lượng lãng phí        |
@@ -238,26 +236,20 @@ Không cần cài Git, không phụ thuộc tài khoản. Cung cấp 5 luồng t
 
 Tất cả 20 tệp khởi chạy có sẵn ở cả thư mục gốc của ổ cứng và thư mục `launchers/` để dùng ngay bằng thao tác nhấp đúp chuột.
 
-### 8. Giao diện Web Dashboard Nhúng Không Thư viện Ngoài (`smart-drive ui`)
-- **Web SPA Dark Mode nhúng sẵn**: Sử dụng 100% `http.server.ThreadingHTTPServer` của Python. Không cần cài npm, node, Flask hay FastAPI.
-- **Biểu đồ Trực quan**: Hiển thị tỷ lệ phân bổ của 6 nhóm thư mục và tính toán trực quan lượng cluster slack 512KB bị lãng phí.
-- **Tìm kiếm Tương tác Tức thì**: Ô tìm kiếm thời gian thực với các bộ lọc phân loại, phần mở rộng và khoảng dung lượng.
-- **Bảng Dọn rác An toàn**: Xem trước danh sách tệp rác (Dry-run preview) và thực hiện dọn dẹp bằng hộp thoại xác nhận an toàn.
-
-### 9. Động cơ Di chuyển Cache Ổ C: & NTFS Directory Junctions (`smart-drive offload`)
+### 8. Động cơ Di chuyển Cache Ổ C: & NTFS Directory Junctions (`smart-drive offload`)
 - **Quy trình chuyển giao 7 bước an toàn**: Tự động phát hiện và chuyển các cache khổng lồ (HuggingFace, Ollama, PyTorch, Docker WSL2, pip, uv, npm, Conda, Gradle, Cargo) từ `C:` sang ổ phụ (`D:\04_System_Offload_Caches\<tên>`).
 - **Điểm nối phần cứng NTFS Directory Junctions (`mklink /J`)**: Tạo liên kết trong suốt mà không cần quyền Admin hay Developer Mode.
 - **Cơ chế hoàn tác Rollback tức thì**: Tự động phục hồi nguyên trạng nếu có bất kỳ bước nào gặp lỗi gián đoạn.
 
-### 10. Động cơ Snapshot SHA-256 Dạng Dòng & Sao lưu Tăng số
+### 9. Động cơ Snapshot SHA-256 Dạng Dòng & Sao lưu Tăng số
 - **Băm SHA-256 theo khối 64KB**: Thuật toán tính toán với bộ nhớ hằng số $O(1)$, kiểm tra chính xác hiện tượng suy thoái dữ liệu (bit rot) và tệp bị sửa đổi.
 - **Bản kê khai trạng thái điểm phục hồi**: Lưu trữ trạng thái vào `.smart_drive/snapshots/<tên>.json`.
 - **Sao lưu tăng số thông minh**: Tự động nhận diện và chỉ sao chép các tệp mới hoặc có thay đổi sang ổ đích, tự động loại trừ file rác.
 - **Báo cáo phạm vi trung thực**: Snapshot và sao lưu mặc định phủ `02_Learning_Knowledge`, `03_Development_Projects` và `05_Dev_Toolbox` (chọn phân vùng khác bằng `--partitions`) và bỏ qua các thư mục ẩn như `.git`, `.github`, `.vscode` (thêm lại bằng `--include-hidden`). Mỗi lần chạy đều liệt kê phần chưa được phủ, nên không bao giờ có khoảng trống âm thầm.
 
-### 11. Cam kết 100% Zero External Pip Dependencies
+### 10. Cam kết 100% Zero External Pip Dependencies
 - Tệp `pyproject.toml` khai báo tường minh: `dependencies = []`.
-- Toàn bộ tính năng được xây dựng trên thư viện chuẩn Python 3.9+ (`sqlite3`, `http.server`, `hashlib`, `hmac`, `json`, `urllib`, `shutil`, `pathlib`, `ctypes`, `subprocess`, `argparse`).
+- Toàn bộ tính năng được xây dựng trên thư viện chuẩn Python 3.9+ (`sqlite3`, `hashlib`, `hmac`, `json`, `urllib`, `shutil`, `pathlib`, `ctypes`, `subprocess`, `argparse`).
 - Cài đặt và hoạt động ngay trên mọi hệ máy tính mà không lo xung đột gói thư viện.
 
 ---
@@ -290,13 +282,8 @@ Khởi tạo cấu trúc thư mục chuẩn, cài khiên bảo vệ và tạo c�
   python -m smart_drive init --profile ai-developer
   ```
 
-### Bước 3: Mở Web Dashboard hoặc Đăng ký AI Agent
-Mở giao diện Web trực quan trên trình duyệt:
-```bash
-smart-drive ui
-```
-
-Hoặc đăng ký SmartDrive-OS làm máy chủ MCP cho toàn bộ các trợ lý lập trình AI chỉ với 1 lệnh duy nhất:
+### Bước 3: Đăng ký AI Agent
+Đăng ký SmartDrive-OS làm máy chủ MCP cho toàn bộ các trợ lý lập trình AI chỉ với 1 lệnh duy nhất:
 ```bash
 smart-drive mcp register --all
 ```
@@ -343,7 +330,6 @@ Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `pyth
 | Lệnh | Tham số chính | Mô tả chức năng |
 |---|---|---|
 | `self-path-check` | *(không có)* | Kiểm tra đường dẫn PATH của hệ thống và đưa ra câu lệnh PowerShell cấu hình 1-chạm. |
-| `ui` | `--port <cổng>`, `--no-browser`, `--root <đường_dẫn>`, `--db <đường_dẫn>` | Khởi chạy Web Dashboard giao diện Dark Mode trực quan trên cổng 8765. |
 | `init` | `--profile <tên>`, `--root <đường_dẫn>`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo 6 nhóm thư mục, cài khiên và gieo cơ sở dữ liệu FTS5. |
 | `status` | `--root <đường_dẫn>`, `--json` | Kiểm tra tình trạng điểm gắn ổ đĩa, hệ tệp được nhận diện, cấu trúc hình học, khiên bảo vệ và phân vùng. |
 | `audit` | `--root <đường_dẫn>`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán chi tiết dung lượng và tỷ lệ lãng phí cluster slack, mô hình hoá theo cụm exFAT 512 KB; báo cáo nêu hệ tệp được nhận diện và cho biết khi nào mô hình đó không áp dụng (APFS, NTFS, ext4 ...). Dữ liệu có nhiều hard link chỉ được tính một lần và các đường dẫn thừa được nêu riêng ("Hard Links Not Counted"); symlink được bỏ qua và đếm. |
@@ -372,7 +358,7 @@ Công cụ SQLite FTS5 xử lý truy vấn phức tạp dưới 10 milliseconds:
 
 - **Từ khóa tự do**: `smart-drive search "machine learning"`
 - **Lọc theo phần mở rộng**: `smart-drive search "weights ext:gguf"`
-- **Lọc theo dung lượng**: `smart-drive search "dataset size:>100MB"` (hoặc `size:<1MB`, `size:0`). `>` và `<` không tính chính giá trị đó, `>=` và `<=` thì có; đơn vị là nhị phân (1KB = 1024 byte). Bộ lọc không đọc được (`size:>abc`, `size:>10 MB`) sẽ hiện cảnh báo (stderr ở CLI, trường `warnings` ở MCP và dashboard) thay vì bị bỏ qua âm thầm.
+- **Lọc theo dung lượng**: `smart-drive search "dataset size:>100MB"` (hoặc `size:<1MB`, `size:0`). `>` và `<` không tính chính giá trị đó, `>=` và `<=` thì có; đơn vị là nhị phân (1KB = 1024 byte). Bộ lọc không đọc được (`size:>abc`, `size:>10 MB`) sẽ hiện cảnh báo (stderr ở CLI, trường `warnings` ở MCP) thay vì bị bỏ qua âm thầm.
 - **Lọc theo danh mục**: `smart-drive search "llama cat:ai_models"`
 - **Lọc theo thư mục**: `smart-drive search "de thi dir:FPTU"`
 - **Truy vấn kết hợp**: `smart-drive search "exam ext:pdf size:>1MB dir:DBI202"`
@@ -486,8 +472,7 @@ SmartDrive-OS tuân thủ triệt để nguyên tắc **Local-First & Quyền Ri
 - **Hoạt động 100% Cục bộ (Local-Only)**: Toàn bộ quá trình quét ổ đĩa, đánh chỉ mục tìm kiếm SQLite FTS5 và xác thực snapshot SHA-256 đều diễn ra trực tiếp trên phần cứng của bạn. Tuyệt đối không gửi dữ liệu ra ngoài.
 - **Zero Telemetry**: Hoàn toàn không chứa mã thu thập hành vi, không gửi báo cáo sử dụng và không có kết nối ngầm.
 - **Zero PII Logging**: Tuyệt đối không đọc, bóc tách hay thu thập nội dung nhạy cảm (mã nguồn bí mật, token, private key); chỉ lưu metadata tệp tin cần thiết trong cơ sở dữ liệu nội bộ `.smart_drive/index.db`.
-- **Sẵn sàng cho môi trường Air-Gap**: Không có dependencies ngoài (`dependencies = []`). Web Dashboard chỉ lắng nghe trên `127.0.0.1` (`localhost`), và máy chủ MCP giao tiếp thuần túy qua luồng `stdio`.
-- **Lá chắn yêu cầu cho Dashboard**: API của dashboard chỉ trả lời các yêu cầu có `Host` là `127.0.0.1`/`localhost` đúng cổng của nó và `Origin` (nếu có) chính là dashboard và trình duyệt không gắn nhãn là đến từ trang khác (`Sec-Fetch-Site`), nên một trang web đang mở trong trình duyệt không thể đọc dữ liệu, kích hoạt xoá hay bắt nó quét ổ. Host/Origin/nguồn lạ nhận `403`, các lệnh thay đổi dữ liệu bắt buộc là `application/json`, và phản hồi có `X-Frame-Options`, `nosniff` cùng Content-Security-Policy. Muốn cho giao diện dev cục bộ gọi API, hãy bật tường minh: `SMART_DRIVE_UI_ALLOWED_ORIGINS=http://localhost:5173`.
+- **Sẵn sàng cho môi trường Air-Gap**: Không có dependencies ngoài (`dependencies = []`). Máy chủ MCP giao tiếp thuần túy qua luồng `stdio`, và SmartDrive-OS không mở bất kỳ cổng mạng nào.
 - **Khiên Bảo vệ Bất khả Xâm phạm**: Ngăn chặn hoàn toàn việc xóa nhầm các tệp cấu hình cốt lõi (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`) và các ứng dụng hệ thống.
 
 Xem toàn văn cam kết bảo mật và quyền riêng tư tại [PRIVACY.md](PRIVACY.md).

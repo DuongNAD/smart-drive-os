@@ -529,7 +529,7 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
 
         # Check Master 1-Touch SmartDrive menu options
         sd_sh = (launchers_dir / "SmartDrive.sh").read_text(encoding="utf-8", errors="ignore")
-        for opt in ["smart-drive init", "smart-drive sentinel", "smart-drive search", "smart-drive audit", "smart-drive clean", "smart-drive organize", "smart-drive mcp", "smart-drive ui"]:
+        for opt in ["smart-drive init", "smart-drive sentinel", "smart-drive search", "smart-drive audit", "smart-drive clean", "smart-drive organize", "smart-drive mcp"]:
             self.assertIn(opt, sd_sh, f"SmartDrive menu must include option {opt}")
 
 

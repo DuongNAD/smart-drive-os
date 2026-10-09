@@ -4,7 +4,7 @@ Regressions:
 - `size:>10MB` also returned a file of exactly 10MB (`>` and `<` were treated like `>=` and `<=`).
 - A size filter that could not be read (`size:>abc`, `size:>10 MB`) was dropped without a word, so the
   search looked fine while returning everything. It is now a warning on every surface (CLI stderr, MCP
-  `warnings`, dashboard) and the parser stays lenient.
+  `warnings`) and the parser stays lenient.
 - `1PB` was read as one byte, a 400-digit size crashed the parser, and a size beyond 64 bits crashed SQLite.
 - `dir:my_project` also matched `myXproject` and `dir:100%` matched `1000`: `_` and `%` were LIKE wildcards.
 - An empty answer for a category that does not exist now lists the categories the index really has.
@@ -13,24 +13,20 @@ Regressions:
 from __future__ import annotations
 
 import contextlib
-import http.client
 import io
 import json
 import shutil
 import sqlite3
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from typing import List, Tuple
-from urllib.parse import quote
 
 from smart_drive.cli.main import main
 from smart_drive.mcp.server import SmartDriveMCPServer
 from smart_drive.search.engine import SearchEngine, _like_contains
 from smart_drive.search.parser import SearchParams, apply_size_spec, parse_search_query, parse_size_spec
 from smart_drive.indexer.db import DatabaseManager
-from smart_drive.ui.server import create_server
 
 SIZES = {
     "sizes/s099.bin": 99,
@@ -359,64 +355,6 @@ class TestDirectoryWildcards(_Drive):
                 self.assertEqual([r[0] for r in rows], expected, text)
         finally:
             db.close()
-
-
-class TestDashboardSearchApi(_Drive):
-    def setUp(self) -> None:
-        super().setUp()
-        self.server = create_server(root_path=str(self.root), port=0, host="127.0.0.1")
-        self.port = self.server.server_address[1]
-        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        thread.start()
-        self.addCleanup(self.server.server_close)
-        self.addCleanup(self.server.shutdown)
-
-    def get(self, query_string: str) -> Tuple[int, dict]:
-        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
-        try:
-            conn.request("GET", "/api/search?" + query_string)
-            response = conn.getresponse()
-            return response.status, json.loads(response.read())
-        finally:
-            conn.close()
-
-    def test_warnings_are_in_the_response_only_when_there_are_some(self) -> None:
-        status, data = self.get("q=" + quote("size:>abc"))
-        self.assertEqual(status, 200)
-        self.assertEqual(len(data["warnings"]), 1)
-        status, clean = self.get("q=" + quote("ext:py"))
-        self.assertEqual(status, 200)
-        self.assertNotIn("warnings", clean)
-
-    def test_url_size_bounds_narrow_the_query_and_never_widen_it(self) -> None:
-        def names(query_string: str) -> List[str]:
-            status, data = self.get(query_string)
-            self.assertEqual(status, 200, query_string)
-            return sorted(Path(m["path"]).name for m in data["matches"])
-
-        base = "ext=bin&q=" + quote("size:>100")
-        self.assertEqual(names(base), ["k1.bin", "k1plus.bin", "s101.bin"])
-        self.assertEqual(names(base + "&min_size=0"), ["k1.bin", "k1plus.bin", "s101.bin"])  # used to return all five
-        self.assertEqual(names(base + "&min_size=1025"), ["k1plus.bin"])
-        self.assertEqual(names("ext=bin&q=" + quote("size:<1KB") + "&max_size=100000"), ["s099.bin", "s100.bin", "s101.bin"])
-        self.assertEqual(names("ext=bin&q=" + quote("size:<1KB") + "&max_size=100"), ["s099.bin", "s100.bin"])
-
-    def test_digits_that_are_not_ascii_or_absurdly_many_are_not_a_server_error(self) -> None:
-        status, data = self.get("ext=bin&min_size=" + quote("\u00b2"))  # "2" with a superscript: isdigit() is True
-        self.assertEqual(status, 200)
-        self.assertIn("min_size", data["warnings"][0])
-        self.assertEqual(len(data["matches"]), 5)  # the bad bound was ignored, not applied
-        status, data = self.get("ext=bin&min_size=" + "9" * 5000)
-        self.assertEqual((status, data["total"]), (200, 0))
-        status, data = self.get("ext=bin&max_size=" + "9" * 5000)
-        self.assertEqual((status, data["total"]), (200, 5))
-
-    def test_numbers_beyond_64_bits_do_not_become_a_server_error(self) -> None:
-        for query_string in ("min_size=" + "9" * 30, "max_size=" + "9" * 30, "limit=" + "9" * 30, "offset=" + "9" * 30):
-            with self.subTest(query_string=query_string[:12]):
-                status, data = self.get(query_string)
-                self.assertEqual(status, 200)
-                self.assertIn("results", data)
 
 
 if __name__ == "__main__":
