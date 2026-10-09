@@ -21,7 +21,14 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 from unittest.mock import patch
 
-from smart_drive.cli.cmd_path_check import DIST_NAME, check_system_path, cmd_path_check
+from smart_drive.cli.cmd_path_check import (
+    DIST_NAME,
+    _add_to_path_advice,
+    _quote,
+    _user_scripts_dir,
+    check_system_path,
+    cmd_path_check,
+)
 
 MODULE = "smart_drive.cli.cmd_path_check"
 
@@ -89,6 +96,16 @@ class TestWhereTheCommandReallyIs(_PathCase):
         self.assertIn("pyenv rehash", text)
         self.assertIn(f'export PATH="$PATH:{pyenv_bin}"', text)
 
+    def test_a_literal_tilde_in_path_is_not_the_home_directory(self) -> None:
+        """zsh and shutil.which do not expand a quoted "~", so ~/bin in PATH is not the real ~/bin."""
+        home_bin = self.tmp / "home" / "bin"
+        self.make_command(home_bin)
+        with patch.dict(os.environ, {"HOME": str(self.tmp / "home")}):
+            result = self.run_check(path_dirs=f"/usr/bin{os.pathsep}~/bin", installed=True, env_bin=home_bin)
+        self.assertFalse(result["info"]["installed_dir_in_path"])
+        self.assertFalse(result["info"]["is_discoverable"])
+        self.assertIn(f'export PATH="$PATH:{home_bin}"', result["text"])
+
     def test_a_plain_layout_does_not_mention_pyenv(self) -> None:
         self.make_command(self.env_bin)
         self.assertNotIn("pyenv rehash", self.run_check(path_dirs="/usr/bin", installed=True)["text"])
@@ -144,8 +161,47 @@ class TestWhenTheCommandDoesNotExist(_PathCase):
         self.assertNotIn("ALWAYS", not_installed)
         self.assertIn("inside the project folder", not_installed)  # we are running from a source checkout
 
+    def test_paths_with_spaces_are_quoted_in_every_command_to_copy(self) -> None:
+        checkout = "/Users/Some User/smart drive os"
+        python = "/opt/my python/bin/python3"
+        with patch(f"{MODULE}._source_checkout", return_value=checkout), patch("sys.executable", python):
+            not_installed = self.run_check(path_dirs="/usr/bin", installed=False)["text"]
+            reinstall = self.run_check(path_dirs="/usr/bin", installed=True)["text"]
+        self.assertIn(f"'{python}' -m pip install -e '{checkout}'", not_installed)
+        self.assertIn(f"cd '{checkout}' && '{python}' -m smart_drive", not_installed)
+        self.assertIn(f"'{python}' -m pip install --force-reinstall --no-deps '{checkout}'", reinstall)
+
     def test_the_command_always_exits_zero(self) -> None:
         self.assertEqual(self.run_check(installed=False)["code"], 0)
+
+
+class TestWindowsSpecifics(unittest.TestCase):
+    """Run on every OS by faking the platform; the Windows CI job covers the real calls separately."""
+
+    def test_the_powershell_command_names_the_real_directory(self) -> None:
+        info = {"platform": "win32", "installed_scripts_dir": r"C:\Python311\Scripts"}
+        text = "\n".join(_add_to_path_advice(info))
+        self.assertIn(r'SetEnvironmentVariable("Path", $env:Path + ";C:\Python311\Scripts", "User")', text)
+        self.assertNotIn("export PATH", text)
+
+    def test_the_user_scripts_dir_follows_pythonuserbase(self) -> None:
+        with patch(f"{MODULE}.sys.platform", "win32"), patch(f"{MODULE}.site.getuserbase", return_value=r"D:\py-user"):
+            result = _user_scripts_dir()
+        expected = Path(r"D:\py-user") / f"Python{sys.version_info.major}{sys.version_info.minor}" / "Scripts"
+        self.assertEqual(Path(result), expected)
+
+    def test_quoting_follows_the_platform(self) -> None:
+        with patch(f"{MODULE}.sys.platform", "win32"):
+            self.assertEqual(_quote(r"C:\Program Files\Python311\python.exe"), '"C:\\Program Files\\Python311\\python.exe"')
+            self.assertEqual(_quote(r"C:\Python311\python.exe"), r"C:\Python311\python.exe")
+
+    def test_a_missing_user_base_does_not_crash_the_check(self) -> None:
+        with patch(f"{MODULE}.site.getuserbase", side_effect=AttributeError("no user site")):
+            self.assertTrue(_user_scripts_dir())
+
+    def test_damaged_package_metadata_does_not_crash_the_check(self) -> None:
+        with patch(f"{MODULE}.importlib.metadata.distribution", side_effect=OSError("unreadable")):
+            self.assertIs(check_system_path()["package_installed"], False)
 
 
 class TestRealEnvironmentSmoke(unittest.TestCase):

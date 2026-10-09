@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import importlib.metadata
 import os
+import shlex
 import shutil
 import site
 import sys
@@ -25,7 +26,16 @@ COMMAND_NAMES = ("smart-drive", "smart_drive")
 
 
 def _norm(path: str) -> str:
-    return os.path.normcase(os.path.normpath(os.path.expanduser(path)))
+    # No expanduser on purpose: a literal "~" inside PATH is expanded by neither zsh nor shutil.which,
+    # so it must not count as the home directory here either.
+    return os.path.normcase(os.path.normpath(path))
+
+
+def _quote(text: str) -> str:
+    """One shell word for a command the user will copy: paths with spaces are common on Windows and macOS."""
+    if sys.platform == "win32":
+        return f'"{text}"' if any(ch in text for ch in ' \t&()^%!') else text
+    return shlex.quote(text)
 
 
 def _env_scripts_dir() -> Optional[str]:
@@ -37,13 +47,14 @@ def _env_scripts_dir() -> Optional[str]:
 
 
 def _user_scripts_dir() -> str:
-    """Where `pip install --user` puts console scripts."""
+    """Where `pip install --user` puts console scripts (site.getuserbase() honours PYTHONUSERBASE)."""
+    try:
+        base = Path(site.getuserbase())
+    except Exception:  # unusual embedded or frozen interpreters
+        base = Path.home() / ("AppData/Roaming/Python" if sys.platform == "win32" else ".local")
     if sys.platform == "win32":
-        py_ver = f"Python{sys.version_info.major}{sys.version_info.minor}"
-        app_data = os.environ.get("APPDATA")
-        base = Path(app_data) if app_data else Path.home() / "AppData" / "Roaming"
-        return str(base / "Python" / py_ver / "Scripts")
-    return str(Path(site.getuserbase()) / "bin")
+        return str(base / f"Python{sys.version_info.major}{sys.version_info.minor}" / "Scripts")
+    return str(base / "bin")
 
 
 def _find_installed_script(directories: List[str]) -> Optional[str]:
@@ -59,7 +70,7 @@ def _package_installed() -> bool:
     try:
         importlib.metadata.distribution(DIST_NAME)
         return True
-    except importlib.metadata.PackageNotFoundError:
+    except Exception:  # PackageNotFoundError, or damaged metadata: a diagnostic command must not crash on it
         return False
 
 
@@ -130,18 +141,19 @@ def _add_to_path_advice(info: Dict[str, Any]) -> List[str]:
 def _install_advice(info: Dict[str, Any]) -> List[str]:
     python = info["python_executable"]
     checkout = info["source_checkout"]
+    pip = f"{_quote(python)} -m pip install"
     if info["package_installed"]:
         return [
             "\n  The package is installed, but no smart-drive command was found in:",
             f"  {info['user_scripts_dir']} (and this Python's own scripts directory).",
             "  Reinstall it so the command is created:",
-            f"  {python} -m pip install --force-reinstall --no-deps {checkout or DIST_NAME}",
+            f"  {pip} --force-reinstall --no-deps {_quote(checkout) if checkout else DIST_NAME}",
         ]
     lines = [f"\n  smart-drive-os is not installed for this Python ({python}), so there is no command to put on PATH."]
     if checkout:
-        lines += ["  Install it from this project folder:", f'  {python} -m pip install -e "{checkout}"']
+        lines += ["  Install it from this project folder:", f"  {pip} -e {_quote(checkout)}"]
     else:
-        lines += ["  Install the smart-drive-os package with:", f"  {python} -m pip install {DIST_NAME}"]
+        lines += ["  Install the smart-drive-os package with:", f"  {pip} {DIST_NAME}"]
     return lines
 
 
@@ -176,13 +188,13 @@ def cmd_path_check(args: argparse.Namespace) -> int:
             lines = _install_advice(info)
         print("\n".join(lines))
 
-    python = info["python_executable"]
+    python = _quote(info["python_executable"])
     if info["package_installed"]:
         print("\n💡 Fallback that needs no PATH setup:")
         print(f"   {python} -m smart_drive <subcommand>\n")
     elif info["source_checkout"]:
         print("\n💡 Without installing, from inside the project folder only:")
-        print(f'   cd "{info["source_checkout"]}" && {python} -m smart_drive <subcommand>\n')
+        print(f"   cd {_quote(info['source_checkout'])} && {python} -m smart_drive <subcommand>\n")
     else:
         print()
 
