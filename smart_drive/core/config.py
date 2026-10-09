@@ -108,16 +108,23 @@ def calculate_slack_percentage(nominal_size: int, cluster_size: int = CLUSTER_SI
 # 2. INVIOLABLE PROTECTED ROOT DIRECTORIES
 # ==============================================================================
 
-# Standard Kingston Taxonomies (display casing)
+# Standard taxonomies, named exactly as `smart-drive init` creates them (display casing)
 TAXONOMY_ROOT_DIRS: Tuple[str, ...] = (
     "01_AI_Models",
     "02_Learning_Knowledge",
-    "03_Personal_Documents",
-    "04_Creative_Assets",
+    "03_Development_Projects",
+    "04_System_Workspaces",
     "05_Dev_Toolbox",
     "06_Archives_Storage",
 )
 STANDARD_TAXONOMIES = TAXONOMY_ROOT_DIRS
+
+# Folder names that drives made by earlier versions still carry, mapped to today's names
+# (lower-case key -> current name), so reports keep counting them in the right row.
+LEGACY_TAXONOMY_ALIASES: Dict[str, str] = {
+    "03_personal_documents": "03_Development_Projects",
+    "04_creative_assets": "04_System_Workspaces",
+}
 
 
 # Harmonized Core Taxonomies (both on-disk folder names and standard manifest taxonomy names)
@@ -662,6 +669,7 @@ __all__ = [
     "PROTECTED_ROOT_DIRS",
     "TAXONOMY_ROOT_DIRS",
     "STANDARD_TAXONOMIES",
+    "LEGACY_TAXONOMY_ALIASES",
     "PROTECTED_CORE_TAXONOMIES",
     "PROTECTED_ROOT_FILES",
     "PROTECTED_ROOT_FILE_PATTERNS",

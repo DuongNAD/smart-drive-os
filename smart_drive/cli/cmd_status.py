@@ -8,7 +8,12 @@ import os
 import sys
 from typing import Optional
 
-from smart_drive.core.config import CLUSTER_SIZE_BYTES, TAXONOMY_ROOT_DIRS, PROTECTED_CORE_TAXONOMIES
+from smart_drive.core.config import (
+    CLUSTER_SIZE_BYTES,
+    LEGACY_TAXONOMY_ALIASES,
+    PROTECTED_CORE_TAXONOMIES,
+    TAXONOMY_ROOT_DIRS,
+)
 from smart_drive.core.fsinfo import detect_filesystem, slack_model_note
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.sentinel import get_default_db_path
@@ -27,22 +32,16 @@ def cmd_status(args: argparse.Namespace) -> int:
         ".fseventsd/no_log": os.path.exists(os.path.join(root, ".fseventsd", "no_log")),
     }
 
-    taxonomies = [
-        "01_AI_Models",
-        "02_Learning_Knowledge",
-        "03_Development_Projects",
-        "04_System_Workspaces",
-        "05_Dev_Toolbox",
-        "06_Archives_Storage",
-    ]
+    legacy_of = {current: legacy for legacy, current in LEGACY_TAXONOMY_ALIASES.items()}  # current -> old name
     tax_status = {}
-    for t in taxonomies:
-        # Check standard taxonomy or legacy alias
+    for t in TAXONOMY_ROOT_DIRS:
+        # Check standard taxonomy or its legacy name
         exists = os.path.isdir(os.path.join(root, t))
-        if not exists and t == "03_Development_Projects":
-            exists = os.path.isdir(os.path.join(root, "03_Personal_Documents"))
-        if not exists and t == "04_System_Workspaces":
-            exists = os.path.isdir(os.path.join(root, "04_Creative_Assets"))
+        if not exists and t in legacy_of:
+            exists = any(
+                entry.lower() == legacy_of[t] and os.path.isdir(os.path.join(root, entry))
+                for entry in os.listdir(root)
+            )
         tax_status[t] = exists
 
     db_path = get_default_db_path(root)

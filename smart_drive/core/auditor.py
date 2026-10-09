@@ -22,7 +22,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, FrozenSet, Iterator, List, Optional, Set, Tuple, Union
 
 from smart_drive.core.config import (
     CLUSTER_SIZE_BYTES,
@@ -35,6 +35,7 @@ from smart_drive.core.config import (
     classify_by_extension,
     classify_file_entry,
     TAXONOMY_ROOT_DIRS,
+    LEGACY_TAXONOMY_ALIASES,
     PROTECTED_ROOT_DIRS,
     DEFAULT_EXCLUDE_DIRS,
 )
@@ -49,15 +50,8 @@ logger = logging.getLogger("smart_drive.core.auditor")
 # 1. TAXONOMY SPECIFICATIONS & CANONICAL GROUPINGS
 # ==============================================================================
 
-# Standard canonical taxonomy names on Kingston XS2000
-CANONICAL_TAXONOMIES: Tuple[str, ...] = (
-    "01_AI_Models",
-    "02_Learning_Knowledge",
-    "03_Personal_Documents",
-    "04_Creative_Assets",
-    "05_Dev_Toolbox",
-    "06_Archives_Storage",
-)
+# Canonical taxonomy names: the folders `smart-drive init` creates (single source: config.py)
+CANONICAL_TAXONOMIES: Tuple[str, ...] = TAXONOMY_ROOT_DIRS
 
 # Known workspace root folders
 WORKSPACE_ROOT_DIRS: FrozenSet[str] = frozenset({
@@ -444,6 +438,8 @@ class StorageAuditor:
         self._taxonomy_lookup: Dict[str, str] = {
             t.lower(): t for t in CANONICAL_TAXONOMIES
         }
+        # Drives made by earlier versions: their folders count in today's rows
+        self._taxonomy_lookup.update(LEGACY_TAXONOMY_ALIASES)
 
     def audit(self, root_dir: Optional[str] = None, scan_entries: Optional[List[ScanEntry]] = None) -> AuditResult:
         """Interface method compatible with PROJECT.md contract."""
