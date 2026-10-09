@@ -282,27 +282,56 @@ class PurgeEngine:
         except ValueError:
             return clean_target
 
+    @staticmethod
+    def _add_owner_access(path: str, is_dir: bool) -> None:
+        """Adds the owner's write bit (and read/search for a directory) without disturbing the other bits.
+
+        Setting the mode to exactly S_IWRITE|S_IREAD, as this used to, turned a directory into 0600: no search
+        bit, so an entry that then could not be removed was left unusable.
+        """
+        mode = stat.S_IMODE(os.lstat(path).st_mode)
+        extra = stat.S_IWUSR | stat.S_IRUSR | (stat.S_IXUSR if is_dir else 0)
+        os.chmod(path, mode | extra)
+
     def _make_writable_and_remove_file(self, target_path: str) -> None:
         """Unlinks a file, clearing Windows/exFAT read-only attribute if needed."""
         try:
             os.unlink(target_path)
         except PermissionError:
             try:
-                os.chmod(target_path, stat.S_IWRITE | stat.S_IREAD)
+                self._add_owner_access(target_path, is_dir=False)
                 os.unlink(target_path)
             except Exception as inner_err:
                 raise inner_err
 
     def _make_writable_and_remove_dir(self, target_path: str) -> None:
-        """Removes a directory tree, clearing read-only flags on children if needed."""
+        """Removes a directory tree, clearing read-only flags on children if needed.
+
+        Raises OSError if anything is left: shutil.rmtree reports through the callback only, and swallowing
+        every error there made a half-removed tree look like a success.
+        """
+        failures: List[str] = []
+        tree = os.path.abspath(target_path)
+
         def _on_rm_error(func, path, exc_info):
             try:
-                os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+                # A read-only file (Windows) or a read-only folder holding the entry (POSIX): open them up, but
+                # only inside the tree that is being deleted anyway - never the folder above it.
+                parent = os.path.dirname(os.path.abspath(path))
+                if parent != os.path.dirname(tree) and os.path.commonpath([parent, tree]) == tree:
+                    self._add_owner_access(parent, is_dir=True)
+                if os.path.isdir(path) and not os.path.islink(path):
+                    self._add_owner_access(path, is_dir=True)
+                elif os.path.lexists(path) and not os.path.islink(path):
+                    self._add_owner_access(path, is_dir=False)
                 func(path)
-            except Exception:
-                pass
+            except Exception as err:
+                failures.append(f"{path}: {err}")
 
         shutil.rmtree(target_path, onerror=_on_rm_error)
+        if os.path.lexists(target_path):
+            detail = failures[0] if failures else "it is still there"
+            raise OSError(f"directory could not be fully removed ({detail})")
 
     def delete_item(
         self,

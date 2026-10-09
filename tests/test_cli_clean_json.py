@@ -11,6 +11,7 @@ import io
 import json
 import os
 import shutil
+import stat
 import sys
 import tempfile
 import unittest
@@ -134,6 +135,65 @@ class TestCleanReportsFailuresHonestly(unittest.TestCase):
         self.assertEqual(len(failed), 1)
         self.assertFalse(failed[0]["deleted"])
         self.assertTrue(failed[0]["reason"])
+
+
+@unittest.skipIf(_can_ignore_permissions(), "needs a POSIX user that directory permissions apply to")
+class TestDirectoryPurgesAreVerified(unittest.TestCase):
+    """shutil.rmtree reports problems only through its callback, which swallowed them: a directory that was
+    not removed was still reported as DELETED ("Purged 1 junk files successfully", exit 0), and the callback
+    had set the folder's mode to 0600, so what was left behind was unusable as well."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="sd_clean_dirs_")).resolve()
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def run_clean(self, *extra: str) -> Tuple[int, str]:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = main(["clean", "--root", str(self.root), "--tier", "2", "--apply", *extra])
+        return code, out.getvalue()
+
+    def test_a_read_only_folder_inside_a_junk_tree_does_not_stop_the_purge(self) -> None:
+        pkg = self.root / "proj" / ".pytest_cache" / "pkg"
+        pkg.mkdir(parents=True)
+        (pkg / "file.js").write_text("x", encoding="utf-8")
+        pkg.chmod(0o555)
+        self.addCleanup(lambda: pkg.chmod(0o755) if pkg.exists() else None)
+        code, out = self.run_clean("--json")
+        report = json.loads(out)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((report["deleted_count"], report["failed_count"]), (1, 0))
+        self.assertFalse((self.root / "proj" / ".pytest_cache").exists())
+        self.assertTrue((self.root / "proj").is_dir())
+
+    def test_a_tree_that_cannot_be_removed_is_a_failure_and_keeps_its_permissions(self) -> None:
+        locked = self.root / "locked"
+        cache = locked / ".pytest_cache"
+        cache.mkdir(parents=True)
+        (cache / "a.txt").write_text("x", encoding="utf-8")
+        mode_before = stat.S_IMODE(cache.stat().st_mode)
+        locked.chmod(0o555)  # the folder cannot be removed from its parent
+        self.addCleanup(locked.chmod, 0o755)
+        code, out = self.run_clean("--json")
+        report = json.loads(out)
+        self.assertEqual(code, 1)
+        self.assertEqual((report["deleted_count"], report["failed_count"]), (0, 1))
+        self.assertEqual(report["results"][0]["status"], "FAILED")
+        self.assertIn("could not be fully removed", report["results"][0]["reason"])
+        self.assertTrue(cache.is_dir())
+        self.assertEqual(stat.S_IMODE(cache.stat().st_mode), mode_before)  # not 0600
+        self.assertEqual(stat.S_IMODE(locked.stat().st_mode), 0o555)  # the folder above is never touched
+
+    def test_the_text_output_does_not_claim_success_either(self) -> None:
+        locked = self.root / "locked"
+        (locked / ".pytest_cache").mkdir(parents=True)
+        (locked / ".pytest_cache" / "a.txt").write_text("x", encoding="utf-8")
+        locked.chmod(0o555)
+        self.addCleanup(locked.chmod, 0o755)
+        code, out = self.run_clean()
+        self.assertEqual(code, 1)
+        self.assertNotIn("successfully", out)
+        self.assertIn("Purged 0 of 1 junk files.", out)
 
 
 class TestBlockedIsNotFailed(unittest.TestCase):
