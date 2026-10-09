@@ -7,7 +7,7 @@ name = "smart-drive-os"
 version = "1.1.0"
 description = "Autonomous exFAT SSD Governance, 512KB Cluster Slack Optimization & SQLite FTS5 Instant Search Suite"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
     { name = "DuongNAD", email = "smartdrive.os@proton.me" },
@@ -53,7 +53,6 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",

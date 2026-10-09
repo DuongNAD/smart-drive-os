@@ -26,7 +26,7 @@ cd smart-drive-os
 ### 2. Environment Setup (Zero-Dependency)
 SmartDrive-OS is built strictly using the **Python Standard Library**. No external virtual environment or `pip install` is required for core development.
 ```bash
-# Verify Python version (>= 3.9 recommended)
+# Verify Python version (3.9 or newer is required)
 python --version
 ```
 

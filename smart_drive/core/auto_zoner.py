@@ -7,7 +7,7 @@ Provides automated intelligence for:
 4. Ensuring anti-indexing shields (.metadata_never_index, .fseventsd/no_log, .noindex) are active.
 5. Inviolable whitelist security (never moves root setup scripts, manifests, or existing taxonomies).
 
-Zero external dependencies (Python 3.8+ standard library only).
+Zero external dependencies (Python 3.9+ standard library only).
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ _SMART_DRIVE_REPO_DIR = _CURRENT_FILE.parents[2]          # smart-drive-os (repo
 
 
 def _is_relative_to(path: Path, base: Path) -> bool:
-    """Safe check if path is relative to base across Python 3.8+."""
+    """Safe check if path is relative to base on every supported Python version."""
     try:
         path.relative_to(base)
         return True

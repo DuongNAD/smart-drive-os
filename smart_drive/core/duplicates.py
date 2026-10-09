@@ -6,7 +6,7 @@ Implements:
 2. Phase 2: 8KB prefix/head+tail hash for size collisions (>98% elimination of remaining candidates).
 3. Phase 3: Streaming full SHA-256 (64KB chunks) only for prefix collisions.
 4. Duplicate grouping & space reclamation analysis with 512KB cluster allocation math.
-5. Zero dependencies outside Python 3.8+ standard library.
+5. Zero dependencies outside Python 3.9+ standard library.
 """
 
 from __future__ import annotations

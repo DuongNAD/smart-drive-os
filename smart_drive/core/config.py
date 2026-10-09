@@ -2,7 +2,7 @@
 
 Designed specifically for external SSDs (Kingston XS2000 2TB exFAT, 512KB allocation blocks).
 Cross-platform compatible (macOS & Windows).
-Zero external dependencies (Python 3.8+ standard library only).
+Zero external dependencies (Python 3.9+ standard library only).
 """
 
 from __future__ import annotations
