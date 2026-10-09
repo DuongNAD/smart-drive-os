@@ -114,12 +114,17 @@ def parse_proc_mounts(text: str) -> List[Tuple[str, str]]:
 
 
 def best_mount(real_path: str, mounts: List[Tuple[str, str]]) -> Optional[Tuple[str, str]]:
-    """The mount whose mount point is the longest prefix of ``real_path``."""
+    """The mount whose mount point is the longest prefix of ``real_path``.
+
+    When several entries share that mount point the last one wins: the kernel lists mounts in the order
+    they were made, so a later entry is stacked on top of (and hides) an earlier one. That is how an
+    x-systemd.automount drive shows up as `autofs` first and as its real filesystem after.
+    """
     best: Optional[Tuple[str, str]] = None
     for mount_point, fs_type in mounts:
         base = mount_point.rstrip("/")
         if mount_point == "/" or real_path == mount_point or real_path.startswith(base + "/"):
-            if best is None or len(mount_point) > len(best[0]):
+            if best is None or len(mount_point) >= len(best[0]):
                 best = (mount_point, fs_type)
     return best
 

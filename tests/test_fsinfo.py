@@ -78,6 +78,17 @@ class TestMountParsers(unittest.TestCase):
         self.assertEqual(best_mount("/Volumes/KINGSTON2/x", mounts), ("/", "apfs"))
         self.assertIsNone(best_mount("/anything", []))
 
+    def test_a_later_mount_on_the_same_mount_point_hides_the_earlier_one(self) -> None:
+        """/proc/self/mounts lists mounts in the order they were made; the last is the one in view."""
+        automounted = [("/", "ext4"), ("/mnt/ssd", "autofs"), ("/mnt/ssd", "exfat")]
+        self.assertEqual(best_mount("/mnt/ssd/data/x.bin", automounted), ("/mnt/ssd", "exfat"))
+        stacked_root = [("/", "rootfs"), ("/", "ext4")]
+        self.assertEqual(best_mount("/home/me", stacked_root), ("/", "ext4"))
+        # a deeper mount point still beats a later shallower one
+        self.assertEqual(
+            best_mount("/mnt/ssd/data", [("/mnt/ssd", "exfat"), ("/", "ext4")]), ("/mnt/ssd", "exfat")
+        )
+
     def test_normalize_fs_name(self) -> None:
         self.assertEqual(normalize_fs_name("ufsd_NTFS"), "ntfs")
         self.assertEqual(normalize_fs_name("exFAT"), "exfat")
@@ -208,6 +219,29 @@ class TestHealthOnPaths(_Root):
         gone = check_drive_health(str(self.root / "nope" / "missing"))
         self.assertIn("does not exist", " ".join(gone.warnings))
         self.assertNotIn("drive letter", " ".join(gone.warnings))
+
+
+@unittest.skipIf(sys.platform == "win32", "drive letters are real on Windows")
+class TestDriveLettersOffWindows(_Root):
+    """`health C:` used to report an invented NTFS volume with TRIM off and advice to run fsutil."""
+
+    def test_a_drive_letter_is_explained_not_invented(self) -> None:
+        for spec in ("C:", "c", "D:\\", "e"):
+            with self.subTest(spec=spec):
+                report = check_drive_health(spec)
+                self.assertEqual(report.filesystem, "unknown")
+                self.assertEqual(report.total_bytes, 0)
+                text = " ".join(report.warnings + [report.trim_status_message])
+                self.assertIn("Windows", text)
+                self.assertIn("path", text)
+                self.assertNotIn("NTFS", text)
+                self.assertNotIn("fsutil", text)
+
+    def test_the_cli_says_the_same(self) -> None:
+        code, out = self.cli("health", "C:", "--json")
+        data = json.loads(out)
+        self.assertEqual(data["filesystem"], "unknown")
+        self.assertNotIn("fsutil", json.dumps(data))
 
 
 @unittest.skipIf(sys.platform == "win32", "caches under the home directory are the non-Windows layout")

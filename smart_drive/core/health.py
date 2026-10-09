@@ -273,6 +273,12 @@ def check_drive_health(
             return _check_path_health(spec)
         if os.sep in spec or spec.startswith(("~", ".")):
             return _empty_report(spec, "Volume path not found", f"Volume path '{spec}' does not exist or is not a directory.")
+        # "C:", "d" ... would otherwise fall through to the stub backend, which invents an NTFS volume with TRIM
+        # off and advice to run fsutil: none of that is true of this machine.
+        return _empty_report(
+            spec, "Drive letters exist only on Windows",
+            f"'{spec}' looks like a Windows drive letter. Pass a path to a folder on the volume instead, e.g. /Volumes/MySSD.",
+        )
 
     # Step 1: Default drive letter resolution
     target_letter: Optional[str] = None
