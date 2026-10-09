@@ -364,7 +364,7 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
 
         total_latency = (time.perf_counter() - t0) * 1000.0
 
-        self.send_json_response({
+        payload: Dict[str, Any] = {
             "results": matches_data,
             "matches": matches_data,
             "total": res.total_count,
@@ -372,7 +372,10 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
             "latency_ms": round(total_latency, 2),
             "elapsed_ms": round(total_latency, 2),
             "index_exists": True,
-        })
+        }
+        if res.warnings:
+            payload["warnings"] = res.warnings
+        self.send_json_response(payload)
 
     def handle_api_junk(self) -> None:
         """Scans drive and returns 3-tier categorized junk preview with slack metrics."""

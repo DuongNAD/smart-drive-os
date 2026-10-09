@@ -371,7 +371,7 @@ Công cụ SQLite FTS5 xử lý truy vấn phức tạp dưới 10 milliseconds:
 
 - **Từ khóa tự do**: `smart-drive search "machine learning"`
 - **Lọc theo phần mở rộng**: `smart-drive search "weights ext:gguf"`
-- **Lọc theo dung lượng**: `smart-drive search "dataset size:>100MB"` (hoặc `size:<1MB`, `size:0`)
+- **Lọc theo dung lượng**: `smart-drive search "dataset size:>100MB"` (hoặc `size:<1MB`, `size:0`). `>` và `<` không tính chính giá trị đó, `>=` và `<=` thì có; đơn vị là nhị phân (1KB = 1024 byte). Bộ lọc không đọc được (`size:>abc`, `size:>10 MB`) sẽ hiện cảnh báo (stderr ở CLI, trường `warnings` ở MCP và dashboard) thay vì bị bỏ qua âm thầm.
 - **Lọc theo danh mục**: `smart-drive search "llama cat:ai_models"`
 - **Lọc theo thư mục**: `smart-drive search "de thi dir:FPTU"`
 - **Truy vấn kết hợp**: `smart-drive search "exam ext:pdf size:>1MB dir:DBI202"`

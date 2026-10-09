@@ -3,7 +3,7 @@
 Parses compound query syntax:
 - Keywords & phrases: llama, "machine learning"
 - Extension filters: ext:pdf,md or .pdf
-- Size filters: size:>100MB, size:<=10GB, size:>1KB, size:0
+- Size filters: size:>100MB, size:<=10GB, size:>1KB, size:0 (> and < are strict, >= and <= include the bound)
 - Category filters: cat:AI, category:Code, tag:Docs
 - Path / Directory filters: dir:02_Learning_Knowledge
 - Sub-100ms FTS5 token sanitizer resilient to unbalanced syntax.
@@ -15,7 +15,8 @@ import re
 import shlex
 import time
 from dataclasses import dataclass, field
-from typing import Optional, Set, Tuple
+from decimal import Decimal
+from typing import List, Optional, Set, Tuple
 
 
 SIZE_REGEX = re.compile(r"^([><=]{1,2})?(\d+(?:\.\d+)?)\s*([kmgtp]?b?)?$", re.IGNORECASE)
@@ -30,6 +31,8 @@ SIZE_MULTIPLIERS = {
     "gb": 1024 ** 3,
     "t": 1024 ** 4,
     "tb": 1024 ** 4,
+    "p": 1024 ** 5,
+    "pb": 1024 ** 5,
 }
 
 
@@ -46,6 +49,8 @@ class SearchParams:
     directory: Optional[str] = None
     limit: int = 100
     offset: int = 0
+    # Filters that could not be applied (e.g. "size:>abc"). The parser stays lenient, but says so.
+    warnings: List[str] = field(default_factory=list)
 
 
 def sanitize_fts_query(query: str) -> str:
@@ -115,11 +120,49 @@ def parse_size_spec(val: str) -> Tuple[Optional[str], Optional[int]]:
     if not m:
         return None, None
     op = m.group(1) or "="
-    num = float(m.group(2))
     unit = (m.group(3) or "b").lower()
     mult = SIZE_MULTIPLIERS.get(unit, 1)
-    bytes_val = int(num * mult)
+    try:
+        bytes_val = int(Decimal(m.group(2)) * mult)  # exact, and a 400-digit number is not an OverflowError
+    except (ArithmeticError, ValueError):  # ValueError: Python's own limit on very long integers
+        return None, None
     return op, bytes_val
+
+
+def apply_size_spec(params: SearchParams, spec: str) -> bool:
+    """Narrows `params` to a size spec such as '>10MB'; False (and a warning) if it is not one.
+
+    Sizes are whole bytes, so a strict bound is the inclusive one moved by a byte: '>10MB' means
+    at least 10MB + 1 and '<10MB' at most 10MB - 1, while '>=' and '<=' keep the bound itself.
+    Several size filters all have to hold, so a later one never loosens an earlier one.
+    """
+    op, bound = parse_size_spec(spec)
+    if bound is None:
+        params.warnings.append(
+            f"Ignored size filter {spec!r}: expected a number with an optional unit (B, KB, MB, GB, TB, PB), "
+            "optionally after >, >=, <, <= or ="
+        )
+        return False
+    lower: Optional[int] = None
+    upper: Optional[int] = None
+    if op == ">":
+        lower = bound + 1
+    elif op == ">=":
+        lower = bound
+    elif op == "<":
+        upper = bound - 1
+    elif op == "<=":
+        upper = bound
+    elif op == "=":
+        lower = upper = bound
+    else:
+        params.warnings.append(f"Ignored size filter {spec!r}: operator {op!r} is not one of >, >=, <, <=, =")
+        return False
+    if lower is not None:
+        params.min_size = lower if params.min_size is None else max(params.min_size, lower)
+    if upper is not None:
+        params.max_size = upper if params.max_size is None else min(params.max_size, upper)
+    return True
 
 
 def parse_search_query(query_str: str) -> SearchParams:
@@ -134,9 +177,17 @@ def parse_search_query(query_str: str) -> SearchParams:
         parts = query_str.split()
 
     free_words = []
+    bare_size: Optional[str] = None  # the previous token if it was a size filter without a unit, e.g. "size:>10"
 
     for part in parts:
         p_lower = part.lower()
+
+        if bare_size is not None and p_lower in SIZE_MULTIPLIERS and p_lower:
+            params.warnings.append(
+                f"{bare_size!r} is followed by {part!r} as a separate word; "
+                f"write the unit without a space ({bare_size}{part}) or the size is read in bytes"
+            )
+        bare_size = part if p_lower.startswith("size:") and p_lower[-1:].isdigit() else None
 
         # ext:pdf,md or .pdf
         if p_lower.startswith("ext:"):
@@ -152,16 +203,7 @@ def parse_search_query(query_str: str) -> SearchParams:
 
         # size:>1KB, size:<10MB, size:0
         elif p_lower.startswith("size:"):
-            s_val = p_lower[5:]
-            op, b_val = parse_size_spec(s_val)
-            if b_val is not None:
-                if op in (">", ">="):
-                    params.min_size = b_val
-                elif op in ("<", "<="):
-                    params.max_size = b_val
-                elif op == "=":
-                    params.min_size = b_val
-                    params.max_size = b_val
+            apply_size_spec(params, part[5:])
 
         # cat:AI, category:Code, tag:Docs
         elif p_lower.startswith("cat:") or p_lower.startswith("category:") or p_lower.startswith("tag:"):
@@ -199,6 +241,7 @@ def parse_search_query(query_str: str) -> SearchParams:
 
 __all__ = [
     "SearchParams",
+    "apply_size_spec",
     "parse_size_spec",
     "parse_search_query",
     "sanitize_fts_query",

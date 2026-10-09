@@ -373,7 +373,7 @@ The SQLite FTS5 search engine processes complex queries in under 10 milliseconds
 
 - **Free Text**: `smart-drive search "machine learning"`
 - **File Extension**: `smart-drive search "weights ext:gguf"`
-- **Size Filter**: `smart-drive search "dataset size:>100MB"` (or `size:<1MB`, `size:0`)
+- **Size Filter**: `smart-drive search "dataset size:>100MB"` (or `size:<1MB`, `size:0`). `>` and `<` leave the bound out, `>=` and `<=` include it; units are binary (1KB = 1024 bytes). A filter that cannot be read (`size:>abc`, `size:>10 MB`) is reported as a warning (stderr in the CLI, `warnings` in MCP and the dashboard) instead of being ignored silently.
 - **Taxonomy Category**: `smart-drive search "llama cat:ai_models"`
 - **Directory Constraint**: `smart-drive search "assignment dir:FPTU"`
 - **Compound Query**: `smart-drive search "exam ext:pdf size:>1MB dir:DBI202"`

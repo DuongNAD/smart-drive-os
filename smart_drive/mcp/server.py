@@ -42,7 +42,7 @@ from smart_drive.indexer.manager import IndexManager
 from smart_drive.core.root import DriveRootNotFound, find_drive_root
 from smart_drive.mcp.proxy import SmartDriveProxy
 from smart_drive.search.engine import SearchEngine
-from smart_drive.search.parser import parse_search_query, parse_size_spec
+from smart_drive.search.parser import apply_size_spec, parse_search_query
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "smart-drive"
@@ -93,7 +93,7 @@ TOOLS: List[Dict[str, Any]] = [
                 },
                 "size": {
                     "type": "string",
-                    "description": "File size constraint (e.g. '>10MB', '<500KB', '0').",
+                    "description": "File size constraint (e.g. '>10MB', '<500KB', '0'). '>' and '<' exclude the bound, '>=' and '<=' include it; units are binary (1KB = 1024 bytes).",
                 },
                 "directory": {
                     "type": "string",
@@ -656,15 +656,7 @@ class SmartDriveMCPServer:
                 params.directory = safe_dir
 
         if args.get("size"):
-            op, b_val = parse_size_spec(str(args["size"]))
-            if b_val is not None:
-                if op in (">", ">="):
-                    params.min_size = b_val
-                elif op in ("<", "<="):
-                    params.max_size = b_val
-                elif op == "=":
-                    params.min_size = b_val
-                    params.max_size = b_val
+            apply_size_spec(params, str(args["size"]))
 
         params.limit = self._parse_int(args.get("limit"), default=25, min_val=1, max_val=100)
         params.offset = self._parse_int(args.get("offset"), default=0, min_val=0)
@@ -707,7 +699,7 @@ class SmartDriveMCPServer:
         returned_count = len(serialized_matches)
         has_more = ((params.offset + returned_count) < result.total_count) or truncated
 
-        return {
+        response: Dict[str, Any] = {
             "query": query_str,
             "total_count": result.total_count,
             "offset": params.offset,
@@ -719,6 +711,9 @@ class SmartDriveMCPServer:
             "matches": serialized_matches,
             "truncated_to_token_limit": truncated,
         }
+        if result.warnings:
+            response["warnings"] = result.warnings
+        return response
 
     def handle_ssd_audit(self, args: Dict[str, Any]) -> Dict[str, Any]:
         sub_dir = args.get("sub_dir") or args.get("directory")

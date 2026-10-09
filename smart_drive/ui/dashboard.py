@@ -620,6 +620,7 @@ def get_dashboard_html() -> str:
           <button class="filter-chip" onclick="setCategoryFilter('Media')">Media</button>
           <button class="filter-chip" onclick="setCategoryFilter('Archives')">Archives</button>
         </div>
+        <div id="search-warning" class="hidden" style="color: var(--accent-amber); font-size: 12px; margin: 8px 0;"></div>
         <div class="table-container" id="search-results-container">
           <table>
             <thead>
@@ -905,6 +906,12 @@ def get_dashboard_html() -> str:
         const data = await res.json();
         const latency = data.latency_ms || Math.round(performance.now() - t0);
         badge.innerText = `⚡ ${latency}ms | ${data.total || data.total_count || 0} matches`;
+
+        // Filters the server could not apply (e.g. size:>abc); textContent, so nothing here is parsed as HTML.
+        const warnings = data.warnings || [];
+        const warningBox = document.getElementById('search-warning');
+        warningBox.textContent = warnings.length ? '⚠ ' + warnings.join(' | ') : '';
+        warningBox.classList.toggle('hidden', warnings.length === 0);
 
         const tbody = document.getElementById('search-results-body');
         tbody.innerHTML = '';

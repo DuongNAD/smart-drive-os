@@ -13,7 +13,7 @@ from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.search.engine import SearchEngine
 from smart_drive.search.formatter import export_csv, export_json, format_table
-from smart_drive.search.parser import SearchParams, parse_search_query, parse_size_spec
+from smart_drive.search.parser import SearchParams, apply_size_spec, parse_search_query
 
 
 def get_default_db_path(root: str) -> str:
@@ -70,21 +70,17 @@ def cmd_search(args: argparse.Namespace) -> int:
 
     size_flag = getattr(args, "size", None)
     if size_flag:
-        op, b_val = parse_size_spec(size_flag)
-        if b_val is not None:
-            if op in (">", ">="):
-                params.min_size = b_val
-            elif op in ("<", "<="):
-                params.max_size = b_val
-            elif op == "=":
-                params.min_size = b_val
-                params.max_size = b_val
+        apply_size_spec(params, size_flag)
 
     limit_flag = getattr(args, "limit", None)
     if limit_flag is not None:
         params.limit = int(limit_flag)
 
     result = engine.search(params)
+
+    # On stderr so that --json / --csv output stays machine-readable.
+    for warning in result.warnings:
+        sys.stderr.write(f"Warning: {warning}\n")
 
     if getattr(args, "json", False):
         print(json.dumps([m.to_dict() for m in result.matches], indent=2, ensure_ascii=False))

@@ -9,6 +9,7 @@ Handles dual execution paths:
 from __future__ import annotations
 
 import logging
+import re
 import shlex
 import sqlite3
 import time
@@ -19,6 +20,24 @@ from smart_drive.indexer.db import DatabaseManager
 from smart_drive.search.parser import SearchParams, sanitize_fts_query
 
 logger = logging.getLogger("smart_drive.search.engine")
+
+_SQLITE_MAX_INT = 2 ** 63 - 1
+
+
+def _to_sqlite_int(value: int) -> int:
+    """Clamps to what an SQLite INTEGER holds: a bound beyond it still means 'nothing' or 'everything'."""
+    return max(-_SQLITE_MAX_INT - 1, min(int(value), _SQLITE_MAX_INT))
+
+
+def _category_key(text: str) -> str:
+    """Spelling-insensitive form of a category: 'AI Models', 'ai_models' and 'ai-models' compare equal."""
+    return re.sub(r"[\s_/\-]+", " ", text).strip().lower()
+
+
+def _like_contains(text: str) -> str:
+    """`%text%` for `LIKE ... ESCAPE '\\'`, with %, _ and the backslash itself matched literally."""
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 @dataclass
@@ -57,13 +76,18 @@ class SearchResult:
     matches: List[SearchMatch] = field(default_factory=list)
     total_count: int = 0
     elapsed_ms: float = 0.0
+    # Things the caller should know about the query (an ignored filter, a category that does not exist).
+    warnings: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "matches": [m.to_dict() for m in self.matches],
             "total_count": self.total_count,
             "elapsed_ms": round(self.elapsed_ms, 2),
         }
+        if self.warnings:
+            data["warnings"] = list(self.warnings)
+        return data
 
 
 class SearchEngine:
@@ -80,9 +104,11 @@ class SearchEngine:
 
         where_clauses: List[str] = []
         sql_params: Dict[str, Any] = {
-            "limit": params.limit,
-            "offset": params.offset,
+            "limit": _to_sqlite_int(params.limit),
+            "offset": _to_sqlite_int(params.offset),
         }
+        warnings: List[str] = list(params.warnings)
+        target_cat: Optional[str] = None
 
         # 1. Extension filters
         if params.extensions:
@@ -97,21 +123,23 @@ class SearchEngine:
         # 2. Size filters
         if params.min_size is not None:
             where_clauses.append("f.size >= :min_size")
-            sql_params["min_size"] = params.min_size
+            sql_params["min_size"] = _to_sqlite_int(params.min_size)
 
         if params.max_size is not None:
             where_clauses.append("f.size <= :max_size")
-            sql_params["max_size"] = params.max_size
+            sql_params["max_size"] = _to_sqlite_int(params.max_size)
 
         # 3. Category filter
         if params.category:
             cat_input = params.category.strip()
+            cat_key = _category_key(cat_input)
             canonical_cat = None
             for known in ("Code", "AI Models", "Books/Learning", "Docs", "Media", "Archives", "System Junk", "Other"):
-                if cat_input.lower() == known.lower():
+                known_key = _category_key(known)
+                if cat_key == known_key:
                     canonical_cat = known
                     break
-                elif cat_input.lower() in known.lower():
+                elif cat_key and cat_key in known_key:
                     if canonical_cat is None:
                         canonical_cat = known
             target_cat = canonical_cat if canonical_cat else cat_input
@@ -130,8 +158,8 @@ class SearchEngine:
                     break
             if len(dir_clean) >= 2 and dir_clean[1] == ":" and dir_clean[0].isalpha():
                 dir_clean = dir_clean[2:].strip("/")
-            where_clauses.append("f.path LIKE :dir")
-            sql_params["dir"] = f"%{dir_clean}%"
+            where_clauses.append("f.path LIKE :dir ESCAPE '\\'")
+            sql_params["dir"] = _like_contains(dir_clean)
 
         # 5. Timestamp filters
         if params.min_mtime is not None:
@@ -226,8 +254,8 @@ class SearchEngine:
 
         if not use_fts:
             if kw and kw != "*":
-                where_clauses.append("(f.filename LIKE :like_kw OR f.path LIKE :like_kw)")
-                sql_params["like_kw"] = f"%{kw}%"
+                where_clauses.append("(f.filename LIKE :like_kw ESCAPE '\\' OR f.path LIKE :like_kw ESCAPE '\\')")
+                sql_params["like_kw"] = _like_contains(kw)
 
             where_str = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
             sql = f"""
@@ -257,8 +285,19 @@ class SearchEngine:
                 )
             )
 
+        if target_cat is not None and total_count == 0:
+            # An empty answer for a category nobody has is a typo, not a finding: say which ones exist.
+            try:
+                present = [row[0] for row in cur.execute("SELECT DISTINCT category FROM files ORDER BY category")]
+            except sqlite3.Error:
+                present = []
+            if present and target_cat not in present:
+                warnings.append(
+                    f"No file has category {params.category!r}; categories in this index: {', '.join(present)}"
+                )
+
         elapsed = (time.perf_counter() - t0) * 1000.0
-        return SearchResult(matches=matches, total_count=total_count, elapsed_ms=elapsed)
+        return SearchResult(matches=matches, total_count=total_count, elapsed_ms=elapsed, warnings=warnings)
 
 
 __all__ = [
