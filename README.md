@@ -252,6 +252,7 @@ All 20 launchers reside both in the repository root and in `launchers/` for inst
 - **Streaming 64KB-Chunk SHA-256 Hashing**: Constant-memory $O(1)$ SHA-256 calculation detecting silent bit rot and corruption.
 - **Point-in-Time Manifests**: Snapshot critical directories into `.smart_drive/snapshots/<name>.json`.
 - **Safe Incremental Backup**: Transfers only modified or new files to backup targets, automatically excluding OS junk.
+- **Honest Coverage**: Snapshots and backups cover `02_Learning_Knowledge`, `03_Development_Projects` and `05_Dev_Toolbox` by default (choose others with `--partitions`) and skip hidden folders such as `.git`, `.github` and `.vscode` (add them with `--include-hidden`). Every run lists what it did not cover, so a gap is never silent.
 
 ### 11. 100% Zero Pip Dependencies (`dependencies = []`)
 - Strict architectural rule: `dependencies = []` in `pyproject.toml`.
@@ -353,10 +354,10 @@ All commands can be invoked via `smart-drive <command>` or `python -m smart_driv
 | `sentinel` | `--root <path>`, `--auto-heal`, `--no-heal`, `--json` | 1-touch health audit, git repo status, and shield self-healing (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <path>`, `--all`, `--auth-token <token>`, `--require-auth` | Starts the JSON-RPC 2.0 stdio MCP server (`serve`) or registers configs for AI agents (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Auto-registers SmartDrive MCP Server in standard AI coding agent config files. |
-| `snapshot create` | `[name]`, `--partitions <list>`, `--root <path>`, `--json` | Generates a point-in-time manifest with 64KB-chunk streaming SHA-256 hashes. |
+| `snapshot create` | `[name]`, `--partitions <list>`, `--include-hidden`, `--root <path>`, `--json` | Generates a point-in-time manifest with 64KB-chunk streaming SHA-256 hashes. |
 | `snapshot list` | `--root <path>`, `--json` | Lists all recorded point-in-time snapshots with sizes and file counts. |
 | `snapshot verify` | `<name>`, `--no-untracked`, `--root <path>`, `--json` | Validates data integrity of files against snapshot manifest to detect tampering or bit rot. |
-| `backup` | `--target <path>`, `--dry-run`, `--hash`, `--partitions <list>`, `--json` | Safe incremental backup copying only modified/new files to target directory. |
+| `backup` | `--target <path>`, `--dry-run`, `--hash`, `--partitions <list>`, `--include-hidden`, `--json` | Safe incremental backup copying only modified/new files to target directory. |
 | `classify` | `[path]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Deep content inspection (magic bytes & markers) for AI models, datasets, docs, and code repos. |
 | `offload` | `--scan`, `--move <name>`, `--target <drive>`, `--revert <name>`, `--dry-run`, `--json` | C-Drive developer cache discovery and transactional NTFS junction offloading to secondary drive. |
 | `health` | `[drive]`, `--root <path>`, `--json` | SSD health, TRIM verification, partition geometry, and storage utilization monitor. |

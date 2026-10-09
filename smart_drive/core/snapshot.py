@@ -53,6 +53,38 @@ PARTITION_ALIASES: Dict[str, str] = {
     "03_personal_documents": "03_Development_Projects",
 }
 
+# Hidden folders that hold the user's own work. They are left out by default (a .git folder is
+# thousands of tiny objects, which is exactly the cluster slack this tool fights) but the user can
+# opt in with include_hidden / --include-hidden.
+USER_HIDDEN_DIRS: frozenset = frozenset({".git", ".agents"})
+
+# OS bookkeeping and the like: never part of a snapshot or backup, whatever the options.
+_SYSTEM_EXCLUDED_DIRS: frozenset = frozenset(d.lower() for d in DEFAULT_EXCLUDE_DIRS) - USER_HIDDEN_DIRS
+
+
+def _prune_dirs(
+    root_dir: Union[str, Path],
+    dirs: List[str],
+    include_hidden: bool,
+    base: Union[str, Path],
+    left_out: List[str],
+) -> None:
+    """Filters ``dirs`` in place the way os.walk expects, recording the hidden folders left out.
+
+    System folders are skipped silently. Hidden folders (.git, .github, .vscode ...) are skipped
+    unless ``include_hidden`` is set, and every one that is skipped is appended to ``left_out`` as a
+    path relative to ``base`` so that reports can say what a run did not cover.
+    """
+    kept: List[str] = []
+    for name in dirs:
+        if name.lower() in _SYSTEM_EXCLUDED_DIRS:
+            continue
+        if name.startswith(".") and not include_hidden:
+            left_out.append(normalize_rel_path(Path(root_dir) / name, base))
+            continue
+        kept.append(name)
+    dirs[:] = kept
+
 
 # ==============================================================================
 # Exceptions
@@ -156,6 +188,8 @@ class SnapshotManifest:
     total_allocated_bytes: int
     total_slack_bytes: int
     files: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    include_hidden: bool = False                                    # hidden folders (.git ...) were walked
+    excluded_dirs: List[str] = field(default_factory=list)          # hidden folders that were left out
 
     @property
     def total_bytes(self) -> int:
@@ -181,6 +215,8 @@ class SnapshotManifest:
             total_allocated_bytes=int(data.get("total_allocated_bytes", 0)),
             total_slack_bytes=int(data.get("total_slack_bytes", 0)),
             files=dict(data.get("files", {})),
+            include_hidden=bool(data.get("include_hidden", False)),
+            excluded_dirs=list(data.get("excluded_dirs", [])),
         )
 
     @classmethod
@@ -255,6 +291,8 @@ class BackupReport:
     skipped_files: List[str] = field(default_factory=list)
     failed_files: List[Dict[str, str]] = field(default_factory=list)
     manifest_path: str = ""
+    include_hidden: bool = False
+    excluded_dirs: List[str] = field(default_factory=list)          # hidden folders that were left out
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -314,14 +352,14 @@ class SnapshotVerifier:
 
         # 2. Check for untracked files in covered partitions
         if check_untracked:
-            exclude_names = {d.lower() for d in DEFAULT_EXCLUDE_DIRS}
             for part in manifest.partitions:
                 part_dir = self.root_path / part
                 if not part_dir.is_dir():
                     continue
 
                 for root_dir, dirs, files in os.walk(part_dir):
-                    dirs[:] = [d for d in dirs if d.lower() not in exclude_names and not d.startswith(".")]
+                    # Walk exactly what the snapshot walked (hidden folders only if it included them)
+                    _prune_dirs(root_dir, dirs, manifest.include_hidden, self.root_path, [])
                     for f in files:
                         if skip_junk:
                             rule = match_junk_rule(f, is_dir=False, max_tier=JunkTier.TIER_3_SENSITIVE)
@@ -390,6 +428,7 @@ class BackupEngine:
         dry_run: bool = False,
         skip_junk: bool = True,
         use_hash_comparison: bool = False,
+        include_hidden: bool = False,
     ) -> BackupReport:
         """Performs incremental synchronization from source partitions to target directory."""
         target_path = self.validate_target(target_dir, partitions)
@@ -398,9 +437,8 @@ class BackupEngine:
         copied_files: List[str] = []
         skipped_files: List[str] = []
         failed_files: List[Dict[str, str]] = []
+        excluded_dirs: List[str] = []
         copied_bytes = 0
-
-        exclude_names = {d.lower() for d in DEFAULT_EXCLUDE_DIRS}
 
         for part in partitions:
             src_part_dir = self.root_path / part
@@ -408,8 +446,8 @@ class BackupEngine:
                 continue
 
             for root_dir, dirs, files in os.walk(src_part_dir):
-                # Filter out excluded system directories
-                dirs[:] = [d for d in dirs if d.lower() not in exclude_names and not d.startswith(".")]
+                # Filter out system folders, and hidden ones (.git ...) unless asked to include them
+                _prune_dirs(root_dir, dirs, include_hidden, self.root_path, excluded_dirs)
 
                 for f in files:
                     if skip_junk:
@@ -480,6 +518,8 @@ class BackupEngine:
                 "copied_bytes": copied_bytes,
                 "failed_count": len(failed_files),
                 "copied_files": copied_files,
+                "include_hidden": include_hidden,
+                "excluded_dirs": excluded_dirs,
             }
             try:
                 with open(manifest_dest, "w", encoding="utf-8") as f:
@@ -501,6 +541,8 @@ class BackupEngine:
             skipped_files=skipped_files,
             failed_files=failed_files,
             manifest_path=manifest_dest_str,
+            include_hidden=include_hidden,
+            excluded_dirs=excluded_dirs,
         )
 
 
@@ -570,6 +612,7 @@ class SnapshotManager:
         name: Optional[str] = None,
         partitions: Optional[List[str]] = None,
         skip_junk: bool = True,
+        include_hidden: bool = False,
     ) -> SnapshotManifest:
         """Generates a streaming SHA-256 snapshot manifest for specified partitions."""
         now = time.gmtime()
@@ -585,9 +628,9 @@ class SnapshotManager:
             active_partitions = list(DEFAULT_SNAPSHOT_PARTITIONS)
 
         file_records: Dict[str, Dict[str, Any]] = {}
+        excluded_dirs: List[str] = []
         total_logical = 0
         total_allocated = 0
-        exclude_names = {d.lower() for d in DEFAULT_EXCLUDE_DIRS}
 
         for part in active_partitions:
             part_path = self.root_path / part
@@ -595,7 +638,7 @@ class SnapshotManager:
                 continue
 
             for root_dir, dirs, files in os.walk(part_path):
-                dirs[:] = [d for d in dirs if d.lower() not in exclude_names and not d.startswith(".")]
+                _prune_dirs(root_dir, dirs, include_hidden, self.root_path, excluded_dirs)
 
                 for f in files:
                     if skip_junk:
@@ -639,6 +682,8 @@ class SnapshotManager:
             total_allocated_bytes=total_allocated,
             total_slack_bytes=total_slack,
             files=file_records,
+            include_hidden=include_hidden,
+            excluded_dirs=excluded_dirs,
         )
 
         # Save manifest to disk
@@ -692,6 +737,7 @@ class SnapshotManager:
         dry_run: bool = False,
         skip_junk: bool = True,
         use_hash_comparison: bool = False,
+        include_hidden: bool = False,
     ) -> BackupReport:
         """Executes incremental backup of partitions to target directory."""
         active_partitions = self.resolve_partitions(partitions)
@@ -701,7 +747,58 @@ class SnapshotManager:
             dry_run=dry_run,
             skip_junk=skip_junk,
             use_hash_comparison=use_hash_comparison,
+            include_hidden=include_hidden,
         )
+
+    def uncovered_entries(self, partitions: List[str]) -> Tuple[List[str], int]:
+        """Top-level folders (and a count of loose files) that a run limited to ``partitions`` skips.
+
+        Hidden and system entries are not counted: they are never part of a run anyway.
+        """
+        covered = {p.lower() for p in partitions}
+        folders: List[str] = []
+        loose_files = 0
+        try:
+            with os.scandir(self.root_path) as entries:
+                for entry in sorted(entries, key=lambda e: e.name.lower()):
+                    name = entry.name
+                    lowered = name.lower()
+                    if name.startswith(".") or lowered in covered or lowered in _SYSTEM_EXCLUDED_DIRS:
+                        continue
+                    if entry.is_symlink():
+                        continue
+                    if entry.is_dir(follow_symlinks=False):
+                        folders.append(name)
+                    else:
+                        loose_files += 1
+        except OSError:
+            return [], 0
+        return folders, loose_files
+
+    def coverage_notes(
+        self,
+        partitions: List[str],
+        excluded_dirs: List[str],
+        include_hidden: bool,
+    ) -> List[str]:
+        """Human-readable lines telling what a snapshot/backup run did NOT cover (and how to include it)."""
+        notes: List[str] = []
+        folders, loose_files = self.uncovered_entries(partitions)
+        if folders or loose_files:
+            parts: List[str] = []
+            if folders:
+                shown = ", ".join(folders[:6]) + (f" (+{len(folders) - 6} more)" if len(folders) > 6 else "")
+                parts.append(shown)
+            if loose_files:
+                parts.append(f"{loose_files} loose file(s) at the root")
+            notes.append(f"Not covered: {'; '.join(parts)} (add them with --partitions)")
+        if excluded_dirs and not include_hidden:
+            names = sorted({e.rsplit("/", 1)[-1] for e in excluded_dirs})
+            shown_names = ", ".join(names[:5]) + (" ..." if len(names) > 5 else "")
+            notes.append(
+                f"Left out: {len(excluded_dirs)} hidden folder(s) ({shown_names}) - use --include-hidden to include them"
+            )
+        return notes
 
 
 __all__ = [

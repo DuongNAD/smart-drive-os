@@ -327,6 +327,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_sc.add_argument("name", nargs="?", default=None, help="Snapshot identifier name (optional)")
     p_sc.add_argument("--root", help="Root directory of the SSD")
     p_sc.add_argument("--partitions", help="Comma-separated list of partitions to snapshot")
+    p_sc.add_argument(
+        "--include-hidden",
+        action="store_true",
+        help="Also snapshot hidden folders such as .git and .github (left out by default)",
+    )
     p_sc.add_argument("--json", action="store_true", help="Output manifest in JSON format")
 
     # snapshot list
@@ -352,6 +357,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_bak.add_argument("--dry-run", action="store_true", help="Simulate backup without copying files")
     p_bak.add_argument("--no-skip-junk", action="store_true", help="Include junk files in backup")
     p_bak.add_argument("--hash", action="store_true", help="Use SHA-256 checksum comparison instead of size/mtime")
+    p_bak.add_argument(
+        "--include-hidden",
+        action="store_true",
+        help="Also back up hidden folders such as .git and .github (left out by default)",
+    )
     p_bak.add_argument("--json", action="store_true", help="Output backup report in JSON format")
 
     # 16. classify

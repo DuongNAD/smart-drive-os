@@ -252,6 +252,7 @@ Tất cả 20 tệp khởi chạy có sẵn ở cả thư mục gốc của ổ 
 - **Băm SHA-256 theo khối 64KB**: Thuật toán tính toán với bộ nhớ hằng số $O(1)$, kiểm tra chính xác hiện tượng suy thoái dữ liệu (bit rot) và tệp bị sửa đổi.
 - **Bản kê khai trạng thái điểm phục hồi**: Lưu trữ trạng thái vào `.smart_drive/snapshots/<tên>.json`.
 - **Sao lưu tăng số thông minh**: Tự động nhận diện và chỉ sao chép các tệp mới hoặc có thay đổi sang ổ đích, tự động loại trừ file rác.
+- **Báo cáo phạm vi trung thực**: Snapshot và sao lưu mặc định phủ `02_Learning_Knowledge`, `03_Development_Projects` và `05_Dev_Toolbox` (chọn phân vùng khác bằng `--partitions`) và bỏ qua các thư mục ẩn như `.git`, `.github`, `.vscode` (thêm lại bằng `--include-hidden`). Mỗi lần chạy đều liệt kê phần chưa được phủ, nên không bao giờ có khoảng trống âm thầm.
 
 ### 11. Cam kết 100% Zero External Pip Dependencies
 - Tệp `pyproject.toml` khai báo tường minh: `dependencies = []`.
@@ -351,10 +352,10 @@ Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `pyth
 | `sentinel` | `--root <đường_dẫn>`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng, phục hồi khiên bảo vệ bị thiếu (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <đường_dẫn>`, `--all`, `--auth-token <token>`, `--require-auth` | Khởi chạy máy chủ MCP stdio (`serve`) hoặc đăng ký cấu hình cho các AI agent (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Tự động đăng ký máy chủ MCP vào các tệp cấu hình của các IDE và AI Agent. |
-| `snapshot create` | `[tên]`, `--partitions <danh_sách>`, `--root <đường_dẫn>`, `--json` | Tạo bản ghi nhận trạng thái kèm băm SHA-256 dạng dòng cho các phân vùng chỉ định. |
+| `snapshot create` | `[tên]`, `--partitions <danh_sách>`, `--include-hidden`, `--root <đường_dẫn>`, `--json` | Tạo bản ghi nhận trạng thái kèm băm SHA-256 dạng dòng cho các phân vùng chỉ định. |
 | `snapshot list` | `--root <đường_dẫn>`, `--json` | Liệt kê toàn bộ các bản snapshot đã lưu kèm dung lượng và số lượng tệp tin. |
 | `snapshot verify` | `<tên>`, `--no-untracked`, `--root <đường_dẫn>`, `--json` | Kiểm toán tính toàn vẹn dữ liệu so với bản snapshot để phát hiện tệp bị sửa đổi hoặc suy thoái (bit rot). |
-| `backup` | `--target <đích>`, `--dry-run`, `--hash`, `--partitions <danh_sách>`, `--json` | Sao lưu tăng số thông minh, chỉ sao chép các tệp mới hoặc có thay đổi sang ổ đích. |
+| `backup` | `--target <đích>`, `--dry-run`, `--hash`, `--partitions <danh_sách>`, `--include-hidden`, `--json` | Sao lưu tăng số thông minh, chỉ sao chép các tệp mới hoặc có thay đổi sang ổ đích. |
 | `classify` | `[đường_dẫn]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Nhận diện sâu magic bytes và cấu trúc tệp để phân loại mô hình AI, dataset, tài liệu, dự án. |
 | `offload` | `--scan`, `--move <tên>`, `--target <ổ>`, `--revert <tên>`, `--dry-run`, `--json` | Quét và di chuyển các cache khổng lồ từ ổ C: sang ổ phụ qua NTFS Directory Junctions. |
 | `health` | `[ổ_đĩa]`, `--root <đường_dẫn>`, `--json` | Kiểm tra sức khỏe ổ cứng SSD, trạng thái kích hoạt TRIM, cluster geometry và dung lượng trống. |

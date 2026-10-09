@@ -46,6 +46,7 @@ def cmd_backup(args: argparse.Namespace) -> int:
     dry_run = getattr(args, "dry_run", False)
     skip_junk = not getattr(args, "no_skip_junk", False)
     use_hash = getattr(args, "hash", False)
+    include_hidden = getattr(args, "include_hidden", False)
     as_json = getattr(args, "json", False)
 
     try:
@@ -55,6 +56,7 @@ def cmd_backup(args: argparse.Namespace) -> int:
             dry_run=dry_run,
             skip_junk=skip_junk,
             use_hash_comparison=use_hash,
+            include_hidden=include_hidden,
         )
     except BackupError as b_err:
         sys.stderr.write(f"Backup Error: {b_err}\n")
@@ -63,8 +65,13 @@ def cmd_backup(args: argparse.Namespace) -> int:
         sys.stderr.write(f"Unexpected backup error: {exc}\n")
         return 1
 
+    active_partitions = manager.resolve_partitions(partitions)
     if as_json:
-        print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+        data = report.to_dict()
+        folders, loose_files = manager.uncovered_entries(active_partitions)
+        data["partitions"] = active_partitions
+        data["not_covered"] = {"folders": folders, "loose_files": loose_files}
+        print(json.dumps(data, indent=2, ensure_ascii=False))
         return 0 if report.failed_count == 0 else 1
 
     mode_str = "DRY-RUN SIMULATION (No files copied)" if dry_run else "EXECUTION (Applied)"
@@ -72,12 +79,15 @@ def cmd_backup(args: argparse.Namespace) -> int:
     print("=" * 70)
     print(f"Source Root: {report.source_root}")
     print(f"Target Dir:  {report.target_dir}")
+    print(f"Partitions:  {', '.join(active_partitions)}")
     print("-" * 70)
     print(f"Copied:      {report.copied_count:,} files ({_format_size(report.copied_bytes)})")
     print(f"Skipped:     {report.skipped_count:,} files (identical size & mtime)")
     print(f"Failed:      {report.failed_count:,} files")
     if report.manifest_path:
         print(f"Manifest:    {report.manifest_path}")
+    for note in manager.coverage_notes(active_partitions, report.excluded_dirs, include_hidden):
+        print(note)
 
     if report.failed_files:
         print("\nFailed File Transfers:")

@@ -50,14 +50,19 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         raw_parts = getattr(args, "partitions", None)
         partitions = [p.strip() for p in raw_parts.split(",") if p.strip()] if raw_parts else None
 
+        include_hidden = getattr(args, "include_hidden", False)
+
         try:
-            manifest = manager.create_snapshot(name=name, partitions=partitions)
+            manifest = manager.create_snapshot(name=name, partitions=partitions, include_hidden=include_hidden)
         except Exception as exc:
             sys.stderr.write(f"Error creating snapshot: {exc}\n")
             return 1
 
         if as_json:
-            print(manifest.to_json())
+            data = manifest.to_dict()
+            folders, loose_files = manager.uncovered_entries(manifest.partitions)
+            data["not_covered"] = {"folders": folders, "loose_files": loose_files}
+            print(json.dumps(data, indent=2, ensure_ascii=False))
             return 0
 
         print(f"\n✓ Point-in-time snapshot created successfully: {manifest.name}")
@@ -67,6 +72,8 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         print(f"  Logical:    {_format_size(manifest.total_logical_bytes)}")
         print(f"  Allocated:  {_format_size(manifest.total_allocated_bytes)} (512KB clusters)")
         print(f"  Manifest:   {manager.snapshot_dir / f'{manifest.name}.json'}")
+        for note in manager.coverage_notes(manifest.partitions, manifest.excluded_dirs, manifest.include_hidden):
+            print(f"  {note}")
         return 0
 
     # -------------------------------------------------------------------------
