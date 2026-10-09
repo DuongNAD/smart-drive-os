@@ -10,7 +10,7 @@
 [![Kiểm định Bảo mật MCP: Hạng A (100/100)](https://img.shields.io/badge/MCP%20Audit-H%E1%BA%A1ng%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Kiểm thử: 915/915 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-915%2F915%20passed%20(100%25)-brightgreen.svg)](#)
+[![Kiểm thử: 943/943 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-943%2F943%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Launcher Portable](https://img.shields.io/badge/launchers-20%20t%E1%BB%87p%20kh%E1%BB%9Fi%20ch%E1%BA%A1y-blue.svg)](#)
 [![Phiên bản: v1.1.0](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
 [![Giấy phép: MIT](https://img.shields.io/badge/Gi%E1%BA%A5y%20ph%C3%A9p-MIT-yellow.svg)](LICENSE)
@@ -41,6 +41,7 @@
    - [8. Động cơ Di chuyển Cache Ổ C: & NTFS Directory Junctions (`smart-drive offload`)](#8-động-cơ-di-chuyển-cache-ổ-c--ntfs-directory-junctions-smart-drive-offload)
    - [9. Động cơ Snapshot SHA-256 Dạng Dòng & Sao lưu Tăng số](#9-động-cơ-snapshot-sha-256-dạng-dòng--sao-lưu-tăng-số)
    - [10. Cam kết 100% Zero External Pip Dependencies](#10-cam-kết-100-zero-external-pip-dependencies)
+   - [11. Clone trùng lặp & Bản đối chiếu trên SSD di động (`smart-drive repos`)](#11-clone-trùng-lặp--bản-đối-chiếu-trên-ssd-di-động-smart-drive-repos)
 4. [Khởi Động Nhanh Trong 3 Bước](#4-khởi-động-nhanh-trong-3-bước)
 5. [5 Cấu Hình Mẫu Chuyên Biệt (Preset Profiles)](#5-5-cấu-hình-mẫu-chuyên-biệt-preset-profiles)
 6. [Hướng Dẫn Sử Dụng Bộ Khởi Chạy 1-Chạm (20 Launchers)](#6-hướng-dẫn-sử-dụng-bộ-khởi-chạy-1-chạm-20-launchers)
@@ -252,6 +253,14 @@ Tất cả 20 tệp khởi chạy có sẵn ở cả thư mục gốc của ổ 
 - Toàn bộ tính năng được xây dựng trên thư viện chuẩn Python 3.9+ (`sqlite3`, `hashlib`, `hmac`, `json`, `urllib`, `shutil`, `pathlib`, `ctypes`, `subprocess`, `argparse`).
 - Cài đặt và hoạt động ngay trên mọi hệ máy tính mà không lo xung đột gói thư viện.
 
+### 11. Clone trùng lặp & Bản đối chiếu trên SSD di động (`smart-drive repos`)
+Mỗi dự án nên có một bản trên SSD di động và một bản trên mỗi máy mà SSD được cắm vào. `smart-drive repos` quét SSD, thư mục người dùng và các ổ không phải ổ hệ thống (hoặc các thư mục bạn chỉ định), rồi phân loại từng clone theo dự án và nơi lưu:
+- **Bản đối chiếu** (cùng dự án trên SSD và trên máy này) là bình thường. Báo cáo chỉ cho biết hai bên có khớp nhau không và mỗi bên cần làm gì: `commit`, `push`, `pull` hoặc `fetch to compare`.
+- **Bản trùng** (cùng dự án hai lần trên SSD, hoặc hai lần trên các ổ của máy này) được đề xuất phương án: giữ clone nào (commit mới nhất), bản nào thừa (cùng nhánh), bản nào nên chuyển thành `git worktree` của clone được giữ (khác nhánh), kèm lệnh cụ thể. Với git 2.48 trở lên, lệnh dùng `--relative-paths` để worktree trên SSD vẫn chạy khi đổi ký tự ổ hoặc cắm vào macOS.
+- **Bản bị chặn** (có tệp chưa commit, stash, commit chưa push, worktree liên kết, hoặc không có remote) không bao giờ được đề xuất xoá.
+- Worktree liên kết là một phần của clone, không bị tính là bản trùng; worktree đã mất thư mục được liệt kê kèm lệnh `git worktree prune`.
+- Chỉ đọc: không fetch, không ghi, không xoá gì. Không quét thư mục thư viện, thư mục build và thư mục ẩn. `--json` trả về toàn bộ báo cáo cho AI agent.
+
 ---
 
 ## 4. Khởi Động Nhanh Trong 3 Bước
@@ -347,6 +356,7 @@ Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `pyth
 | `offload` | `--scan`, `--move <tên>`, `--target <ổ>`, `--revert <tên>`, `--dry-run`, `--json` | Quét và di chuyển các cache khổng lồ sang ổ phụ (NTFS junction trên Windows, symbolic link trên macOS/Linux). |
 | `health` | `[ổ_đĩa]`, `--root <đường_dẫn>`, `--json` | Kiểm tra sức khỏe ổ cứng SSD, trạng thái TRIM (Windows), cluster geometry và dung lượng trống. Nhận ký tự ổ đĩa trên Windows hoặc đường dẫn ổ (`/Volumes/MySSD`) trên macOS/Linux. |
 | `dup` | `--root <đường_dẫn>`, `--json` | Tìm kiếm tệp tin trùng lặp qua 3 giai đoạn SHA-256 kèm thống kê dung lượng slack thu hồi được. Nhiều tên cho cùng một dữ liệu (hard link) được coi là một tệp, không bao giờ được đề xuất như bản sao để xoá. |
+| `repos` | `[đường_dẫn...]`, `--root <ssd>`, `--portable <đường_dẫn>`, `--max-depth <n>`, `--json` | Báo cáo chỉ đọc về các clone git: bản trùng của cùng dự án ở cùng một nơi (kèm đề xuất giữ / xoá / chuyển thành worktree) và trạng thái đồng bộ giữa bản trên SSD và bản trên máy. |
 | `index` | `--root <đường_dẫn>`, `--db <đường_dẫn>`, `--batch <n>` | Lập chỉ mục toàn bộ ổ đĩa với SQLite FTS5 (tốc độ >15.000 tệp/giây). |
 | `update` | `--root <đường_dẫn>`, `--db <đường_dẫn>`, `--json` | Đồng bộ chỉ mục tìm kiếm tăng số siêu nhanh với độ phức tạp $O(1)$ (<2 giây). |
 
