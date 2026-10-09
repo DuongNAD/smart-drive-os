@@ -158,16 +158,21 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
 
         A browser always sends Host, and sends Origin on cross-origin requests and on every POST,
         so a page on another site (or one reaching us through a rebound DNS name) is caught here
-        before any work or any side effect happens.
+        before any work or any side effect happens. Requests that carry no Origin (a plain GET) are
+        judged by Sec-Fetch-Site instead.
         """
         host = (self.headers.get("Host") or "").strip().lower()
         if host and host not in self._allowed_hosts():
             self.send_error_response("Host header not allowed (use 127.0.0.1 or localhost on this port)", status=403)
             return False
         origin = (self.headers.get("Origin") or "").strip().lower()
-        if origin and origin not in self._allowed_origins():
-            self.send_error_response("Cross-origin requests are not allowed", status=403)
-            return False
+        if origin:
+            if origin not in self._allowed_origins():
+                self.send_error_response("Cross-origin requests are not allowed", status=403)
+                return False
+            # The allow-list (the dashboard itself, plus SMART_DRIVE_UI_ALLOWED_ORIGINS) decides on its own: a dev
+            # front-end on localhost:5173 is "same-site" to the browser, which the rule below would refuse.
+            return True
         # A cross-site "no-cors" GET (an <img src="http://127.0.0.1:8765/api/audit"> on another site) carries no
         # Origin, yet makes us run a full-drive scan. Browsers label it with Sec-Fetch-Site, so only the dashboard
         # itself ("same-origin") or the user typing the address ("none") may reach the API; "same-site" is another

@@ -137,6 +137,25 @@ class TestHostAndOriginGuard(_ServerCase):
         self.assertEqual(status, 200)
         self.assertEqual(headers["access-control-allow-origin"], dev_ui)
 
+    def test_the_opt_in_works_the_way_a_browser_really_sends_it(self) -> None:
+        """A front-end on localhost:5173 calling the API is "same-site" to the browser, with its Origin set."""
+        dev_ui = "http://localhost:5173"
+        browser = {"Origin": dev_ui, "Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Dest": "empty"}
+        with patch.dict(os.environ, {"SMART_DRIVE_UI_ALLOWED_ORIGINS": dev_ui}):
+            status, headers, _ = self.request("GET", "/api/status", headers=browser)
+            self.assertEqual(status, 200)
+            self.assertEqual(headers["access-control-allow-origin"], dev_ui)
+            preflight = dict(browser, **{"Access-Control-Request-Method": "POST"})
+            status, headers, _ = self.request("OPTIONS", "/api/junk/clean", headers=preflight)
+            self.assertIn(status, (200, 204))
+            self.assertEqual(headers["access-control-allow-origin"], dev_ui)
+        # without the opt-in the very same request is refused, and an origin that is not listed stays refused
+        status, _, _ = self.request("GET", "/api/status", headers=browser)
+        self.assertEqual(status, 403)
+        with patch.dict(os.environ, {"SMART_DRIVE_UI_ALLOWED_ORIGINS": dev_ui}):
+            other = dict(browser, Origin="http://localhost:3000")
+            self.assertEqual(self.request("GET", "/api/status", headers=other)[0], 403)
+
 
 class TestCrossSiteDeletionIsImpossible(_ServerCase):
     """The attack that used to work: a foreign page POSTs text/plain JSON and junk gets deleted."""
