@@ -562,7 +562,7 @@ class TestUIServerConcurrencyAndSocketBacklog(unittest.TestCase):
             "/api/junk/clean",
             method="POST",
             data=b"{not_json",
-            headers={"Content-Length": str(len(b"{not_json"))},
+            headers={"Content-Length": str(len(b"{not_json")), "Content-Type": "application/json"},
         )
         self.assertEqual(status, 400)
 
@@ -572,7 +572,7 @@ class TestUIServerConcurrencyAndSocketBacklog(unittest.TestCase):
             "/api/junk/clean",
             method="POST",
             data=bad_payload,
-            headers={"Content-Length": str(len(bad_payload))},
+            headers={"Content-Length": str(len(bad_payload)), "Content-Type": "application/json"},
         )
         self.assertEqual(status, 400)
 
@@ -583,10 +583,10 @@ class TestUIServerConcurrencyAndSocketBacklog(unittest.TestCase):
                     "/api/junk/clean",
                     method="POST",
                     data=bad_data,
-                    headers={"Content-Length": str(len(bad_data))},
+                    headers={"Content-Length": str(len(bad_data)), "Content-Type": "application/json"},
                 )
-                # Must be handled without crashing the server process
-                self.assertIn(status, [400, 500])
+                # A non-object JSON body is a client error, and must not crash the server process
+                self.assertEqual(status, 400)
 
     def test_security_restriction_host_binding(self) -> None:
         """create_server strictly enforces 127.0.0.1 loopback binding and prohibits external interfaces."""

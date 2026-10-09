@@ -484,6 +484,7 @@ SmartDrive-OS is engineered from the ground up with a strict **local-first, zero
 - **Zero Telemetry & Phone-Home**: Zero analytics, zero usage trackers, and zero background network beacons.
 - **Zero PII Logging**: File contents, credentials, and source code secrets are never parsed or harvested; only basic filesystem metadata is stored in local `.smart_drive/index.db`.
 - **Air-Gap Ready**: Zero external pip dependencies (`dependencies = []`). The embedded Web Dashboard binds exclusively to `127.0.0.1` (`localhost`), and the MCP Server operates solely over local `stdio`.
+- **Dashboard Request Guard**: The dashboard API answers only requests whose `Host` is `127.0.0.1`/`localhost` on its own port and whose `Origin`, when present, is the dashboard itself, so a web page open in your browser can neither read it nor trigger a purge. Foreign hosts/origins get `403`, state-changing calls must be `application/json`, and responses carry `X-Frame-Options`, `nosniff` and a Content-Security-Policy. To let a local front-end dev server call the API, opt in explicitly: `SMART_DRIVE_UI_ALLOWED_ORIGINS=http://localhost:5173`.
 - **Defensive Safeguards**: Inviolable whitelist protecting critical files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`), mandatory dry-run defaults for cleanup, and strict input boundary validation.
 
 For full architectural details, security models, and compliance specifications, please read our authoritative [PRIVACY.md](PRIVACY.md).

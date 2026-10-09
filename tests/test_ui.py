@@ -146,7 +146,12 @@ class TestRestEndpoints(SmartDriveTestCase):
         status, headers, body = self._http_request("/")
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers.get("Content-Type", ""))
-        self.assertEqual(headers.get("Access-Control-Allow-Origin"), "*")
+        # No Origin header means no CORS request: nothing is granted to foreign pages
+        self.assertNotIn("Access-Control-Allow-Origin", headers)
+        self.assertEqual(headers.get("X-Frame-Options"), "DENY")
+        self.assertEqual(headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertIn("frame-ancestors 'none'", headers.get("Content-Security-Policy", ""))
+        self.assertIn("connect-src 'self'", headers.get("Content-Security-Policy", ""))
 
         html_text = body.decode("utf-8")
         self.assertIn("<!DOCTYPE html>", html_text)
@@ -322,10 +327,11 @@ class TestRestEndpoints(SmartDriveTestCase):
             self.assertTrue(pf.exists(), f"Protected file was deleted: {pf}")
 
     def test_cors_preflight_and_headers(self) -> None:
-        """OPTIONS request returns 204 No Content with CORS allow headers."""
-        status, headers, _ = self._http_request("/api/search", method="OPTIONS")
+        """OPTIONS from the dashboard's own origin returns 204 No Content with CORS allow headers."""
+        own_origin = f"http://127.0.0.1:{self.port}"
+        status, headers, _ = self._http_request("/api/search", method="OPTIONS", headers={"Origin": own_origin})
         self.assertEqual(status, 204)
-        self.assertEqual(headers.get("Access-Control-Allow-Origin"), "*")
+        self.assertEqual(headers.get("Access-Control-Allow-Origin"), own_origin)
         self.assertIn("GET", headers.get("Access-Control-Allow-Methods", ""))
         self.assertIn("POST", headers.get("Access-Control-Allow-Methods", ""))
         self.assertIn("OPTIONS", headers.get("Access-Control-Allow-Methods", ""))

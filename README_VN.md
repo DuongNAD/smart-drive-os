@@ -481,6 +481,7 @@ SmartDrive-OS tuân thủ triệt để nguyên tắc **Local-First & Quyền Ri
 - **Zero Telemetry**: Hoàn toàn không chứa mã thu thập hành vi, không gửi báo cáo sử dụng và không có kết nối ngầm.
 - **Zero PII Logging**: Tuyệt đối không đọc, bóc tách hay thu thập nội dung nhạy cảm (mã nguồn bí mật, token, private key); chỉ lưu metadata tệp tin cần thiết trong cơ sở dữ liệu nội bộ `.smart_drive/index.db`.
 - **Sẵn sàng cho môi trường Air-Gap**: Không có dependencies ngoài (`dependencies = []`). Web Dashboard chỉ lắng nghe trên `127.0.0.1` (`localhost`), và máy chủ MCP giao tiếp thuần túy qua luồng `stdio`.
+- **Lá chắn yêu cầu cho Dashboard**: API của dashboard chỉ trả lời các yêu cầu có `Host` là `127.0.0.1`/`localhost` đúng cổng của nó và `Origin` (nếu có) chính là dashboard, nên một trang web đang mở trong trình duyệt không thể đọc dữ liệu hay kích hoạt xoá. Host/Origin lạ nhận `403`, các lệnh thay đổi dữ liệu bắt buộc là `application/json`, và phản hồi có `X-Frame-Options`, `nosniff` cùng Content-Security-Policy. Muốn cho giao diện dev cục bộ gọi API, hãy bật tường minh: `SMART_DRIVE_UI_ALLOWED_ORIGINS=http://localhost:5173`.
 - **Khiên Bảo vệ Bất khả Xâm phạm**: Ngăn chặn hoàn toàn việc xóa nhầm các tệp cấu hình cốt lõi (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`) và các ứng dụng hệ thống.
 
 Xem toàn văn cam kết bảo mật và quyền riêng tư tại [PRIVACY.md](PRIVACY.md).

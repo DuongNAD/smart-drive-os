@@ -47,7 +47,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
 
 try:
@@ -740,46 +741,58 @@ class TestNetworkLoopbackGuardAndCORS(SmartDriveTestCase):
             run_server(self.mock_root, port=0, host="0.0.0.0")
         self.assertIn("Security restriction", str(ctx.exception))
 
-    def test_cors_headers_loopback_origin(self) -> None:
-        """_set_cors_headers reflects 127.0.0.1 and localhost origins directly."""
-        mock_handler = MagicMock()
-        mock_headers_sent = {}
+    @staticmethod
+    def _cors_handler(origin: Optional[str] = None) -> Tuple[SmartDriveRequestHandler, Dict[str, str]]:
+        """A handler bound to a dashboard on port 8765 that records the headers it would send."""
+        handler = object.__new__(SmartDriveRequestHandler)
+        handler.server = SimpleNamespace(server_address=("127.0.0.1", 8765))
+        handler.headers = {"Origin": origin} if origin is not None else {}
+        sent: Dict[str, str] = {}
+        handler.send_header = lambda key, val: sent.update({key: val})
+        return handler, sent
 
-        def record_header(key: str, val: str) -> None:
-            mock_headers_sent[key] = val
+    def test_cors_headers_only_for_the_dashboard_own_origin(self) -> None:
+        """_set_cors_headers reflects exactly the dashboard's own origin (127.0.0.1 and localhost)."""
+        for origin in ("http://127.0.0.1:8765", "http://localhost:8765"):
+            handler, sent = self._cors_handler(origin)
+            handler._set_cors_headers()
+            self.assertEqual(sent["Access-Control-Allow-Origin"], origin)
+            self.assertEqual(sent["Vary"], "Origin")
+            self.assertIn("X-MCP-Auth-Token", sent["Access-Control-Allow-Headers"])
 
-        mock_handler.send_header = record_header
+    def test_cors_headers_refuse_other_ports_and_lookalike_hosts(self) -> None:
+        """Other local apps, foreign sites and look-alike names ('localhost.evil.com') get no CORS grant."""
+        hostile = (
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://evil-external-site.com",
+            "http://localhost.evil.com",
+            "http://127.0.0.1.attacker.net",
+            "http://127.0.0.1:8765.evil.com",
+            "https://127.0.0.1:8765",
+            "null",
+        )
+        for origin in hostile:
+            handler, sent = self._cors_handler(origin)
+            handler._set_cors_headers()
+            self.assertNotIn("Access-Control-Allow-Origin", sent, origin)
 
-        # Origin with 127.0.0.1
-        mock_handler.headers = {"Origin": "http://127.0.0.1:3000"}
-        SmartDriveRequestHandler._set_cors_headers(mock_handler)
-        self.assertEqual(mock_headers_sent["Access-Control-Allow-Origin"], "http://127.0.0.1:3000")
+    def test_cors_headers_extra_origin_is_an_explicit_opt_in(self) -> None:
+        """SMART_DRIVE_UI_ALLOWED_ORIGINS adds exact extra origins, e.g. a local front-end dev server."""
+        with patch.dict(os.environ, {"SMART_DRIVE_UI_ALLOWED_ORIGINS": "http://localhost:5173, http://127.0.0.1:3000/"}):
+            for origin in ("http://localhost:5173", "http://127.0.0.1:3000"):
+                handler, sent = self._cors_handler(origin)
+                handler._set_cors_headers()
+                self.assertEqual(sent["Access-Control-Allow-Origin"], origin)
+            handler, sent = self._cors_handler("http://localhost:5174")
+            handler._set_cors_headers()
+            self.assertNotIn("Access-Control-Allow-Origin", sent)
 
-        # Origin with localhost
-        mock_handler.headers = {"Origin": "http://localhost:5173"}
-        SmartDriveRequestHandler._set_cors_headers(mock_handler)
-        self.assertEqual(mock_headers_sent["Access-Control-Allow-Origin"], "http://localhost:5173")
-
-    def test_cors_headers_external_origin_hardened(self) -> None:
-        """_set_cors_headers restricts external untrusted origins to local UI URL."""
-        mock_handler = MagicMock()
-        mock_headers_sent = {}
-        mock_handler.send_header = lambda k, v: mock_headers_sent.update({k: v})
-
-        mock_handler.headers = {"Origin": "http://evil-external-site.com"}
-        SmartDriveRequestHandler._set_cors_headers(mock_handler)
-        self.assertEqual(mock_headers_sent["Access-Control-Allow-Origin"], "http://127.0.0.1:8765")
-        self.assertIn("X-MCP-Auth-Token", mock_headers_sent["Access-Control-Allow-Headers"])
-
-    def test_cors_headers_no_origin_defaults_to_wildcard(self) -> None:
-        """_set_cors_headers without Origin header sets wildcard for local CLI / test compatibility."""
-        mock_handler = MagicMock()
-        mock_headers_sent = {}
-        mock_handler.send_header = lambda k, v: mock_headers_sent.update({k: v})
-
-        mock_handler.headers = {}
-        SmartDriveRequestHandler._set_cors_headers(mock_handler)
-        self.assertEqual(mock_headers_sent["Access-Control-Allow-Origin"], "*")
+    def test_cors_headers_without_origin_grant_nothing(self) -> None:
+        """No Origin header means no CORS request, so no CORS headers (and no wildcard) are sent."""
+        handler, sent = self._cors_handler(None)
+        handler._set_cors_headers()
+        self.assertNotIn("Access-Control-Allow-Origin", sent)
 
 
 # ==============================================================================

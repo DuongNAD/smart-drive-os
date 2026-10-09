@@ -466,10 +466,12 @@ class TestAdversarialFtsAndSearch(AdversarialTestBase):
         self.assertEqual(s, 200)
         self.assertEqual(len(d["results"]), 0)
 
-        # Non-numeric limit or offset raises ValueError caught safely as 500 error response
-        s, d = self._search("limit=notanumber")
-        self.assertEqual(s, 500)
-        self.assertIn("error", d)
+        # Non-numeric limit or offset is a client error (400), not a server crash (500)
+        for bad in ("limit=notanumber", "offset=zz"):
+            s, d = self._search(bad)
+            self.assertEqual(s, 400, bad)
+            self.assertIn("error", d)
+            self.assertNotIn("invalid literal", d["error"], "Python exception text must not leak")
 
         # Server is still completely healthy
         s2, _ = self._search("q=llama")

@@ -20,7 +20,7 @@ import sys
 import time
 import urllib.parse
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from smart_drive.core.auditor import StorageAuditor
 from smart_drive.core.config import CLUSTER_SIZE_BYTES, JunkTier, calculate_allocated_bytes, calculate_slack_bytes
@@ -32,6 +32,62 @@ from smart_drive.search.parser import SearchParams, parse_search_query
 from smart_drive.ui.dashboard import get_dashboard_html
 
 logger = logging.getLogger("smart_drive.ui.server")
+
+# POST bodies are small JSON documents; anything larger is refused before it is read.
+MAX_REQUEST_BODY_BYTES = 1 << 20
+
+# Extra origins (comma-separated, e.g. a local front-end dev server) allowed to call the API.
+EXTRA_ORIGINS_ENV = "SMART_DRIVE_UI_ALLOWED_ORIGINS"
+
+# The dashboard is a self-contained page with inline script/style and talks only to itself.
+DASHBOARD_CSP = (
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+    "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
+    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
+
+
+class _BadRequest(Exception):
+    """A client error that maps straight to an HTTP 4xx response."""
+
+    def __init__(self, message: str, status: int = 400) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+def _extra_allowed_origins() -> Set[str]:
+    """Origins opted in through SMART_DRIVE_UI_ALLOWED_ORIGINS (exact match, lower-cased)."""
+    raw = os.environ.get(EXTRA_ORIGINS_ENV, "")
+    return {o.strip().lower().rstrip("/") for o in raw.split(",") if o.strip()}
+
+
+def _int_param(params: Dict[str, List[str]], name: str, default: int) -> int:
+    """Reads an integer query parameter, turning garbage into a 400 instead of a crash."""
+    raw = params.get(name, [str(default)])[0]
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise _BadRequest(f"Query parameter '{name}' must be an integer") from None
+
+
+def _parse_clean_request(req_data: Any) -> Tuple[List[int], bool, Optional[List[str]]]:
+    """Validates the /api/junk/clean payload: returns (tiers, dry_run, paths)."""
+    if not isinstance(req_data, dict):
+        raise _BadRequest("JSON body must be an object")
+    tiers = req_data.get("tiers", [1])
+    if (
+        not isinstance(tiers, list)
+        or not tiers
+        or not all(isinstance(t, int) and not isinstance(t, bool) for t in tiers)
+    ):
+        raise _BadRequest("Field 'tiers' must be a non-empty list of integers")
+    dry_run = req_data.get("dry_run", True)
+    if not isinstance(dry_run, bool):
+        raise _BadRequest("Field 'dry_run' must be a boolean")
+    paths = req_data.get("paths")
+    if paths is not None and (not isinstance(paths, list) or not all(isinstance(p, str) for p in paths)):
+        raise _BadRequest("Field 'paths' must be a list of strings or null")
+    return tiers, dry_run, paths
 
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -62,22 +118,61 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
     """HTTP Request Handler dispatching REST API routes and serving the embedded SPA."""
 
     server: ThreadingHTTPServer
+    server_version = "SmartDriveOS"
+    sys_version = ""  # do not advertise the Python version
 
     def log_message(self, format: str, *args: Any) -> None:
         """Route request logs to Python logging to keep stdout clean."""
         logger.debug("%s - - [%s] %s", self.address_string(), self.log_date_time_string(), format % args)
 
+    # --------------------------------------------------------------------------
+    # Trust boundary: only the dashboard served by this process may use the API
+    # --------------------------------------------------------------------------
+
+    def _allowed_hosts(self) -> Set[str]:
+        """Host header values that name this very server (blocks DNS-rebinding pages)."""
+        port = self.server.server_address[1]
+        return {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+
+    def _allowed_origins(self) -> Set[str]:
+        """Exact origins allowed to call the API: this dashboard, plus explicit opt-ins."""
+        port = self.server.server_address[1]
+        return {f"http://127.0.0.1:{port}", f"http://localhost:{port}"} | _extra_allowed_origins()
+
+    def _guard_request(self) -> bool:
+        """Refuses requests that only a foreign web page could send; True when the request may proceed.
+
+        A browser always sends Host, and sends Origin on cross-origin requests and on every POST,
+        so a page on another site (or one reaching us through a rebound DNS name) is caught here
+        before any work or any side effect happens.
+        """
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host and host not in self._allowed_hosts():
+            self.send_error_response("Host header not allowed (use 127.0.0.1 or localhost on this port)", status=403)
+            return False
+        origin = (self.headers.get("Origin") or "").strip().lower()
+        if origin and origin not in self._allowed_origins():
+            self.send_error_response("Cross-origin requests are not allowed", status=403)
+            return False
+        return True
+
     def _set_cors_headers(self) -> None:
-        """Set standard CORS headers for local API consumption."""
-        origin = self.headers.get("Origin", "") if hasattr(self, "headers") and self.headers else ""
-        if origin and ("127.0.0.1" in origin or "localhost" in origin):
+        """CORS headers, only for an allowed origin (the dashboard itself); nothing otherwise."""
+        origin = ((self.headers.get("Origin") if self.headers else "") or "").strip().lower()
+        if origin and origin in self._allowed_origins():
             self.send_header("Access-Control-Allow-Origin", origin)
-        elif origin:
-            self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:8765")
-        else:
-            self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-MCP-Auth-Token")
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-MCP-Auth-Token")
+
+    def _set_security_headers(self, html: bool = False) -> None:
+        """Defensive response headers: no sniffing, no framing, no caching, no referrer."""
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cache-Control", "no-store")
+        if html:
+            self.send_header("Content-Security-Policy", DASHBOARD_CSP)
 
     def send_json_response(self, data: Any, status: int = 200) -> None:
         """Helper to serialize data as JSON response with correct headers."""
@@ -92,6 +187,7 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self._set_cors_headers()
+        self._set_security_headers()
         self.end_headers()
         self.wfile.write(payload)
 
@@ -102,6 +198,7 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self._set_cors_headers()
+        self._set_security_headers(html=True)
         self.end_headers()
         self.wfile.write(payload)
 
@@ -111,14 +208,19 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_json_response(err_data, status=status)
 
     def do_OPTIONS(self) -> None:
-        """Handles CORS preflight requests."""
+        """Handles CORS preflight requests (answered only for the dashboard's own origin)."""
+        if not self._guard_request():
+            return
         self.send_response(204)
         self._set_cors_headers()
+        self._set_security_headers()
         self.send_header("Content-Length", "0")
         self.end_headers()
 
     def do_GET(self) -> None:
         """Dispatch GET requests."""
+        if not self._guard_request():
+            return
         parsed_url = urllib.parse.urlparse(self.path)
         path = parsed_url.path.rstrip("/")
         query_params = urllib.parse.parse_qs(parsed_url.query)
@@ -136,12 +238,16 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self.handle_api_junk()
             else:
                 self.send_error_response(f"Endpoint not found: {path}", status=404)
+        except _BadRequest as exc:
+            self.send_error_response(str(exc), status=exc.status)
         except Exception as exc:
             logger.exception("Error processing GET %s: %s", self.path, exc)
-            self.send_error_response(f"Internal server error: {exc}", status=500)
+            self.send_error_response("Internal server error", status=500)
 
     def do_POST(self) -> None:
         """Dispatch POST requests."""
+        if not self._guard_request():
+            return
         parsed_url = urllib.parse.urlparse(self.path)
         path = parsed_url.path.rstrip("/")
 
@@ -152,9 +258,11 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self.send_error_response(f"Method not allowed for {path}", status=405)
             else:
                 self.send_error_response(f"Endpoint not found: {path}", status=404)
+        except _BadRequest as exc:
+            self.send_error_response(str(exc), status=exc.status)
         except Exception as exc:
             logger.exception("Error processing POST %s: %s", self.path, exc)
-            self.send_error_response(f"Internal server error: {exc}", status=500)
+            self.send_error_response("Internal server error", status=500)
 
     # --------------------------------------------------------------------------
     # Route Handlers
@@ -197,8 +305,8 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
         q_raw = query_params.get("q", [""])[0]
         cat_param = query_params.get("category", [""])[0]
         ext_param = query_params.get("ext", [""])[0]
-        limit_param = int(query_params.get("limit", [100])[0])
-        offset_param = int(query_params.get("offset", [0])[0])
+        limit_param = _int_param(query_params, "limit", 100)
+        offset_param = _int_param(query_params, "offset", 0)
 
         limit = max(1, min(limit_param, 1000))
         offset = max(0, offset_param)
@@ -319,25 +427,30 @@ class SmartDriveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def handle_api_junk_clean(self) -> None:
         """Executes dry-run preview or confirmed purge across selected tiers."""
-        content_len = int(self.headers.get("Content-Length", 0))
+        try:
+            content_len = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise _BadRequest("Invalid Content-Length header") from None
+        if content_len < 0:
+            raise _BadRequest("Invalid Content-Length header")
         if content_len == 0:
-            self.send_error_response("Missing JSON request body", status=400)
-            return
+            raise _BadRequest("Missing JSON request body")
+        if content_len > MAX_REQUEST_BODY_BYTES:
+            raise _BadRequest(f"Request body too large (limit {MAX_REQUEST_BODY_BYTES} bytes)", status=413)
+
+        # Only JSON may drive a state change. A web page on another site can send form/plain-text
+        # POSTs without a CORS preflight, but cannot send JSON without one (which is refused above).
+        content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if content_type != "application/json":
+            raise _BadRequest("Content-Type must be application/json", status=415)
 
         try:
             body = self.rfile.read(content_len)
             req_data = json.loads(body.decode("utf-8"))
         except Exception as exc:
-            self.send_error_response(f"Invalid JSON: {exc}", status=400)
-            return
+            raise _BadRequest(f"Invalid JSON: {exc}") from None
 
-        selected_tiers = req_data.get("tiers", [1])
-        dry_run = bool(req_data.get("dry_run", True))
-        specific_paths = req_data.get("paths", None)
-
-        if not isinstance(selected_tiers, list) or not selected_tiers:
-            self.send_error_response("Field 'tiers' must be a non-empty list of integers", status=400)
-            return
+        selected_tiers, dry_run, specific_paths = _parse_clean_request(req_data)
 
         # Scan for junk items
         max_tier_req = max(selected_tiers)
