@@ -184,6 +184,48 @@ class TestDirectoryPurgesAreVerified(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(cache.stat().st_mode), mode_before)  # not 0600
         self.assertEqual(stat.S_IMODE(locked.stat().st_mode), 0o555)  # the folder above is never touched
 
+    def test_folders_that_cannot_even_be_listed_are_opened_up_and_removed(self) -> None:
+        """mode 000 / 100: rmtree's failure is in os.open/os.scandir, which cannot simply be called again."""
+        for index, mode in enumerate((0o000, 0o100, 0o300)):
+            with self.subTest(mode=oct(mode)):
+                cache = self.root / f"proj{index}" / ".pytest_cache"
+                hidden = cache / "d"
+                hidden.mkdir(parents=True)
+                (hidden / "file.js").write_text("x", encoding="utf-8")
+                hidden.chmod(mode)
+                self.addCleanup(lambda h=hidden: h.chmod(0o755) if h.exists() else None)
+                code, out = self.run_clean("--json")
+                report = json.loads(out)
+                self.assertEqual(code, 0, out)
+                self.assertEqual(report["failed_count"], 0)
+                self.assertFalse(cache.exists())
+
+    def test_a_dotdot_path_is_refused_and_nothing_is_touched(self) -> None:
+        """Opening a tree up must never chmod a folder that is not the one being deleted."""
+        from smart_drive.core.purge_engine import PurgeEngine
+
+        elsewhere, tree = self.root / "elsewhere", self.root / "tree"
+        (tree / "ro").mkdir(parents=True)
+        elsewhere.mkdir()
+        os.symlink(elsewhere, self.root / "lnk")
+        (tree / "ro").chmod(0o555)
+        self.addCleanup((tree / "ro").chmod, 0o755)
+        with self.assertRaises(OSError):
+            PurgeEngine(str(self.root), dry_run=False)._make_writable_and_remove_dir(str(self.root / "lnk" / ".." / "tree"))
+        self.assertEqual(stat.S_IMODE((tree / "ro").stat().st_mode), 0o555)
+        self.assertTrue((tree / "ro").is_dir())
+
+    def test_a_link_given_as_the_tree_root_is_refused_and_its_target_survives(self) -> None:
+        from smart_drive.core.purge_engine import PurgeEngine
+
+        target = self.root / "real"
+        target.mkdir()
+        (target / "keep.txt").write_text("keep", encoding="utf-8")
+        os.symlink(target, self.root / "lnk")
+        with self.assertRaises(OSError):
+            PurgeEngine(str(self.root), dry_run=False)._make_writable_and_remove_dir(str(self.root / "lnk"))
+        self.assertEqual((target / "keep.txt").read_text(encoding="utf-8"), "keep")
+
     def test_the_text_output_does_not_claim_success_either(self) -> None:
         locked = self.root / "locked"
         (locked / ".pytest_cache").mkdir(parents=True)

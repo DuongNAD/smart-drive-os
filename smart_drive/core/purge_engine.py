@@ -304,32 +304,58 @@ class PurgeEngine:
             except Exception as inner_err:
                 raise inner_err
 
-    def _make_writable_and_remove_dir(self, target_path: str) -> None:
-        """Removes a directory tree, clearing read-only flags on children if needed.
+    def _open_up_tree(self, tree: str) -> None:
+        """Gives the owner access to every folder and file inside ``tree`` (never through a link).
 
-        Raises OSError if anything is left: shutil.rmtree reports through the callback only, and swallowing
-        every error there made a half-removed tree look like a success.
+        Folders are opened before they are listed, so a folder that was unreadable (mode 000) can be entered.
+        Only ever called on the tree that is about to be deleted.
         """
-        failures: List[str] = []
-        tree = os.path.abspath(target_path)
-
-        def _on_rm_error(func, path, exc_info):
+        stack = [tree]
+        while stack:
+            current = stack.pop()
             try:
-                # A read-only file (Windows) or a read-only folder holding the entry (POSIX): open them up, but
-                # only inside the tree that is being deleted anyway - never the folder above it.
-                parent = os.path.dirname(os.path.abspath(path))
-                if parent != os.path.dirname(tree) and os.path.commonpath([parent, tree]) == tree:
-                    self._add_owner_access(parent, is_dir=True)
-                if os.path.isdir(path) and not os.path.islink(path):
-                    self._add_owner_access(path, is_dir=True)
-                elif os.path.lexists(path) and not os.path.islink(path):
-                    self._add_owner_access(path, is_dir=False)
-                func(path)
-            except Exception as err:
-                failures.append(f"{path}: {err}")
+                mode = os.lstat(current).st_mode
+            except OSError:
+                continue
+            if stat.S_ISLNK(mode):
+                continue  # a link inside the tree is removed as a link; what it points at is nobody's business
+            try:
+                self._add_owner_access(current, is_dir=stat.S_ISDIR(mode))
+            except OSError:
+                pass  # the removal below will say what is still in the way
+            if stat.S_ISDIR(mode):
+                try:
+                    with os.scandir(current) as entries:
+                        stack.extend(entry.path for entry in entries)
+                except OSError:
+                    continue
 
-        shutil.rmtree(target_path, onerror=_on_rm_error)
-        if os.path.lexists(target_path):
+    def _make_writable_and_remove_dir(self, target_path: str) -> None:
+        """Removes a directory tree, clearing read-only flags and permissions inside it if that is what stops it.
+
+        Raises OSError if anything is left: shutil.rmtree reports through its callback only, and swallowing
+        every error there made a half-removed tree look like a success. Two passes: the plain removal first
+        (the usual case costs nothing extra), and only if something is left the tree is opened up and removal
+        is tried once more. (Retrying the failed call from inside rmtree's callback does not work for the
+        errors it reports from os.open and os.scandir, which is why the whole removal is retried instead.)
+        """
+        if ".." in Path(target_path).parts:
+            raise OSError("refusing to remove a directory tree named with '..' (it may resolve elsewhere)")
+        tree = os.path.abspath(target_path)  # the same string is used for the clean-up and for the removal
+        if os.path.islink(tree):
+            raise OSError("refusing to remove a directory tree through a symlink")
+        failures: List[str] = []
+
+        def _record(func, path, exc_info):
+            failures.append(f"{path}: {exc_info[1]}")
+
+        shutil.rmtree(tree, onerror=_record)
+        if not os.path.lexists(tree):
+            return
+        failures.clear()
+        self._open_up_tree(tree)
+        shutil.rmtree(tree, onerror=_record)
+        if os.path.lexists(tree):
             detail = failures[0] if failures else "it is still there"
             raise OSError(f"directory could not be fully removed ({detail})")
 
