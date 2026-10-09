@@ -168,7 +168,10 @@ class TestTheLiveStateFolderIsNeverSnapshotted(_Fixture):
 
     def test_the_drive_root_is_recognised_by_what_it_is_not_how_it_is_spelled(self) -> None:
         alias = self.root.parent / "ssd_alias"
-        os.symlink(self.root, alias)
+        try:
+            os.symlink(self.root, alias)
+        except OSError as exc:  # Windows without Developer Mode / elevation
+            self.skipTest(f"cannot create symlinks here: {exc}")
         manifest = self.mgr.create_snapshot("via_alias", partitions=[str(alias)], include_hidden=True)
         self.assertFalse([f for f in manifest.files if ".smart_drive" in f], sorted(manifest.files)[:6])
         self.assertTrue(any(f.endswith("src/a.py") for f in manifest.files))  # and the user's files are there
