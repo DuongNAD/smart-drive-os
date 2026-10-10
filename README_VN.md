@@ -379,6 +379,17 @@ Công cụ SQLite FTS5 xử lý truy vấn phức tạp dưới 10 milliseconds:
 
 SmartDrive-OS tích hợp liền mạch với [Aurora Slides MCP](https://github.com/DuongNAD/aurora-slides-mcp) và [Polaris MCP](https://github.com/DuongNAD/polaris-mcp) như các hệ sinh thái học tập và nghiên cứu hạng nhất:
 
+### Hệ sinh thái
+
+| Dự án | Vai trò |
+|---|---|
+| **SmartDrive-OS** (kho mã này) | Quản trị SSD, tìm kiếm nhận biết dữ liệu học tập, bảo vệ learning unit, post-write index hook |
+| [Polaris](https://github.com/DuongNAD/polaris-mcp) | Kiến trúc sư khóa học |
+| [Aurora Slides](https://github.com/DuongNAD/aurora-slides-mcp) | Bài học, thực hành và tiến độ |
+| [Constellation](https://github.com/DuongNAD/constellation-mcp) | Một manifest, đăng ký vào Claude Code / Antigravity / Cursor / Codex, kiểm tra sức khỏe, drift doctor, cập nhật |
+
+Các dấu hiệu nhận diện learning unit và post-write hook (`smart-drive update <dir> --quiet`) được định nghĩa chuẩn tắc trong [contracts của Constellation](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts). Tính năng đăng ký 1-chạm của SmartDrive tiếp tục đăng ký riêng SmartDrive, trong khi đăng ký toàn bộ hệ sinh thái vào mọi agent là nhiệm vụ của Constellation (`constellation register --dry-run`, sau đó `constellation register`).
+
 ### 1. Chỉ Mục Tri Thức Học Tập & Nghiên Cứu Chuyên Sâu
 SmartDrive-OS phân tích và bóc tách các bài thuyết trình slide, giáo trình môn học, ghi chú nghiên cứu và tài liệu học tập thành các đoạn văn bản có mật độ thông tin cao (`doc_chunks`) hỗ trợ xếp hạng BM25 tức thì (<10ms):
 

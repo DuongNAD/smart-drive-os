@@ -384,6 +384,17 @@ The SQLite FTS5 search engine processes complex queries in under 10 milliseconds
 
 SmartDrive-OS seamlessly integrates with [Aurora Slides MCP](https://github.com/DuongNAD/aurora-slides-mcp) and [Polaris MCP](https://github.com/DuongNAD/polaris-mcp) as first-class educational and research ecosystems:
 
+### Ecosystem
+
+| Project | Role |
+|---|---|
+| **SmartDrive-OS** (this repo) | SSD governance, learning-aware search, protection of learning units, post-write index hook |
+| [Polaris](https://github.com/DuongNAD/polaris-mcp) | Course architect |
+| [Aurora Slides](https://github.com/DuongNAD/aurora-slides-mcp) | Lessons, practice and progress |
+| [Constellation](https://github.com/DuongNAD/constellation-mcp) | One manifest, registration into Claude Code / Antigravity / Cursor / Codex, health checks, drift doctor, updates |
+
+The learning-unit markers and the post-write hook (`smart-drive update <dir> --quiet`) are defined canonically in [Constellation's contracts](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts). SmartDrive's own one-click registration keeps registering SmartDrive itself, while registering the whole ecosystem in every agent is Constellation's job (`constellation register --dry-run`, then `constellation register`).
+
 ### 1. Learning-Aware Knowledge Indexing
 SmartDrive-OS parses and chunks slide presentations, course curricula, research notes, and study materials into high-density searchable document chunks (`doc_chunks`) with sub-10ms BM25 ranking:
 
