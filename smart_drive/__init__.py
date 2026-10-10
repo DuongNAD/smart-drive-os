@@ -5,7 +5,7 @@ Zero-dependency Python package (100% standard library) tailored for external SSD
 """
 from __future__ import annotations
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __author__ = "DuongNAD, SmartDrive Team"
 
 from smart_drive.core.config import (
@@ -42,6 +42,15 @@ from smart_drive.core.exfat_compat import (
     audit_forbidden_characters,
     sanitize_filename,
     detect_drive_root,
+)
+from smart_drive.core.learning_units import (
+    clear_unit_cache,
+    find_unit_root,
+    get_hotspot_advice,
+    get_learning_summary,
+    is_in_learning_unit,
+    is_unit_root,
+    unit_kind,
 )
 from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry
 from smart_drive.core.auditor import StorageAuditor, AuditReport
@@ -92,6 +101,14 @@ __all__ = [
     "audit_forbidden_characters",
     "sanitize_filename",
     "detect_drive_root",
+    # Learning Units & Boundary Protection
+    "clear_unit_cache",
+    "find_unit_root",
+    "get_hotspot_advice",
+    "get_learning_summary",
+    "is_in_learning_unit",
+    "is_unit_root",
+    "unit_kind",
     # Core domain engines
     "FastDirectoryScanner",
     "ScanEntry",

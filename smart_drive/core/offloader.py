@@ -446,6 +446,12 @@ def validate_target_drive(target_spec: Union[str, Path]) -> Tuple[str, Path]:
 
     # Target is a custom directory path (e.g. mock directory in testing)
     target_path = Path(os.path.abspath(ts))
+    from smart_drive.core.learning_units import find_unit_root
+    if find_unit_root(target_path) is not None:
+        raise ValueError(
+            f"Invalid target drive '{target_spec}': Cannot offload into a learning unit (Aurora course/deck or Polaris subject)."
+        )
+
     if target_path.name == "04_System_Offload_Caches":
         offload_root = target_path
     else:
@@ -551,6 +557,11 @@ def offload_cache(
 
     # 2. Resolve source path
     source_path = resolve_cache_path(defn)
+    from smart_drive.core.learning_units import find_unit_root
+    if find_unit_root(source_path) is not None:
+        raise ValueError(
+            f"Source cache '{source_path}' is inside a protected learning unit and cannot be offloaded."
+        )
     if not source_path.exists() and not is_directory_junction(source_path):
         raise FileNotFoundError(
             f"Source cache directory for '{clean_name}' was not found on disk at '{source_path}'."

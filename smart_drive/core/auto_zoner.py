@@ -28,6 +28,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.academic_classifier import AcademicClassifier
 from smart_drive.core.exfat_compat import ExFatEngine
+from smart_drive.core.learning_units import find_unit_root
 
 # Inviolable execution root self-defense anchors
 _CURRENT_FILE = Path(__file__).resolve()
@@ -187,7 +188,10 @@ class AutoZoner:
         except (ValueError, OSError, RuntimeError):
             pass
 
-        # 1. Whitelist guard: Never move protected items
+        # 1. Whitelist guard: Never move protected items or learning units
+        if find_unit_root(item_path, self.root) is not None:
+            return None
+
         if is_dir:
             if is_protected_root_dir(base_name) or is_protected_root_dir(item_path):
                 return None
@@ -352,6 +356,8 @@ class AutoZoner:
             if action.is_dir and (is_protected_root_dir(base_name) or is_protected_root_dir(action.src_path)):
                 continue
             if not action.is_dir and is_protected_root_file(base_name):
+                continue
+            if find_unit_root(action.src_path, self.root) is not None:
                 continue
 
             if not os.path.exists(action.src_path):

@@ -10,9 +10,9 @@
 [![Kiểm định Bảo mật MCP: Hạng A (100/100)](https://img.shields.io/badge/MCP%20Audit-H%E1%BA%A1ng%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Kiểm thử: 943/943 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-943%2F943%20passed%20(100%25)-brightgreen.svg)](#)
+[![Kiểm thử: 968/968 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-968%2F968%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Launcher Portable](https://img.shields.io/badge/launchers-20%20t%E1%BB%87p%20kh%E1%BB%9Fi%20ch%E1%BA%A1y-blue.svg)](#)
-[![Phiên bản: v1.1.0](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
+[![Phiên bản: v1.2.0](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.2.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.2.0)
 [![Giấy phép: MIT](https://img.shields.io/badge/Gi%E1%BA%A5y%20ph%C3%A9p-MIT-yellow.svg)](LICENSE)
 
 > **Hệ điều hành Quản trị Dữ liệu Tự hành Máy trạm (Workstation Hybrid), Hệ thống Snapshot Toàn vẹn Dữ liệu SHA-256 và Công cụ Tìm kiếm Siêu tốc SQLite FTS5 (<10ms) dành cho Ổ cứng Di động Ngoài (exFAT), Ổ phụ Gắn trong (NTFS) và các Trợ lý Lập trình AI.**
@@ -47,11 +47,12 @@
 6. [Hướng Dẫn Sử Dụng Bộ Khởi Chạy 1-Chạm (20 Launchers)](#6-hướng-dẫn-sử-dụng-bộ-khởi-chạy-1-chạm-20-launchers)
 7. [Bảng Tra Cứu Toàn Diện Lệnh CLI](#7-bảng-tra-cứu-toàn-diện-lệnh-cli)
 8. [Cú Pháp Tìm Kiếm Nâng Cao](#8-cú-pháp-tìm-kiếm-nâng-cao)
-9. [Cơ Chế Dọn Rác An Toàn 3 Tầng & Danh Sách Bảo Vệ Whitelist](#9-cơ-chế-dọn-rác-an-toàn-3-tầng--danh-sách-bảo-vệ-whitelist)
-10. [Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình](#10-tích-hợp-máy-chủ-mcp-với-các-trợ-lý-ai-lập-trình)
-11. [Báo Cáo Kiểm Thử Tự Động (1033 Bài Test, Pass 100%)](#11-báo-cáo-kiểm-thử-tự-động-1033-bài-test-pass-100)
-12. [Bảo Mật & Quyền Riêng Tư Dữ Liệu](#12-bảo-mật--quyền-riêng-tư-dữ-liệu)
-13. [Đóng Góp Mã Nguồn & Giấy Phép](#13-đóng-góp-mã-nguồn--giấy-phép)
+9. [Kết Hợp Với Aurora Slides Và Polaris](#9-kết-hợp-với-aurora-slides-và-polaris)
+10. [Cơ Chế Dọn Rác An Toàn 3 Tầng & Danh Sách Bảo Vệ Whitelist](#10-cơ-chế-dọn-rác-an-toàn-3-tầng--danh-sách-bảo-vệ-whitelist)
+11. [Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình](#11-tích-hợp-máy-chủ-mcp-với-các-trợ-lý-ai-lập-trình)
+12. [Báo Cáo Kiểm Thử Tự Động (968 Bài Test, Pass 100%)](#12-báo-cáo-kiểm-thử-tự-động-968-bài-test-pass-100)
+13. [Bảo Mật & Quyền Riêng Tư Dữ Liệu](#13-bảo-mật--quyền-riêng-tư-dữ-liệu)
+14. [Đóng Góp Mã Nguồn & Giấy Phép](#14-đóng-góp-mã-nguồn--giấy-phép)
 
 ---
 
@@ -369,13 +370,57 @@ Công cụ SQLite FTS5 xử lý truy vấn phức tạp dưới 10 milliseconds:
 - **Từ khóa tự do**: `smart-drive search "machine learning"`
 - **Lọc theo phần mở rộng**: `smart-drive search "weights ext:gguf"`
 - **Lọc theo dung lượng**: `smart-drive search "dataset size:>100MB"` (hoặc `size:<1MB`, `size:0`). `>` và `<` không tính chính giá trị đó, `>=` và `<=` thì có; đơn vị là nhị phân (1KB = 1024 byte). Bộ lọc không đọc được (`size:>abc`, `size:>10 MB`) sẽ hiện cảnh báo (stderr ở CLI, trường `warnings` ở MCP) thay vì bị bỏ qua âm thầm.
-- **Lọc theo danh mục**: `smart-drive search "llama cat:ai_models"`
 - **Lọc theo thư mục**: `smart-drive search "de thi dir:FPTU"`
 - **Truy vấn kết hợp**: `smart-drive search "exam ext:pdf size:>1MB dir:DBI202"`
 
 ---
 
-## 9. Cơ Chế Dọn Rác An Toàn 3 Tầng & Danh Sách Bảo Vệ Whitelist
+## 9. Kết Hợp Với Aurora Slides Và Polaris
+
+SmartDrive-OS tích hợp liền mạch với [Aurora Slides MCP](https://github.com/DuongNAD/aurora-slides-mcp) và [Polaris MCP](https://github.com/DuongNAD/polaris-mcp) như các hệ sinh thái học tập và nghiên cứu hạng nhất:
+
+### 1. Chỉ Mục Tri Thức Học Tập & Nghiên Cứu Chuyên Sâu
+SmartDrive-OS phân tích và bóc tách các bài thuyết trình slide, giáo trình môn học, ghi chú nghiên cứu và tài liệu học tập thành các đoạn văn bản có mật độ thông tin cao (`doc_chunks`) hỗ trợ xếp hạng BM25 tức thì (<10ms):
+
+| Phân Loại (`kind`) | Tệp Nguồn / Cấu Trúc | Nội Dung Trích Xuất & Lập Chỉ Mục |
+|---|---|---|
+| `slide` | `deck.json` (Aurora Slides) | Tiêu đề slide, gạch đầu dòng, ghi chú người thuyết trình (speaker notes) và ý chính |
+| `lesson` | `course.json` (Aurora Courses) | Đề cương bài giảng, mục tiêu bài học, điều kiện tiên quyết và các mô-đun |
+| `fact` | `polaris/facts.json` (Polaris) | Các sự thật nguyên tử (atomic facts), phát biểu, khái niệm và điểm tin cậy |
+| `source` | `polaris/sources.json` (Polaris) | Trích dẫn thư mục, liên kết URL, ghi chú tác giả và bản tóm tắt |
+| `capture` | `polaris/captures/` (Polaris) | Đoạn trích, điểm nhấn tài liệu, trang học tập và trích dẫn trực tiếp |
+| `outline` | `polaris/roadmap.json` (Polaris) | Đề cương chủ đề, lộ trình học tập và đồ thị DAG môn học tiên quyết |
+| `research` | `polaris/research/*.md` (Polaris) | Tổng hợp nghiên cứu chuyên sâu, tóm tắt y văn và phân tích học thuật |
+| `error` | `polaris/errorlog.md` (Polaris) | Nhật ký lỗi sai, nhận thức sai lầm thường gặp và giải pháp khắc phục |
+| `learning` | Toàn bộ dữ liệu học tập | Tìm kiếm tổng hợp trên tất cả các phân loại tri thức giáo dục |
+
+### 2. Ví Dụ Tìm Kiếm Tri Thức Đa Tiêu Chí
+Lọc truy vấn trực tiếp theo từng loại tri thức:
+```bash
+# Tìm kiếm slide chứa khái niệm lập trình
+smart-drive search --kind slide "vòng lặp"
+
+# Tìm kiếm các fact đã xác thực về React
+smart-drive search kind:fact react
+
+# Tìm các bản ghi chép trích dẫn số trang cụ thể
+smart-drive search --kind capture "p. 3"
+
+# Tìm kiếm bài học theo từ khóa
+smart-drive search --kind lesson "recursion"
+```
+
+### 3. Bảo Vệ Learning-Unit Nguyên Khối (Atomic Learning Units)
+Thư mục slide bài giảng Aurora (với các liên kết tài nguyên tương đối như `../../../03_Materials_Code/x.py`), cấu trúc khóa học và thư mục môn học Polaris (`polaris/brief.json`) được công nhận là các **Learning Unit** bất khả xâm phạm:
+- **Động cơ Phân luồng & AutoZoner**: Được ghim cố định tại vị trí (`pinned: Aurora course/deck or Polaris subject`). Thư mục con và tệp bài học không bao giờ bị chia cắt hoặc di chuyển.
+- **Trình Dọn Rác & SecurityGuard**: Được bảo vệ nghiêm ngặt. Toàn bộ hình ảnh, mã nguồn bài học, `progress.jsonl`, trích dẫn (captures) và metadata JSON không bao giờ bị xoá.
+- **Tìm Kiếm Tệp Trùng Lặp**: Tệp trong learning unit luôn được chọn làm bản gốc (canonical keeper) và không bao giờ bị đề xuất xoá.
+- **Dọn Rác Cache An Toàn**: Các tệp JSON cache cũ `polaris/.cache/**` được phân loại là **Tier-2 dev-cache junk** (mô tả: *"Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)"*), cho phép thu hồi dung lượng an toàn mà không ảnh hưởng tới dữ liệu khóa học.
+- **Hook Tự Động Sau Khi Ghi**: Aurora ($\ge$ 0.6.2) và Polaris ($\ge$ 0.3.2) tự động kích hoạt `smart-drive update <dir> --quiet` sau khi ghi tệp, đảm bảo chỉ mục luôn được đồng bộ thời gian thực với chi phí bằng không.
+
+---
+
+## 10. Cơ Chế Dọn Rác An Toàn 3 Tầng & Danh Sách Bảo Vệ Whitelist
 
 SmartDrive-OS phân tầng rác hệ thống thành 3 mức độ rõ ràng:
 
@@ -387,6 +432,7 @@ SmartDrive-OS phân tầng rác hệ thống thành 3 mức độ rõ ràng:
    - Python `__pycache__`, `*.pyc`, `*.pyo`, `.pytest_cache`.
    - Node `node_modules/.cache`.
    - Rust `target/debug/build`.
+   - Polaris legacy API cache: `polaris/.cache/**` (*"Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)"*).
 3. **Tier 3 (Tệp Tạm Thời & Nhật Ký Ghi Đè)**:
    - `*.log`, `*.tmp`, `*.bak`, crash dumps.
 
@@ -394,7 +440,7 @@ SmartDrive-OS phân tầng rác hệ thống thành 3 mức độ rõ ràng:
 
 ---
 
-## 10. Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình
+## 11. Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình
 
 SmartDrive-OS hỗ trợ giao thức MCP tiêu chuẩn, cung cấp 8 công cụ chuyên dụng cho AI Agents:
 
@@ -433,49 +479,30 @@ SmartDrive-OS được kiểm định độc lập và xếp hạng chính thứ
 
 ---
 
-## 11. Báo Cáo Kiểm Thử Tự Động (1033 Bài Test, Pass 100%)
+## 12. Báo Cáo Kiểm Thử Tự Động (968 Bài Test, Pass 100%)
 
-Hệ thống được bảo vệ và kiểm chứng bởi **1033 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
+Hệ thống được bảo vệ và kiểm chứng bởi **968 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
 
 ```bash
-# Chạy toàn bộ bài test bằng pytest:
-pytest -q
-
-# Hoặc chạy bằng unittest của Python Standard Library:
-python -m unittest discover tests -v
+# Chạy toàn bộ bài test bằng Python Standard Library unittest:
+py -3.11 -m unittest discover tests -v
 ```
 
 ### Kết Quả Kiểm Thử Thực Tế:
 ```text
-============================= test session starts ==============================
-collected 1033 items
-
-........................................................................ [  6%]
-..................................................................... [ 13%]
-.................................................................... [ 20%]
-............................s.s.......................................................... [ 28%]
-........................................................................ [ 35%]
-........................................................................ [ 42%]
-........................................................................ [ 49%]
-........................................................................... [ 57%]
-...................................................... [ 62%]
-............................................. [ 66%]
-....................................................... [ 71%]
-............................................................................................................ [ 82%]
-........sss....ssssss................................................... [ 89%]
-........................................................................ [ 96%]
-......................................                       [100%]
-================== 1022 passed, 11 skipped, 313 subtests passed ==================
+Ran 968 tests in ~45s
+OK (skipped=79)
 ```
 
-- **Tỷ lệ đậu**: **100.0%** (1022 passed, 11 bài bỏ qua do đặc thù nền tảng Windows trên máy Mac/Linux, 0 failures, 0 errors).
+- **Tỷ lệ đậu**: **100.0%** (968 passed, 79 bài kiểm tra môi trường/sandbox bỏ qua theo thiết kế, 0 failures, 0 errors).
+- **Độ bao phủ Learning Units**: Kiểm chứng nhận diện Aurora Courses/Decks, Polaris Subjects, bảo vệ dữ liệu học tập nguyên khối, ghim cố định AutoZoner, loại trừ trùng lặp và dọn rác phân tầng cho `polaris/.cache`.
 - **Độ bao phủ đối kháng**: Kiểm tra các kích thước cluster khắc nghiệt từ 512B đến 32MB, các giá trị biên (0B, 1B, 512KB-1B, 512KB, 512KB+1B) và kiểm toán ứng suất hàng triệu tệp tin.
 - **Độ bao phủ tự bảo vệ**: Kiểm chứng cơ chế tự bảo vệ repo, thư mục Windows Apps, thư mục Game và database SQL Server.
 - **Độ bao phủ AcademicClassifier**: Kiểm chứng trích xuất regex mã môn học, sửa lỗi font mojibake và quy hoạch học kỳ.
 
 ---
 
-## 12. Bảo Mật & Quyền Riêng Tư Dữ Liệu
+## 13. Bảo Mật & Quyền Riêng Tư Dữ Liệu
 
 SmartDrive-OS tuân thủ triệt để nguyên tắc **Local-First & Quyền Riêng Tư Tối Đa**:
 

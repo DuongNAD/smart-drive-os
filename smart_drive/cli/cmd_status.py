@@ -15,6 +15,7 @@ from smart_drive.core.config import (
     TAXONOMY_ROOT_DIRS,
 )
 from smart_drive.core.fsinfo import detect_filesystem, slack_model_note
+from smart_drive.core.learning_units import get_learning_summary
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.sentinel import get_default_db_path
 
@@ -50,6 +51,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     fs_info = detect_filesystem(root)
     fs_note = slack_model_note(fs_info, CLUSTER_SIZE_BYTES)
+    learning_info = get_learning_summary(root, db_path=db_path)
 
     if getattr(args, "json", False):
         status_data = {
@@ -66,6 +68,8 @@ def cmd_status(args: argparse.Namespace) -> int:
             },
             "anti_indexing_markers": markers,
             "taxonomies": tax_status,
+            "learning": learning_info,
+            "learning_summary": learning_info,
         }
         print(json.dumps(status_data, indent=2, ensure_ascii=False))
         return 0
@@ -82,6 +86,11 @@ def cmd_status(args: argparse.Namespace) -> int:
     print("Taxonomies:")
     for t, ok in tax_status.items():
         print(f"  {'✓' if ok else '✗'} {t}")
+    if any(learning_info.values()):
+        print("Learning units & index:")
+        print(f"  Aurora courses: {learning_info.get('aurora_courses', 0)}, Aurora decks: {learning_info.get('aurora_decks', 0)}")
+        print(f"  Polaris subjects: {learning_info.get('polaris_subjects', 0)}")
+        print(f"  Indexed chunks: {learning_info.get('chunk_count', 0)} (last update: {learning_info.get('last_index_update') or 'Never'})")
     return 0
 
 

@@ -35,6 +35,7 @@ from smart_drive.core.config import (
     match_junk_rule,
     verify_anti_indexing_markers,
 )
+from smart_drive.core.learning_units import find_unit_root, unit_kind
 
 logger = logging.getLogger("smart_drive.core.purge_engine")
 
@@ -226,6 +227,20 @@ class SecurityGuard:
         # Rule 5: Protected root files
         if len(parts) == 1 and is_protected_root_file(root_segment):
             return True, f"Inviolable root file: {root_segment}"
+
+        # Rule 6: Learning Unit Protection (Aurora Slides & Polaris)
+        unit_root = find_unit_root(real_target, self.drive_root)
+        if unit_root is not None:
+            norm_fwd = rel_path.lower().replace("\\", "/")
+            is_polaris_cache = (
+                "/polaris/.cache" in norm_fwd
+                or norm_fwd.startswith("polaris/.cache")
+                or norm_fwd.endswith("/polaris/.cache")
+                or norm_fwd == "polaris/.cache"
+            )
+            if is_polaris_cache:
+                return False, ""
+            return True, f"Inviolable learning unit data ({unit_kind(unit_root)}): {rel_path}"
 
         return False, ""
 

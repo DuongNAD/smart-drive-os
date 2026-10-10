@@ -29,6 +29,7 @@ from smart_drive.core.config import (
     is_protected_root_file,
     match_junk_rule,
 )
+from smart_drive.core.learning_units import find_unit_root
 from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOptions
 
 
@@ -167,6 +168,37 @@ class JunkDetector:
                 return None
 
         # ----------------------------------------------------------------------
+        # HARD SAFEGUARD 3: Learning Unit Protection (Aurora & Polaris)
+        # ----------------------------------------------------------------------
+        unit_root = find_unit_root(path, self.drive_root)
+        if unit_root is not None:
+            # Everything inside a unit is protected, EXCEPT polaris/.cache/**
+            norm_fwd = norm_rel.lower().replace("\\", "/")
+            is_polaris_cache = (
+                "/polaris/.cache" in norm_fwd
+                or norm_fwd.startswith("polaris/.cache")
+                or norm_fwd.endswith("/polaris/.cache")
+                or norm_fwd == "polaris/.cache"
+            )
+            if is_polaris_cache:
+                if self.max_tier >= JunkTier.TIER_2_DEV_CACHE:
+                    allocated_bytes = 0 if is_dir else calculate_allocated_bytes(size, self.cluster_size)
+                    return JunkItem(
+                        path=os.path.abspath(path),
+                        rel_path=norm_rel,
+                        name=clean_name,
+                        size=size,
+                        allocated_size=allocated_bytes,
+                        is_dir=is_dir,
+                        tier=JunkTier.TIER_2_DEV_CACHE,
+                        description="Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)",
+                        os_source="Polaris",
+                    )
+                return None
+            # All other unit data (images, progress.jsonl, captures, JSON/MD) is protected
+            return None
+
+        # ----------------------------------------------------------------------
         # RULE MATCHING: 3-Tier Pattern Matcher
         # ----------------------------------------------------------------------
         rule = match_junk_rule(
@@ -174,6 +206,7 @@ class JunkDetector:
             is_dir=is_dir,
             max_tier=self.max_tier,
             is_root_level=is_root_level,
+            rel_path=norm_rel,
         )
         if not rule:
             return None

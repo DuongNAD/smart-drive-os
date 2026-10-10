@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional
 from smart_drive.core.config import CLUSTER_SIZE_BYTES
 from smart_drive.core.exfat_compat import ExFatEngine
 from smart_drive.core.fsinfo import detect_filesystem, slack_model_note
+from smart_drive.core.learning_units import get_learning_summary
 
 
 def get_default_db_path(root: str) -> str:
@@ -342,6 +343,8 @@ class SentinelEngine:
         # What the volume really is (this used to be the literal "exFAT" whatever the drive was).
         fs_info = detect_filesystem(target_root)
 
+        learning_info = get_learning_summary(target_root, db_path=db_info.get("path"))
+
         report_data = {
             "status": status_str,
             "is_healthy": is_healthy,
@@ -360,6 +363,8 @@ class SentinelEngine:
             "database": db_info,
             "exfat_safety": safety_info,
             "git_status": git_info,
+            "learning": learning_info,
+            "learning_summary": learning_info,
         }
 
         return HealthReport(report_data)

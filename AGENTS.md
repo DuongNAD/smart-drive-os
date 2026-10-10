@@ -9,6 +9,7 @@ Workspace: External High-Speed SSD (exFAT, Allocation Unit: 512 KB).
   ```bash
   smart-drive search "<query>"
   ```
+- Search lessons and research with: `smart-drive search --kind slide|fact|capture "<query>"` (MCP `ssd_search` kind/content).
 
 ## 2. Hard Invariants & Zero Data Loss
 - Standard taxonomies (01_AI_Models .. 06_Archives_Storage) must never be deleted.

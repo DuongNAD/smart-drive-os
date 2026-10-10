@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smart-drive-os"
-version = "1.1.0"
+version = "1.2.0"
 description = "Autonomous exFAT SSD Governance, 512KB Cluster Slack Optimization & SQLite FTS5 Instant Search Suite"
 readme = "README.md"
 requires-python = ">=3.9"

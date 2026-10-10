@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
+from smart_drive.core.learning_units import is_in_learning_unit
 from smart_drive.core.config import (
     CLUSTER_SIZE,
     CLUSTER_SIZE_BYTES,
@@ -185,19 +186,29 @@ class DuplicateDetector:
             if len(file_list) < 2:
                 continue
 
-            redundant_count = len(file_list) - 1
+            unit_files = [f for f in file_list if is_in_learning_unit(f, self.root)]
+            other_files = [f for f in file_list if not is_in_learning_unit(f, self.root)]
+
+            # Learning unit copies must never be offered for deletion (they are kept/canonical)
+            sorted_files = sorted(unit_files) + sorted(other_files)
+
+            if unit_files:
+                reclaimable_count = len(other_files)
+            else:
+                reclaimable_count = max(0, len(other_files) - 1)
+
             if fsize == 0:
                 reclaimable_bytes = 0
                 reclaimable_slack = 0
             else:
-                reclaimable_bytes = fsize * redundant_count
+                reclaimable_bytes = fsize * reclaimable_count
                 single_slack = calculate_slack_bytes(fsize, self.cluster_size)
-                reclaimable_slack = single_slack * redundant_count
+                reclaimable_slack = single_slack * reclaimable_count
 
             duplicate_groups.append({
                 "hash": full_hash,
                 "size": fsize,
-                "files": sorted(file_list),
+                "files": sorted_files,
                 "reclaimable_bytes": reclaimable_bytes,
                 "reclaimable_slack": reclaimable_slack,
             })

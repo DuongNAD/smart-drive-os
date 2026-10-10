@@ -46,7 +46,7 @@ from smart_drive.search.parser import apply_size_spec, parse_search_query
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "smart-drive"
-SERVER_VERSION = "1.1.0"
+SERVER_VERSION = "1.2.0"
 
 # Sent as InitializeResult.instructions: the MCP spec puts it at the top level of the result, which is where
 # clients look for it (it was nested inside serverInfo, so no client ever saw it).
@@ -57,7 +57,8 @@ SERVER_INSTRUCTIONS = (
     "2. Call ssd_update_index after writing or modifying files to update the FTS5 index.\n"
     "3. Never delete or relocate the 6 standard taxonomies (01_AI_Models .. 06_Archives_Storage).\n"
     "4. Never place symlinks or Windows-illegal characters (\\ / : * ? \" < > |) on the drive.\n"
-    "5. Keep small micro-files bundled to prevent 512KB cluster slack waste."
+    "5. Keep small micro-files bundled to prevent 512KB cluster slack waste.\n"
+    "6. Search lessons and research with smart-drive search --kind slide|fact|capture \"<query>\" (MCP ssd_search kind/content)."
 )
 
 # Mistakes a client can make (bad path, unknown tool, no drive configured): one log line, not a traceback.
@@ -812,6 +813,9 @@ class SmartDriveMCPServer:
 
         logical_bytes = report.get("total_logical_bytes", 0)
         slack_bytes = report.get("total_slack_bytes", 0)
+        micro_hotspots = report.get("micro_file_hotspots", [])
+        total_rec_slack = report.get("total_recoverable_slack", 0)
+        learning_summary = report.get("learning_summary") or report.get("learning") or {}
 
         result = {
             "root_path": report.get("root_path", target_root),
@@ -824,11 +828,16 @@ class SmartDriveMCPServer:
             "taxonomies": report.get("taxonomies", {}),
             "categories": categories_out,
             "top_slack_directories": report.get("top_slack_directories", [])[:10],
+            "micro_file_hotspots": micro_hotspots[:10] if compact_mode else micro_hotspots,
+            "total_recoverable_slack": total_rec_slack,
+            "learning": learning_summary,
+            "learning_summary": learning_summary,
         }
         if compact_mode:
             result["compact"] = True
             result["total_logical_formatted"] = format_bytes(logical_bytes)
             result["total_slack_formatted"] = format_bytes(slack_bytes)
+            result["total_recoverable_slack_formatted"] = format_bytes(total_rec_slack)
 
         return result
 

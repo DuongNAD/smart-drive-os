@@ -42,6 +42,11 @@ from smart_drive.core.config import (
 from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOptions, ScanStats
 from smart_drive.core.exfat_compat import ExFatEngine, normalize_rel_path
 from smart_drive.core.fsinfo import detect_filesystem, slack_model_note
+from smart_drive.core.learning_units import (
+    get_hotspot_advice,
+    get_learning_summary,
+    is_in_learning_unit,
+)
 
 logger = logging.getLogger("smart_drive.core.auditor")
 
@@ -224,6 +229,7 @@ class DirectoryNode:
     direct_files: int = 0
     direct_bytes: int = 0
     direct_allocated: int = 0
+    direct_micro_files: int = 0
     # Recursive metrics: rollup of this directory and all descendant subtrees
     recursive_files: int = 0
     recursive_bytes: int = 0
@@ -256,6 +262,8 @@ class DirectoryNode:
         self.direct_files += 1
         self.direct_bytes += size
         self.direct_allocated += allocated
+        if size < 32 * 1024:
+            self.direct_micro_files += 1
 
     def get_or_create_child(self, child_name: str, child_path: str, child_rel: str) -> DirectoryNode:
         """Finds or instantiates an immediate child directory node."""
@@ -334,6 +342,7 @@ class DirectoryNode:
             "direct_files": self.direct_files,
             "direct_bytes": self.direct_bytes,
             "direct_allocated": self.direct_allocated,
+            "direct_micro_files": self.direct_micro_files,
             "direct_slack": self.direct_slack,
             "direct_slack_percentage": self.direct_slack_percentage,
             "recursive_files": self.recursive_files,
@@ -647,6 +656,33 @@ class StorageAuditor:
             for n in root_node.get_top_slack_dirs(limit=15)
         ]
 
+        # Micro-file hotspots: folders with at least 20 files under 32 KB whose cluster slack exceeds 90%
+        hotspot_nodes = [
+            n for n in root_node.flatten()
+            if n.direct_micro_files >= 20 and n.direct_slack_percentage > 90.0
+        ]
+        hotspot_nodes.sort(key=lambda n: n.direct_slack, reverse=True)
+
+        micro_file_hotspots: List[Dict[str, Any]] = []
+        for n in hotspot_nodes:
+            is_unit = is_in_learning_unit(n.path, self.root_path)
+            advice_str = get_hotspot_advice(n.rel_path, is_learning_unit=is_unit)
+            micro_file_hotspots.append({
+                "path": n.path,
+                "rel_path": n.rel_path or ".",
+                "name": n.name,
+                "file_count": n.direct_files,
+                "micro_file_count": n.direct_micro_files,
+                "nominal_bytes": n.direct_bytes,
+                "allocated_bytes": n.direct_allocated,
+                "slack_bytes": n.direct_slack,
+                "slack_percentage": round(n.direct_slack_percentage, 2),
+                "advice": advice_str,
+            })
+
+        total_recoverable_slack = sum(h["slack_bytes"] for h in micro_file_hotspots)
+        learning_summary = get_learning_summary(self.root_path)
+
         report_data: Dict[str, Any] = {
             "root_path": self.root_path,
             "cluster_size": self.cluster_size,
@@ -681,6 +717,10 @@ class StorageAuditor:
             "categories": {name: stat.to_dict() for name, stat in categories.items()},
             "top_slack_directories": top_slack_dirs,
             "top_largest_files": top_largest,
+            "micro_file_hotspots": micro_file_hotspots,
+            "total_recoverable_slack": total_recoverable_slack,
+            "learning_summary": learning_summary,
+            "learning": learning_summary,
             "tree": root_node.to_dict(max_depth=self.max_depth or 3),
         }
 
@@ -774,6 +814,35 @@ class StorageAuditor:
             buf.write(f"| {p_display:<44} | {files_str} | {size_str} | {slack_str} | {pct_str} |\n")
         buf.write("+----------------------------------------------+----------+--------------+--------------+--------+\n\n")
 
+        # 5. Micro-File Hotspots
+        micro_hotspots = data.get("micro_file_hotspots", [])
+        if micro_hotspots:
+            buf.write("MICRO-FILE CLUSTER SLACK HOTSPOTS (>=20 FILES <32KB WITH >90% SLACK)\n")
+            buf.write("+--------------------------------------+----------+--------------+--------------+--------+-------------------------------------------------------+\n")
+            buf.write("| Directory                            | Micro-F  | Direct Size  | Slack Wasted | Waste% | Advice                                                |\n")
+            buf.write("+--------------------------------------+----------+--------------+--------------+--------+-------------------------------------------------------+\n")
+            for h in micro_hotspots:
+                p_display = (h.get("rel_path") or ".")[:36]
+                mf_str = format_count(h.get("micro_file_count", 0)).rjust(8)
+                sz_str = format_bytes(h.get("nominal_bytes", 0)).rjust(12)
+                slk_str = format_bytes(h.get("slack_bytes", 0)).rjust(12)
+                pct_str = format_percentage(h.get("slack_percentage", 0.0)).rjust(6)
+                adv_str = (h.get("advice", ""))[:53]
+                buf.write(f"| {p_display:<36} | {mf_str} | {sz_str} | {slk_str} | {pct_str} | {adv_str:<53} |\n")
+            buf.write("+--------------------------------------+----------+--------------+--------------+--------+-------------------------------------------------------+\n")
+            buf.write(f"  Total Recoverable Hotspot Slack: {format_bytes(data.get('total_recoverable_slack', 0))}\n\n")
+
+        # 6. Learning Integration Summary
+        learning = data.get("learning_summary") or data.get("learning") or {}
+        if any(learning.values()):
+            buf.write("LEARNING UNITS & KNOWLEDGE INDEX\n")
+            buf.write(f"  Aurora Courses:          {format_count(learning.get('aurora_courses', 0))}\n")
+            buf.write(f"  Standalone Aurora Decks: {format_count(learning.get('aurora_decks', 0))}\n")
+            buf.write(f"  Polaris Subjects:        {format_count(learning.get('polaris_subjects', 0))}\n")
+            buf.write(f"  Indexed Document Chunks: {format_count(learning.get('chunk_count', 0))}\n")
+            buf.write(f"  Last Index Update:       {learning.get('last_index_update') or 'Never'}\n")
+            buf.write("-" * 80 + "\n\n")
+
         return buf.getvalue()
 
     def generate_markdown_report(self, data: Dict[str, Any]) -> str:
@@ -848,7 +917,36 @@ class StorageAuditor:
             buf.write(f"| `{p}` | {files_str} | {size_str} | {slack_str} | {pct_str} |\n")
         buf.write("\n")
 
-        buf.write("## 5. Storage Optimization Insights\n\n")
+        # 5. Micro-File Hotspots
+        micro_hotspots = data.get("micro_file_hotspots", [])
+        if micro_hotspots:
+            buf.write("## 5. Micro-File Hotspots (High Cluster Slack)\n\n")
+            buf.write("Folders containing at least 20 micro-files (< 32 KB) with > 90% cluster slack waste on 512 KB clusters:\n\n")
+            buf.write("| Directory | Micro-Files | Direct Files | Logical Size | Allocated | Slack Wasted | Waste % | Advice |\n")
+            buf.write("|:---|---:|---:|---:|---:|---:|---:|:---||\n")
+            for h in micro_hotspots:
+                p = h.get("rel_path") or "."
+                mf_str = format_count(h.get("micro_file_count", 0))
+                df_str = format_count(h.get("file_count", 0))
+                sz_str = format_bytes(h.get("nominal_bytes", 0))
+                al_str = format_bytes(h.get("allocated_bytes", 0))
+                slk_str = format_bytes(h.get("slack_bytes", 0))
+                pct_str = format_percentage(h.get("slack_percentage", 0.0))
+                adv_str = h.get("advice", "")
+                buf.write(f"| `{p}` | {mf_str} | {df_str} | {sz_str} | {al_str} | {slk_str} | {pct_str} | {adv_str} |\n")
+            buf.write(f"\n- **Total Recoverable Hotspot Slack**: {format_bytes(data.get('total_recoverable_slack', 0))}\n\n")
+
+        # 6. Learning Integration Summary
+        learning = data.get("learning_summary") or data.get("learning") or {}
+        if any(learning.values()):
+            buf.write("## 6. Learning Units & Knowledge Index\n\n")
+            buf.write(f"- **Aurora Courses**: {format_count(learning.get('aurora_courses', 0))}\n")
+            buf.write(f"- **Standalone Aurora Decks**: {format_count(learning.get('aurora_decks', 0))}\n")
+            buf.write(f"- **Polaris Subjects**: {format_count(learning.get('polaris_subjects', 0))}\n")
+            buf.write(f"- **Indexed Document Chunks**: {format_count(learning.get('chunk_count', 0))}\n")
+            buf.write(f"- **Last Index Update**: `{learning.get('last_index_update') or 'Never'}`\n\n")
+
+        buf.write("## 7. Storage Optimization Insights\n\n")
         slack_pct = summary.get("total_slack_percentage", 0.0)
         slack_bytes = summary.get("total_slack_bytes", 0)
         buf.write(f"- **Volume Cluster Health**: Total slack loss is **{format_bytes(slack_bytes)}** ({slack_pct:.1f}%).\n")

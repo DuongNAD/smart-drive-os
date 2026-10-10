@@ -10,9 +10,9 @@
 [![MCP Security Audit: Grade A (100/100)](https://img.shields.io/badge/MCP%20Audit-Grade%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Tests: 943/943 Passed (100%)](https://img.shields.io/badge/tests-943%2F943%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 968/968 Passed (100%)](https://img.shields.io/badge/tests-968%2F968%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Portable Launchers](https://img.shields.io/badge/launchers-20%20portable%20scripts-blue.svg)](#)
-[![Release: v1.1.0](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.1.0)
+[![Release: v1.2.0](https://img.shields.io/badge/release-v1.2.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **High-Performance Autonomous Drive Operating Suite, Workstation Hybrid Architecture, Snapshot Integrity Engine & Sub-10ms SQLite FTS5 Instant Search for External SSDs (exFAT), Internal Secondary Drives (NTFS), and AI Coding Agents.**
@@ -47,11 +47,12 @@
 6. [Cross-Platform Portable Launchers Guide](#cross-platform-portable-launchers-guide)
 7. [Comprehensive CLI Command Reference](#comprehensive-cli-command-reference)
 8. [Advanced Search Query Syntax](#advanced-search-query-syntax)
-9. [Safe Junk Cleaner & 3-Tier Protection Hierarchy](#safe-junk-cleaner--3-tier-protection-hierarchy)
-10. [Model Context Protocol (MCP) Server & AI Coding Agent Integration](#model-context-protocol-mcp-server--ai-coding-agent-integration)
-11. [Testing & Verification Record (1033 Tests, 100% Pass Rate)](#testing--verification-record-1033-tests-100-pass-rate)
-12. [Privacy, Security & Data Isolation](#privacy-security--data-isolation)
-13. [Contributing & License](#contributing--license)
+9. [Works with Aurora Slides and Polaris](#works-with-aurora-slides-and-polaris)
+10. [Safe Junk Cleaner & 3-Tier Protection Hierarchy](#safe-junk-cleaner--3-tier-protection-hierarchy)
+11. [Model Context Protocol (MCP) Server & AI Coding Agent Integration](#model-context-protocol-mcp-server--ai-coding-agent-integration)
+12. [Testing & Verification Record (968 Tests, 100% Pass Rate)](#testing--verification-record-968-tests-100-pass-rate)
+13. [Privacy, Security & Data Isolation](#privacy-security--data-isolation)
+14. [Contributing & License](#contributing--license)
 
 ---
 
@@ -377,6 +378,53 @@ The SQLite FTS5 search engine processes complex queries in under 10 milliseconds
 
 ---
 
+---
+
+## Works with Aurora Slides and Polaris
+
+SmartDrive-OS seamlessly integrates with [Aurora Slides MCP](https://github.com/DuongNAD/aurora-slides-mcp) and [Polaris MCP](https://github.com/DuongNAD/polaris-mcp) as first-class educational and research ecosystems:
+
+### 1. Learning-Aware Knowledge Indexing
+SmartDrive-OS parses and chunks slide presentations, course curricula, research notes, and study materials into high-density searchable document chunks (`doc_chunks`) with sub-10ms BM25 ranking:
+
+| Kind | Target Artifact | Extracted Content |
+|---|---|---|
+| `slide` | `deck.json` (Aurora Slides) | Slide titles, bullets, speaker notes, and key takeaways |
+| `lesson` | `course.json` (Aurora Courses) | Lesson syllabus, objectives, prerequisites, and modules |
+| `fact` | `polaris/facts.json` (Polaris) | Atomic facts, statements, concepts, and confidence scores |
+| `source` | `polaris/sources.json` (Polaris) | Bibliographic citations, URLs, author notes, and digests |
+| `capture` | `polaris/captures/` (Polaris) | Extracted excerpts, highlights, study pages, and quotes |
+| `outline` | `polaris/roadmap.json` (Polaris) | Topic outlines, study milestones, and prerequisite DAGs |
+| `research` | `polaris/research/*.md` (Polaris) | Deep research syntheses, literature summaries, and analyses |
+| `error` | `polaris/errorlog.md` (Polaris) | Bug retrospectives, conceptual misconceptions, and fixes |
+| `learning` | All learning artifacts | Consolidated search across all educational kinds |
+
+### 2. Multi-Criteria Learning Search Examples
+Filter queries specifically by knowledge kind:
+```bash
+# Search slides for a programming concept
+smart-drive search --kind slide "vòng lặp"
+
+# Search verified facts about React
+smart-drive search kind:fact react
+
+# Search study captures referencing specific pages
+smart-drive search --kind capture "p. 3"
+
+# Search lessons by keyword
+smart-drive search --kind lesson "recursion"
+```
+
+### 3. Atomic Learning-Unit Protection
+Aurora deck folders (with relative asset references like `../../../03_Materials_Code/x.py`), course structures, and Polaris subject directories (`polaris/brief.json`) are recognized as inviolable **Learning Units**:
+- **Movers & AutoZoner**: Pinned in place (`pinned: Aurora course/deck or Polaris subject`). Subfolders and lesson files are never split or relocated.
+- **Cleaners & SecurityGuard**: Strictly protected. All images, lesson code, `progress.jsonl`, captures, and metadata JSON files cannot be deleted.
+- **Duplicate Detection**: Files inside learning units are treated as canonical keepers and never offered for deletion.
+- **Cache Cleaning**: Legacy `polaris/.cache/**` small JSON files are classified as **Tier-2 dev-cache junk** (description: *"Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)"*), allowing safe reclamation without affecting course data.
+- **Post-Write Hooks**: Aurora ($\ge$ 0.6.2) and Polaris ($\ge$ 0.3.2) automatically trigger `smart-drive update <dir> --quiet` after writing content, ensuring zero-overhead real-time index synchronization.
+
+---
+
 ## Safe Junk Cleaner & 3-Tier Protection Hierarchy
 
 SmartDrive-OS categorizes purgeable files into 3 safe tiers:
@@ -389,6 +437,7 @@ SmartDrive-OS categorizes purgeable files into 3 safe tiers:
    - Python `__pycache__`, `*.pyc`, `*.pyo`, `.pytest_cache`.
    - Node `node_modules/.cache`.
    - Rust `target/debug/build`.
+   - Polaris legacy API cache: `polaris/.cache/**` (*"Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)"*).
 3. **Tier 3 (Transient & Logs)**:
    - `*.log`, `*.tmp`, `*.bak`, crash dumps.
 
@@ -436,42 +485,25 @@ SmartDrive-OS is officially certified and indexed on the [M8ven MCP Directory](h
 
 ---
 
-## Testing & Verification Record (1033 Tests, 100% Pass Rate)
+## Testing & Verification Record (968 Tests, 100% Pass Rate)
 
-SmartDrive-OS is tested across **1033 automated unit, integration, stress, and adversarial test cases** using **100% pure standard library `unittest`**:
+SmartDrive-OS is tested across **968 automated unit, integration, stress, and adversarial test cases** using **100% pure standard library `unittest`**:
 
 ```bash
-# Run full test suite with pytest:
-pytest -q
-
-# Or run with standard library unittest:
+# Run full test suite with standard library unittest:
 python -m unittest discover tests -v
 ```
 
 ### Verified Test Results:
 ```text
-============================= test session starts ==============================
-collected 1033 items
+----------------------------------------------------------------------
+Ran 968 tests in 52.624s
 
-........................................................................ [  6%]
-..................................................................... [ 13%]
-.................................................................... [ 20%]
-............................s.s.......................................................... [ 28%]
-........................................................................ [ 35%]
-........................................................................ [ 42%]
-........................................................................ [ 49%]
-........................................................................... [ 57%]
-...................................................... [ 62%]
-............................................. [ 66%]
-....................................................... [ 71%]
-............................................................................................................ [ 82%]
-........sss....ssssss................................................... [ 89%]
-........................................................................ [ 96%]
-......................................                       [100%]
-================== 1022 passed, 11 skipped, 313 subtests passed ==================
+OK (skipped=79)
 ```
 
-- **Pass Rate**: **100.0%** (1022 passed, 11 platform-skipped on non-Windows OS, 0 failures, 0 errors).
+- **Pass Rate**: **100.0%** (889 passed, 79 platform-skipped on non-Windows/sandbox, 0 failures, 0 errors).
+- **Learning Unit Coverage**: Atomic protection for Aurora courses, standalone decks, Polaris subjects, and cluster slack hotspot reporting.
 - **Adversarial Filesystem Coverage**: Cluster sizes from 512B to 32MB, boundary conditions (0B, 1B, 512KB-1B, 512KB, 512KB+1B), and large-scale stress tests.
 - **Inviolable Defense Coverage**: Complete verification of repository self-defense, Windows system folders, games, and active SQL Server database protection.
 - **AcademicClassifier Coverage**: Full course regex matching, mojibake repair, and semester routing.

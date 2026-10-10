@@ -544,6 +544,8 @@ JUNK_RULES: Tuple[JunkRule, ...] = (
     JunkRule(".nox", True, JunkTier.TIER_2_DEV_CACHE, "Nox test environment directory", "Dev"),
     JunkRule(".coverage", False, JunkTier.TIER_2_DEV_CACHE, "Coverage measurement data", "Dev"),
     JunkRule("htmlcov", True, JunkTier.TIER_2_DEV_CACHE, "Coverage HTML report directory", "Dev"),
+    JunkRule(".cache", True, JunkTier.TIER_2_DEV_CACHE, "Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)", "Polaris"),
+    JunkRule("polaris/.cache", True, JunkTier.TIER_2_DEV_CACHE, "Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)", "Polaris"),
     JunkRule("build", True, JunkTier.TIER_2_DEV_CACHE, "Build output directory", "Dev"),
     JunkRule("dist", True, JunkTier.TIER_2_DEV_CACHE, "Distribution packaging directory", "Dev"),
     JunkRule("*.egg-info", True, JunkTier.TIER_2_DEV_CACHE, "Python package egg info", "Dev"),
@@ -566,7 +568,8 @@ def match_junk_rule(
     name: str,
     is_dir: bool,
     max_tier: JunkTier = JunkTier.TIER_1_SAFE,
-    is_root_level: bool = False
+    is_root_level: bool = False,
+    rel_path: Optional[str] = None,
 ) -> Optional[JunkRule]:
     """Matches a file or directory name against known junk rules up to max_tier.
 
@@ -579,6 +582,7 @@ def match_junk_rule(
         is_dir: True if inspecting a directory, False for file.
         max_tier: Maximum allowed tier (e.g. TIER_1_SAFE, TIER_2_DEV_CACHE, TIER_3_SENSITIVE).
         is_root_level: True if this item resides directly at the drive root.
+        rel_path: Optional relative path from drive root.
 
     Returns:
         Matching JunkRule if matched and allowed, else None.
@@ -605,6 +609,10 @@ def match_junk_rule(
             continue
         if fnmatch.fnmatch(name_lower, rule.pattern.lower()):
             return rule
+        if rel_path:
+            norm_rel_lower = rel_path.strip().replace("\\", "/").lower()
+            if fnmatch.fnmatch(norm_rel_lower, f"*{rule.pattern.lower()}*") or fnmatch.fnmatch(norm_rel_lower, rule.pattern.lower()):
+                return rule
 
     return None
 

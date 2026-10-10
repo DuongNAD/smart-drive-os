@@ -31,6 +31,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.exfat_compat import detect_drive_root
 from smart_drive.core.junction import is_directory_junction
+from smart_drive.core.learning_units import find_unit_root, unit_kind
 from smart_drive.core.root import same_file
 
 logger = logging.getLogger(__name__)
@@ -673,6 +674,29 @@ class ClassifierEngine:
         if is_protected_root_file(p.name) or is_protected_root_dir(p.name):
             return None
 
+        # Check learning units (Aurora & Polaris)
+        unit_root = find_unit_root(p, self.root)
+        if unit_root is not None:
+            if p == unit_root:
+                kind = unit_kind(unit_root) or "Learning Unit"
+                try:
+                    rec_path = str(p.relative_to(self.root)).replace("\\", "/")
+                except ValueError:
+                    rec_path = p.name
+                return ClassificationResult(
+                    source_path=p,
+                    name=p.name,
+                    is_dir=True,
+                    format_type=kind,
+                    category="02_Learning_Knowledge",
+                    subcategory=p.name,
+                    recommended_path=rec_path,
+                    confidence=1.0,
+                    reason="pinned: Aurora course/deck or Polaris subject",
+                    size_bytes=0,
+                )
+            return None
+
         if p.is_dir():
             repo_insp = self.detect_project_repo(p)
             if repo_insp:
@@ -781,8 +805,31 @@ class ClassifierEngine:
                 self.skipped_links.extend(curr_dir / d for d in linked_dirs)
                 dirs[:] = [d for d in dirs if d not in linked_dirs]
 
-            # Check if curr_dir itself is a project repo (when scanning from parent)
+            # Check if curr_dir itself is a learning unit or project repo
             if curr_dir != scan_root:
+                unit_root = find_unit_root(curr_dir, self.root)
+                if unit_root is not None:
+                    if curr_dir == unit_root:
+                        kind = unit_kind(unit_root) or "Learning Unit"
+                        try:
+                            rec_path = str(curr_dir.relative_to(self.root)).replace("\\", "/")
+                        except ValueError:
+                            rec_path = curr_dir.name
+                        results.append(ClassificationResult(
+                            source_path=curr_dir,
+                            name=curr_dir.name,
+                            is_dir=True,
+                            format_type=kind,
+                            category="02_Learning_Knowledge",
+                            subcategory=curr_dir.name,
+                            recommended_path=rec_path,
+                            confidence=1.0,
+                            reason="pinned: Aurora course/deck or Polaris subject",
+                            size_bytes=0,
+                        ))
+                    dirs.clear()  # Do not recurse into learning unit
+                    continue
+
                 repo_res = self.detect_project_repo(curr_dir)
                 if repo_res:
                     rec_path = f"{repo_res.category}/{repo_res.subcategory}"
@@ -895,7 +942,7 @@ class ClassifierEngine:
             except ValueError:
                 rel_target = str(dest_path).replace("\\", "/")
 
-            if self._same_file(item.source_path, dest_path):
+            if item.reason.startswith("pinned:") or self._same_file(item.source_path, dest_path):
                 actions.append(RelocationAction(
                     source_path=item.source_path,
                     destination_path=dest_path,
