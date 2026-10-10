@@ -147,6 +147,25 @@ def cmd_update(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{e}\n")
         return 2
 
+    target_dir: Optional[str] = getattr(args, "path", None)
+    if target_dir:
+        if os.path.isabs(target_dir):
+            target_full = os.path.abspath(target_dir)
+        else:
+            target_full = os.path.abspath(os.path.join(root, target_dir))
+
+        real_root = os.path.realpath(root)
+        real_target = os.path.realpath(target_full)
+        try:
+            if os.path.commonpath([real_root, real_target]) != real_root:
+                sys.stderr.write(f"Error: Path '{target_dir}' escapes drive root '{root}'\n")
+                return 1
+        except ValueError:
+            sys.stderr.write(f"Error: Path '{target_dir}' escapes drive root '{root}'\n")
+            return 1
+    else:
+        target_full = None
+
     db_path = getattr(args, "db", None) or get_default_db_path(root)
     db_path = os.path.abspath(db_path)
 
@@ -157,9 +176,13 @@ def cmd_update(args: argparse.Namespace) -> int:
     db = DatabaseManager(db_path)
     try:
         mgr = IndexManager(db, root)
-        inc = mgr.incremental_update()
+        inc = mgr.incremental_update(directory=target_full)
     finally:
         db.close()
+
+    if getattr(args, "quiet", False):
+        return 0
+
     if getattr(args, "json", False):
         print(json.dumps(dataclasses.asdict(inc), indent=2))
         return 0
@@ -222,6 +245,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("--ext", help="Filter by file extension(s), comma-separated")
     p_search.add_argument("--size", help="Filter by size expression (e.g. >10MB, <1KB, 0)")
     p_search.add_argument("--category", help="Filter by category (Code, AI Models, Books/Learning, Docs, Media, Archives)")
+    p_search.add_argument("--kind", choices=["slide", "lesson", "fact", "source", "module", "capture", "outline", "research", "error", "learning"], help="Filter by learning chunk kind")
+    p_search.add_argument("--content", action="store_true", help="Search content chunks of indexed learning files")
     p_search.add_argument("--dir", help="Filter by directory substring")
     p_search.add_argument("--limit", type=int, default=100, help="Maximum number of results to display")
     p_search.add_argument("--json", action="store_true", help="Output matches in JSON format")
@@ -305,8 +330,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # 12. update
     p_upd = subparsers.add_parser("update", help="Incremental mtime/size search index synchronization")
+    p_upd.add_argument("path", nargs="?", default=None, help="Optional directory path within drive root to sync")
     p_upd.add_argument("--root", help="Root directory of the SSD")
     p_upd.add_argument("--db", help="Path to SQLite index database file")
+    p_upd.add_argument("--quiet", "-q", action="store_true", help="Suppress output on success (exit 0)")
     p_upd.add_argument("--json", action="store_true", help="Output update stats in JSON format")
 
     # 13. snapshot

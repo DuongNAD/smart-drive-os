@@ -34,11 +34,34 @@ def format_bytes(size: int) -> str:
 def format_table(result: SearchResult, max_rows: int = 50) -> str:
     """Formats search results as a visual terminal table."""
     buf = io.StringIO()
-    buf.write(f"\nFound {result.total_count:,} matching files ({result.elapsed_ms:.1f} ms):\n\n")
-
     if not result.matches:
+        buf.write(f"\nFound {result.total_count:,} matching items ({result.elapsed_ms:.1f} ms):\n\n")
         buf.write("  No files matching the specified criteria.\n")
         return buf.getvalue()
+
+    is_chunk = any(m.kind is not None for m in result.matches)
+    if is_chunk:
+        buf.write(f"\nFound {result.total_count:,} matching chunks ({result.elapsed_ms:.1f} ms):\n\n")
+        rows = result.matches[:max_rows]
+        for m in rows:
+            path_display = m.path
+            if len(path_display) > 50:
+                path_display = "…" + path_display[-47:]
+            parts = [path_display]
+            if m.locator:
+                parts.append(m.locator)
+            elif m.kind:
+                parts.append(m.kind)
+            if m.snippet:
+                parts.append(m.snippet)
+            line = " · ".join(parts)
+            buf.write(f"  {line}\n")
+
+        if len(result.matches) > max_rows:
+            buf.write(f"\n... and {len(result.matches) - max_rows} more chunks.\n")
+        return buf.getvalue()
+
+    buf.write(f"\nFound {result.total_count:,} matching files ({result.elapsed_ms:.1f} ms):\n\n")
 
     rows = result.matches[:max_rows]
     headers = ["Category", "Size", "Modified", "Path"]
@@ -86,9 +109,15 @@ def export_csv(result: SearchResult) -> str:
     """Exports results to CSV formatted string."""
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(["id", "category", "size_bytes", "modified_timestamp", "filename", "path"])
-    for m in result.matches:
-        writer.writerow([m.id, m.category, m.size, m.mtime, m.name, m.path])
+    is_chunk = any(m.kind is not None for m in result.matches)
+    if is_chunk:
+        writer.writerow(["id", "kind", "unit_id", "locator", "snippet", "path", "category", "size_bytes", "modified_timestamp"])
+        for m in result.matches:
+            writer.writerow([m.id, m.kind or "", m.unit_id or "", m.locator or "", m.snippet or "", m.path, m.category, m.size, m.mtime])
+    else:
+        writer.writerow(["id", "category", "size_bytes", "modified_timestamp", "filename", "path"])
+        for m in result.matches:
+            writer.writerow([m.id, m.category, m.size, m.mtime, m.name, m.path])
     return out.getvalue()
 
 

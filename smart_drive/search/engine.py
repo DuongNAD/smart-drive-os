@@ -62,13 +62,18 @@ class SearchMatch:
     mtime: float
     category: str
     rank: float = 0.0
+    kind: Optional[str] = None
+    unit_id: Optional[str] = None
+    locator: Optional[str] = None
+    snippet: Optional[str] = None
+    chunk_id: Optional[int] = None
 
     @property
     def filename(self) -> str:
         return self.name
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "id": self.id,
             "path": self.path,
             "name": self.name,
@@ -79,6 +84,13 @@ class SearchMatch:
             "category": self.category,
             "rank": round(self.rank, 4),
         }
+        if self.kind is not None:
+            data["kind"] = self.kind
+            data["unit_id"] = self.unit_id
+            data["locator"] = self.locator
+            data["snippet"] = self.snippet
+            data["chunk_id"] = self.chunk_id
+        return data
 
 
 @dataclass
@@ -185,11 +197,125 @@ class SearchEngine:
         kw = params.keyword.strip() if params.keyword else ""
         use_fts = bool(kw and kw != "*")
 
+        is_chunk_search = bool(params.kind or params.content)
+
         matches: List[SearchMatch] = []
         total_count = 0
         rows = []
 
-        if use_fts:
+        if is_chunk_search:
+            # Add chunk kind filter if specified and not 'learning'
+            if params.kind and params.kind.lower() != "learning":
+                where_clauses.append("c.kind = :chunk_kind")
+                sql_params["chunk_kind"] = params.kind.lower()
+
+            if use_fts:
+                sanitized = sanitize_fts_query(kw)
+                if not sanitized:
+                    sanitized = kw
+
+                fts_terms = []
+                try:
+                    raw_tokens = shlex.split(sanitized, posix=False)
+                except ValueError:
+                    raw_tokens = sanitized.split()
+
+                for token in raw_tokens:
+                    if token.upper() in {"AND", "OR", "NOT"}:
+                        fts_terms.append(token.upper())
+                    elif token.startswith('"') and token.endswith('"'):
+                        fts_terms.append(token)
+                    elif token.endswith("*"):
+                        bare = token[:-1]
+                        if any(not c.isalnum() and c != '"' for c in bare):
+                            clean_tok = bare.replace('"', "")
+                            if clean_tok:
+                                fts_terms.append(f'"{clean_tok}"')
+                        else:
+                            fts_terms.append(token)
+                    elif any(not c.isalnum() and c != '"' for c in token):
+                        clean_tok = token.replace('"', "")
+                        if clean_tok:
+                            fts_terms.append(f'"{clean_tok}"')
+                    else:
+                        fts_terms.append(f"{token}*")
+                fts_expr = " ".join(fts_terms)
+                sql_params["fts_expr"] = fts_expr
+
+                where_str = "WHERE doc_chunks_fts MATCH :fts_expr" + (" AND " + " AND ".join(where_clauses) if where_clauses else "")
+                count_sql = f"""
+                    SELECT COUNT(*)
+                    FROM doc_chunks_fts
+                    CROSS JOIN doc_chunks c ON c.id = doc_chunks_fts.rowid
+                    CROSS JOIN files f ON f.id = c.file_id
+                    {where_str};
+                """
+                sql = f"""
+                    SELECT f.id, f.path, f.filename, f.extension, f.size, f.mtime, f.category,
+                           bm25(doc_chunks_fts, 2.0, 5.0, 1.0) AS rank,
+                           c.kind, c.unit_id, c.locator, c.snippet, c.id AS chunk_id
+                    FROM doc_chunks_fts
+                    CROSS JOIN doc_chunks c ON c.id = doc_chunks_fts.rowid
+                    CROSS JOIN files f ON f.id = c.file_id
+                    {where_str}
+                    ORDER BY rank ASC, f.mtime DESC
+                    LIMIT :limit OFFSET :offset;
+                """
+                try:
+                    cur.execute(count_sql, sql_params)
+                    total_count = cur.fetchone()[0]
+                    cur.execute(sql, sql_params)
+                    rows = cur.fetchall()
+                except sqlite3.OperationalError:
+                    use_fts = False
+
+            if not use_fts:
+                if kw and kw != "*":
+                    where_clauses.append("(c.content LIKE :like_kw ESCAPE '\\' OR c.snippet LIKE :like_kw ESCAPE '\\' OR c.unit_id LIKE :like_kw ESCAPE '\\')")
+                    sql_params["like_kw"] = _like_contains(kw)
+
+                where_str = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+                count_sql = f"""
+                    SELECT COUNT(*)
+                    FROM doc_chunks c
+                    CROSS JOIN files f ON f.id = c.file_id
+                    {where_str};
+                """
+                sql = f"""
+                    SELECT f.id, f.path, f.filename, f.extension, f.size, f.mtime, f.category,
+                           0.0 AS rank,
+                           c.kind, c.unit_id, c.locator, c.snippet, c.id AS chunk_id
+                    FROM doc_chunks c
+                    CROSS JOIN files f ON f.id = c.file_id
+                    {where_str}
+                    ORDER BY f.mtime DESC, c.id ASC
+                    LIMIT :limit OFFSET :offset;
+                """
+                cur.execute(count_sql, sql_params)
+                total_count = cur.fetchone()[0]
+                cur.execute(sql, sql_params)
+                rows = cur.fetchall()
+
+            for r in rows:
+                matches.append(
+                    SearchMatch(
+                        id=r[0],
+                        path=r[1],
+                        name=r[2],
+                        extension=r[3] or "",
+                        size=r[4],
+                        mtime=r[5],
+                        category=r[6],
+                        rank=r[7],
+                        kind=r[8],
+                        unit_id=r[9],
+                        locator=r[10],
+                        snippet=r[11],
+                        chunk_id=r[12],
+                    )
+                )
+
+        elif use_fts:
             sanitized = sanitize_fts_query(kw)
             if not sanitized:
                 sanitized = kw
@@ -263,7 +389,7 @@ class SearchEngine:
             except sqlite3.OperationalError:
                 use_fts = False
 
-        if not use_fts:
+        if not is_chunk_search and not use_fts:
             if kw and kw != "*":
                 where_clauses.append("(f.filename LIKE :like_kw ESCAPE '\\' OR f.path LIKE :like_kw ESCAPE '\\')")
                 sql_params["like_kw"] = _like_contains(kw)
@@ -282,19 +408,33 @@ class SearchEngine:
             cur.execute(sql, sql_params)
             rows = cur.fetchall()
 
-        for r in rows:
-            matches.append(
-                SearchMatch(
-                    id=r[0],
-                    path=r[1],
-                    name=r[2],
-                    extension=r[3] or "",
-                    size=r[4],
-                    mtime=r[5],
-                    category=r[6],
-                    rank=r[7],
+            for r in rows:
+                matches.append(
+                    SearchMatch(
+                        id=r[0],
+                        path=r[1],
+                        name=r[2],
+                        extension=r[3] or "",
+                        size=r[4],
+                        mtime=r[5],
+                        category=r[6],
+                        rank=r[7],
+                    )
                 )
-            )
+        elif not is_chunk_search:
+            for r in rows:
+                matches.append(
+                    SearchMatch(
+                        id=r[0],
+                        path=r[1],
+                        name=r[2],
+                        extension=r[3] or "",
+                        size=r[4],
+                        mtime=r[5],
+                        category=r[6],
+                        rank=r[7],
+                    )
+                )
 
         if target_cat is not None and total_count == 0:
             # An empty answer for a category nobody has is a typo, not a finding: say which ones exist.

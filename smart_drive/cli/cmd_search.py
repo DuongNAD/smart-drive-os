@@ -72,6 +72,14 @@ def cmd_search(args: argparse.Namespace) -> int:
     if size_flag:
         apply_size_spec(params, size_flag)
 
+    kind_flag = getattr(args, "kind", None)
+    if kind_flag:
+        params.kind = kind_flag
+
+    content_flag = getattr(args, "content", False)
+    if content_flag:
+        params.content = True
+
     limit_flag = getattr(args, "limit", None)
     if limit_flag is not None:
         params.limit = int(limit_flag)

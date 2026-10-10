@@ -47,6 +47,8 @@ class SearchParams:
     max_mtime: Optional[float] = None
     category: Optional[str] = None
     directory: Optional[str] = None
+    kind: Optional[str] = None
+    content: bool = False
     limit: int = 100
     offset: int = 0
     # Filters that could not be applied (e.g. "size:>abc"). The parser stays lenient, but says so.
@@ -245,6 +247,18 @@ def parse_search_query(query_str: str) -> SearchParams:
                 dir_val = dir_val.replace("\\", "/").strip("/")
                 if dir_val:
                     params.directory = dir_val
+
+        # kind:slide, kind:lesson, kind:fact, kind:source, kind:module, kind:capture, kind:outline, kind:research, kind:error, kind:learning
+        elif p_lower.startswith("kind:"):
+            colon_idx = part.find(":")
+            kind_val = part[colon_idx + 1:].strip().lower()
+            valid_kinds = {"slide", "lesson", "fact", "source", "module", "capture", "outline", "research", "error", "learning"}
+            if kind_val in valid_kinds:
+                params.kind = kind_val
+            elif kind_val:
+                params.warnings.append(
+                    f"Unknown kind filter {kind_val!r}; expected one of: {', '.join(sorted(valid_kinds))}"
+                )
 
         else:
             free_words.append(part)

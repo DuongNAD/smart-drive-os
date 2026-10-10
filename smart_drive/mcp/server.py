@@ -121,6 +121,16 @@ TOOLS: List[Dict[str, Any]] = [
                     "type": "string",
                     "description": "Functional category filter: 'Code', 'AI Models', 'Books/Learning', 'Docs', 'Media', 'Archives'.",
                 },
+                "kind": {
+                    "type": "string",
+                    "description": "Filter by learning chunk kind: 'slide', 'lesson', 'fact', 'source', 'module', 'capture', 'outline', 'research', 'error', 'learning'.",
+                    "enum": ["slide", "lesson", "fact", "source", "module", "capture", "outline", "research", "error", "learning"],
+                },
+                "content": {
+                    "type": "boolean",
+                    "description": "Search learning content chunks (default: false).",
+                    "default": False,
+                },
                 "size": {
                     "type": "string",
                     "description": "File size constraint (e.g. '>10MB', '<500KB', '0'). '>' and '<' exclude the bound, '>=' and '<=' include it; units are binary (1KB = 1024 bytes).",
@@ -677,6 +687,17 @@ class SmartDriveMCPServer:
         if args.get("category"):
             params.category = str(args["category"])
 
+        if args.get("kind"):
+            k_clean = str(args["kind"]).strip().lower()
+            valid_kinds = {"slide", "lesson", "fact", "source", "module", "capture", "outline", "research", "error", "learning"}
+            if k_clean in valid_kinds:
+                params.kind = k_clean
+            elif k_clean:
+                params.warnings.append(f"Unknown kind filter {k_clean!r}")
+
+        if "content" in args:
+            params.content = self._parse_bool(args.get("content"), default=False)
+
         if args.get("directory"):
             raw_dir = str(args["directory"]).strip().strip('"').strip("'")
             safe_dir = self._resolve_safe_path(raw_dir)
@@ -719,7 +740,19 @@ class SmartDriveMCPServer:
         truncated = False
 
         for m in result.matches:
-            entry = {"path": m.path, "size": m.size, "cat": m.category} if compact_mode else m.to_dict()
+            if compact_mode:
+                if m.kind is not None:
+                    entry = {
+                        "path": m.path,
+                        "kind": m.kind,
+                        "unit": m.unit_id,
+                        "loc": m.locator,
+                        "snip": m.snippet,
+                    }
+                else:
+                    entry = {"path": m.path, "size": m.size, "cat": m.category}
+            else:
+                entry = m.to_dict()
             serialized_matches.append(entry)
             candidate_res = {
                 "query": query_str,

@@ -314,12 +314,15 @@ def run_smart_drive_cli(
     # Ensure project root is in PYTHONPATH so smart_drive is found
     existing_pp = sub_env.get("PYTHONPATH", "")
     sub_env["PYTHONPATH"] = str(project_root) + (os.pathsep + existing_pp if existing_pp else "")
+    # Child output may hold Vietnamese text: decode it as UTF-8 on every OS (Windows defaults to cp1252).
+    sub_env.setdefault("PYTHONIOENCODING", "utf-8")
 
     return subprocess.run(
         cmd,
         cwd=str(cwd or project_root),
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         env=sub_env,
     )

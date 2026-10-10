@@ -61,12 +61,56 @@ CREATE TRIGGER IF NOT EXISTS trg_files_au AFTER UPDATE ON files BEGIN
     INSERT INTO files_fts(rowid, filename, path) VALUES (new.id, new.filename, new.path);
 END;
 
--- 4. Index State & Meta Table
+-- 4. Learning Content Chunks Table
+CREATE TABLE IF NOT EXISTS doc_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL REFERENCES files(id),
+    kind TEXT NOT NULL,              -- slide, lesson, fact, source, module, capture, outline, research, error
+    unit_id TEXT,                    -- Deck title, Course title, F-id, S-id, M-id, Heading, etc.
+    locator TEXT,                    -- slide N (#id), lesson N (dir), locator · S-id, p. N, mm:ss, §k
+    snippet TEXT,                    -- Slide title or first text (<= 160 chars)
+    content TEXT NOT NULL            -- Chunk full text (<= 4000 chars)
+);
+
+CREATE INDEX IF NOT EXISTS idx_doc_chunks_file_id ON doc_chunks(file_id);
+CREATE INDEX IF NOT EXISTS idx_doc_chunks_kind ON doc_chunks(kind);
+
+-- 5. FTS5 External Content Virtual Table for Chunks
+CREATE VIRTUAL TABLE IF NOT EXISTS doc_chunks_fts USING fts5(
+    content,
+    snippet,
+    unit_id,
+    content='doc_chunks',
+    content_rowid='id',
+    tokenize='unicode61 remove_diacritics 2'
+);
+
+-- 6. Automatic Synchronization Triggers for Chunks
+CREATE TRIGGER IF NOT EXISTS trg_doc_chunks_ai AFTER INSERT ON doc_chunks BEGIN
+    INSERT INTO doc_chunks_fts(rowid, content, snippet, unit_id) VALUES (new.id, new.content, new.snippet, new.unit_id);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_doc_chunks_ad AFTER DELETE ON doc_chunks BEGIN
+    INSERT INTO doc_chunks_fts(doc_chunks_fts, rowid, content, snippet, unit_id) VALUES ('delete', old.id, old.content, old.snippet, old.unit_id);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_doc_chunks_au AFTER UPDATE ON doc_chunks BEGIN
+    INSERT INTO doc_chunks_fts(doc_chunks_fts, rowid, content, snippet, unit_id) VALUES ('delete', old.id, old.content, old.snippet, old.unit_id);
+    INSERT INTO doc_chunks_fts(rowid, content, snippet, unit_id) VALUES (new.id, new.content, new.snippet, new.unit_id);
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_files_doc_chunks_ad AFTER DELETE ON files BEGIN
+    DELETE FROM doc_chunks WHERE file_id = old.id;
+END;
+
+-- 7. Index State & Meta Table
 CREATE TABLE IF NOT EXISTS index_meta (
     key TEXT PRIMARY KEY,
     value TEXT
 );
 """
+
+SCHEMA_VERSION = "2"
 
 
 class DatabaseManager:
@@ -113,6 +157,15 @@ class DatabaseManager:
         """Creates tables, virtual tables, triggers, and indexes."""
         con = self.get_connection()
         con.executescript(SCHEMA_SQL)
+        try:
+            con.execute("INSERT INTO files_fts(files_fts) VALUES('rebuild');")
+        except sqlite3.Error:
+            pass
+        try:
+            con.execute("INSERT INTO doc_chunks_fts(doc_chunks_fts) VALUES('rebuild');")
+        except sqlite3.Error:
+            pass
+        con.execute("REPLACE INTO index_meta (key, value) VALUES ('schema_version', ?);", (SCHEMA_VERSION,))
         con.commit()
 
     def close(self) -> None:
@@ -133,5 +186,6 @@ class DatabaseManager:
 
 __all__ = [
     "SCHEMA_SQL",
+    "SCHEMA_VERSION",
     "DatabaseManager",
 ]

@@ -22,6 +22,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.exfat_compat import normalize_rel_path
 from smart_drive.indexer.db import DatabaseManager
+from smart_drive.indexer.learning import is_learning_file, parse_learning_file
 
 logger = logging.getLogger("smart_drive.indexer.manager")
 
@@ -152,6 +153,19 @@ class IndexManager:
             con.commit()
             indexed_files += len(batch)
 
+        # Chunk all recognized learning files
+        cur.execute("SELECT id, path FROM files;")
+        for f_id, f_path in cur.fetchall():
+            if is_learning_file(f_path):
+                full_path = os.path.join(self.drive_root, f_path)
+                chunks = parse_learning_file(full_path, f_path)
+                if chunks:
+                    cur.executemany(
+                        "INSERT INTO doc_chunks (file_id, kind, unit_id, locator, snippet, content) "
+                        "VALUES (?, ?, ?, ?, ?, ?);",
+                        [(f_id, c.kind, c.unit_id, c.locator, c.snippet, c.content) for c in chunks],
+                    )
+
         # Update metadata table
         cur.execute("REPLACE INTO index_meta (key, value) VALUES ('last_full_index', ?);", (str(now),))
         cur.execute("REPLACE INTO index_meta (key, value) VALUES ('indexed_root', ?);", (self.drive_root,))
@@ -255,6 +269,19 @@ class IndexManager:
                 "VALUES (?, ?, ?, ?, ?, ?, ?);",
                 to_insert,
             )
+            inserted_learning = [p[0] for p in to_insert if is_learning_file(p[0])]
+            if inserted_learning:
+                placeholders = ", ".join("?" for _ in inserted_learning)
+                cur.execute(f"SELECT id, path FROM files WHERE path IN ({placeholders});", inserted_learning)
+                for f_id, f_path in cur.fetchall():
+                    full_path = os.path.join(self.drive_root, f_path)
+                    chunks = parse_learning_file(full_path, f_path)
+                    if chunks:
+                        cur.executemany(
+                            "INSERT INTO doc_chunks (file_id, kind, unit_id, locator, snippet, content) "
+                            "VALUES (?, ?, ?, ?, ?, ?);",
+                            [(f_id, c.kind, c.unit_id, c.locator, c.snippet, c.content) for c in chunks],
+                        )
 
         if to_update:
             cur.executemany(
@@ -262,12 +289,48 @@ class IndexManager:
                 "WHERE id=?;",
                 to_update,
             )
+            updated_ids = [t[-1] for t in to_update]
+            if updated_ids:
+                placeholders = ", ".join("?" for _ in updated_ids)
+                cur.execute(f"DELETE FROM doc_chunks WHERE file_id IN ({placeholders});", updated_ids)
+                cur.execute(f"SELECT id, path FROM files WHERE id IN ({placeholders});", updated_ids)
+                for f_id, f_path in cur.fetchall():
+                    if is_learning_file(f_path):
+                        full_path = os.path.join(self.drive_root, f_path)
+                        chunks = parse_learning_file(full_path, f_path)
+                        if chunks:
+                            cur.executemany(
+                                "INSERT INTO doc_chunks (file_id, kind, unit_id, locator, snippet, content) "
+                                "VALUES (?, ?, ?, ?, ?, ?);",
+                                [(f_id, c.kind, c.unit_id, c.locator, c.snippet, c.content) for c in chunks],
+                            )
 
         if to_delete_ids:
             cur.executemany(
                 "DELETE FROM files WHERE id=?;",
                 [(i,) for i in to_delete_ids],
             )
+            cur.executemany(
+                "DELETE FROM doc_chunks WHERE file_id=?;",
+                [(i,) for i in to_delete_ids],
+            )
+
+        # Backfill any existing recognized learning files that currently have no chunks
+        cur.execute(
+            "SELECT f.id, f.path FROM files f "
+            "WHERE NOT EXISTS (SELECT 1 FROM doc_chunks c WHERE c.file_id = f.id);"
+        )
+        for f_id, f_path in cur.fetchall():
+            if is_learning_file(f_path):
+                full_path = os.path.join(self.drive_root, f_path)
+                if os.path.isfile(full_path):
+                    chunks = parse_learning_file(full_path, f_path)
+                    if chunks:
+                        cur.executemany(
+                            "INSERT INTO doc_chunks (file_id, kind, unit_id, locator, snippet, content) "
+                            "VALUES (?, ?, ?, ?, ?, ?);",
+                            [(f_id, c.kind, c.unit_id, c.locator, c.snippet, c.content) for c in chunks],
+                        )
 
         cur.execute("REPLACE INTO index_meta (key, value) VALUES ('last_incremental_index', ?);", (str(now),))
         con.commit()
