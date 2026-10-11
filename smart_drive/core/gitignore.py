@@ -170,10 +170,11 @@ STACK_PATTERNS: Dict[str, List[str]] = {
         "orion-attempts.jsonl",
         "**/polaris/.cache/",
         "**/polaris/captures/",
+        ".polaris/",
     ],
 }
 
-# Constellation personal-data contract patterns
+# Constellation personal-data contract patterns (STACK_PATTERNS["learning"] must stay equal; a test checks it)
 PERSONAL_DATA_PATTERNS: List[str] = [
     ".vega/",
     "**/progress.jsonl",
@@ -183,6 +184,23 @@ PERSONAL_DATA_PATTERNS: List[str] = [
     "**/polaris/captures/",
     ".polaris/",
 ]
+
+
+def _write_text_in_place(path: str, content: str) -> None:
+    """Writes content byte for byte (its own line endings), into the existing file when there is one.
+
+    On Windows, open(path, "w") asks for CREATE_ALWAYS, which is refused for a file with the hidden or system
+    attribute (a hidden .gitignore made apply fail with "Permission denied"); rewriting the existing file in
+    place works and keeps its attributes.
+    """
+    data = content.encode("utf-8", errors="replace")
+    if os.path.isfile(path):
+        with open(path, "r+b") as fh:
+            fh.write(data)
+            fh.truncate()
+    else:
+        with open(path, "wb") as fh:
+            fh.write(data)
 
 
 # -----------------------------------------------------------------------------
@@ -1256,7 +1274,9 @@ def apply_repo(
 
     if not created:
         try:
-            old_content = Path(gi_path).read_text(encoding="utf-8", errors="replace")
+            # newline="" keeps "\r\n" so detect_line_ending sees the file's real line endings.
+            with open(gi_path, encoding="utf-8", errors="replace", newline="") as fh:
+                old_content = fh.read()
             newline = detect_line_ending(old_content)
         except OSError as e:
             raise ValueError(f"Cannot read .gitignore: {e}")
@@ -1291,7 +1311,7 @@ def apply_repo(
 
     applied = False
     if not dry_run:
-        Path(gi_path).write_text(new_content, encoding="utf-8", errors="replace")
+        _write_text_in_place(gi_path, new_content)
         applied = True
         if untrack and tracked_matching:
             batch_size = 50

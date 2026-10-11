@@ -414,6 +414,41 @@ class TestGitignoreGovernanceWorkflow(unittest.TestCase):
                               cwd=str(self.repo), capture_output=True, text=True)
         self.assertNotEqual(kept.returncode, 0, "agent skills must not be ignored")
 
+    def test_learning_stack_matches_the_personal_data_contract(self) -> None:
+        from smart_drive.core.gitignore import STACK_PATTERNS
+        self.assertEqual(STACK_PATTERNS["learning"], PERSONAL_DATA_PATTERNS)
+        self.assertIn(".polaris/", PERSONAL_DATA_PATTERNS)
+
+    def test_line_endings_of_an_existing_gitignore_are_kept(self) -> None:
+        for name, eol in (("crlf", b"\r\n"), ("lf", b"\n")):
+            with self.subTest(eol=name):
+                gi_path = self.repo / ".gitignore"
+                gi_path.write_bytes(b"my_rule/" + eol + b"*.local" + eol)
+                res = apply_repo(str(self.repo), dry_run=False)
+                self.assertTrue(res.applied)
+                data = gi_path.read_bytes()
+                self.assertNotIn(b"\r\r\n", data)
+                self.assertTrue(data.startswith(b"my_rule/" + eol + b"*.local" + eol))
+                if eol == b"\r\n":
+                    self.assertEqual(data.count(b"\n"), data.count(b"\r\n"))
+                else:
+                    self.assertNotIn(b"\r\n", data)
+
+    @unittest.skipUnless(os.name == "nt", "the hidden attribute is a Windows file attribute")
+    def test_a_hidden_gitignore_is_rewritten_in_place(self) -> None:
+        """open(path, "w") is refused for a hidden file on Windows; apply must still work and keep it hidden."""
+        gi_path = self.repo / ".gitignore"
+        gi_path.write_text("my_rule/\n", encoding="utf-8")
+        subprocess.run(["attrib", "+h", str(gi_path)], check=True, capture_output=True)
+        self.addCleanup(lambda: subprocess.run(["attrib", "-h", str(gi_path)], capture_output=True))
+
+        res = apply_repo(str(self.repo), dry_run=False)
+        self.assertTrue(res.applied)
+        content = gi_path.read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("my_rule/"))
+        self.assertIn(MANAGED_HEADER, content)
+        self.assertTrue(os.stat(gi_path).st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN)
+
     def test_refuses_when_staged_changes_exist(self) -> None:
         (self.repo / "init.txt").write_text("initial", encoding="utf-8")
         git_cmd(self.repo, "add", "init.txt")
