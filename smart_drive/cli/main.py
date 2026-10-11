@@ -455,6 +455,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Audit and apply SmartDrive-managed .gitignore blocks per repo stack",
     )
     p_gi.add_argument("--root", help="Drive root directory")
+    p_gi.add_argument("--all", action="store_true", help="Include all repositories in audit report")
+    p_gi.add_argument("--owner", help="Configured git owner for repository classification")
+    p_gi.add_argument(
+        "--keep",
+        action="append",
+        default=[],
+        help="Pattern of intentional files to keep (repeatable)",
+    )
     p_gi.add_argument("--json", action="store_true", help="Output in JSON format")
 
     gi_sub = p_gi.add_subparsers(dest="action", help="Gitignore action (audit, apply)")
@@ -463,6 +471,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_ga = gi_sub.add_parser("audit", help="Audit .gitignore compliance and tracked junk/personal data")
     p_ga.add_argument("repo", nargs="?", default=None, help="Target repository path (optional; defaults to all repositories on drive)")
     p_ga.add_argument("--root", default=argparse.SUPPRESS, help="Drive root directory")
+    p_ga.add_argument("--all", action="store_true", help="Include all repositories (including third-party clones) in detailed report")
+    p_ga.add_argument("--owner", help="Configured git owner for repository classification (overrides env SMART_DRIVE_GIT_OWNER)")
+    p_ga.add_argument(
+        "--keep",
+        action="append",
+        default=argparse.SUPPRESS,
+        help="Pattern of intentional files to keep (repeatable)",
+    )
     p_ga.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output audit report in JSON format")
 
     # gitignore apply
@@ -470,6 +486,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_gap.add_argument("repo", help="Target repository path")
     p_gap.add_argument("--yes", "-y", action="store_true", help="Write changes to disk (default is dry-run)")
     p_gap.add_argument("--untrack", action="store_true", help="Untrack files matching managed patterns from git index")
+    p_gap.add_argument(
+        "--keep",
+        action="append",
+        default=argparse.SUPPRESS,
+        help="Pattern of intentional files to keep (repeatable)",
+    )
     p_gap.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output apply result in JSON format")
 
     # self-path-check subcommand

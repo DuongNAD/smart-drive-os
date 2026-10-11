@@ -10,9 +10,9 @@
 [![Kiểm định Bảo mật MCP: Hạng A (100/100)](https://img.shields.io/badge/MCP%20Audit-H%E1%BA%A1ng%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Kiểm thử: 992/992 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-992%2F992%20passed%20(100%25)-brightgreen.svg)](#)
+[![Kiểm thử: 1014/1014 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-1014%2F1014%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Launcher Portable](https://img.shields.io/badge/launchers-20%20t%E1%BB%87p%20kh%E1%BB%9Fi%20ch%E1%BA%A1y-blue.svg)](#)
-[![Phiên bản: v1.3.0](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.3.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.3.0)
+[![Phiên bản: v1.3.1](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.3.1-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.3.1)
 [![Giấy phép: MIT](https://img.shields.io/badge/Gi%E1%BA%A5y%20ph%C3%A9p-MIT-yellow.svg)](LICENSE)
 
 > **Hệ điều hành Quản trị Dữ liệu Tự hành Máy trạm (Workstation Hybrid), Hệ thống Snapshot Toàn vẹn Dữ liệu SHA-256 và Công cụ Tìm kiếm Siêu tốc SQLite FTS5 (<10ms) dành cho Ổ cứng Di động Ngoài (exFAT), Ổ phụ Gắn trong (NTFS) và các Trợ lý Lập trình AI.**
@@ -267,8 +267,8 @@ Mỗi dự án nên có một bản trên SSD di động và một bản trên m
 ### 12. Quản lý .gitignore & Bảo vệ Dữ liệu Cá nhân (`smart-drive gitignore`)
 Thiết lập và quản trị chuẩn hóa tệp `.gitignore` trên toàn bộ các kho mã Git trong ổ đĩa mà không cần quét đệ quy chậm chạp:
 - **Tự động nhận diện công nghệ (Stack-Aware)**: Tự động phát hiện các stack công nghệ của repo (Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models và Learning) dựa trên các dấu hiệu ở thư mục gốc và thư mục con tầng nông (<5ms).
-- **Phòng thủ lãng phí Cluster Slack trên exFAT**: Tự động loại trừ các tệp vi mô gây lãng phí nghiêm trọng trên cluster 512KB exFAT — chẳng hạn thư mục nháp của AI agent (`.agents/`, thường chứa hàng trăm file nhỏ làm lãng phí hàng trăm megabytes dung lượng thực), cấu hình cục bộ `.claude/settings.local.json`, cache môi trường (`__pycache__/`, `.pytest_cache/`, `node_modules/`), sản phẩm biên dịch (`target/`, `dist/`, `bin/`, `obj/`) và metadata hệ điều hành.
-- **Bảo vệ chuẩn hợp đồng "Personal-Data" của Constellation**: Đối với các kho tài liệu học tập (Aurora slides, đề cương Polaris, bộ nhớ ôn tập Vega), tự động khóa chặt lịch sử học tập cá nhân: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, và `**/polaris/captures/`.
+- **Phòng thủ lãng phí Cluster Slack trên exFAT**: Tự động loại trừ các tệp vi mô gây lãng phí nghiêm trọng trên cluster 512KB exFAT — chẳng hạn thư mục nháp của AI agent (`**/.agents/*`, thường chứa hàng trăm file nhỏ làm lãng phí hàng trăm megabytes dung lượng thực; riêng `.agents/skills/`, `.agents/workflows/` và `.agents/rules/` là cấu hình agent nên vẫn được track), cấu hình cục bộ `.claude/settings.local.json`, cache môi trường (`__pycache__/`, `.pytest_cache/`, `node_modules/`), sản phẩm biên dịch (`target/`, `dist/`, `bin/`, `obj/`) và metadata hệ điều hành.
+- **Bảo vệ chuẩn hợp đồng "Personal-Data" của Constellation**: Đối với các kho tài liệu học tập (Aurora slides, đề cương Polaris, bộ nhớ ôn tập Vega), tự động khóa chặt lịch sử học tập cá nhân: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/` và `.polaris/` (hồ sơ người học).
 - **Phát hiện nguy cơ rò rỉ trên Repo công khai**: Kiểm tra URL remote (không gọi mạng) để cảnh báo tức thì khi dữ liệu học tập cá nhân bị theo dõi trong repo có remote công khai (GitHub, GitLab, Bitbucket) hoặc remote chưa xác định.
 - **Hủy theo dõi an toàn (`--untrack`)**: Chạy lệnh `git rm -r --cached` cho các tệp khớp mà không làm mất tệp làm việc thực tế trên đĩa và từ chối thực hiện nếu repo đang có thay đổi đã staged.
 
@@ -482,8 +482,30 @@ Các kho lưu trữ tài liệu học tập công khai có thể vô tình làm 
 
 Trong quá trình `audit`, các kho mã có máy chủ remote công khai (GitHub, GitLab, Bitbucket) hoặc remote chưa xác định sẽ lập tức nhận cảnh báo nếu dữ liệu học tập cá nhân đang bị theo dõi (tracked).
 
+### Phân Loại Quyền Sở Hữu & Tách Biệt Repo Bên Thứ Ba (v1.3.1)
+Các kho mã được tự động phân loại chính xác thành 3 nhóm quyền sở hữu:
+- **`own`**: Remote origin khớp với chủ sở hữu đã cấu hình (`--owner`, `SMART_DRIVE_GIT_OWNER`, git config `smartdrive.owner`, hoặc chủ sở hữu phổ biến nhất trên ổ đĩa).
+- **`third-party`**: Các clone mã nguồn mở nằm trong `open_source/`, `vendor/`, `third_party/`, hoặc thuộc về tác giả khác. Quyết định theo dõi thư mục build/dist của tác giả gốc được tôn trọng tuyệt đối và không bị cảnh báo rác giả.
+- **`local`**: Các repo cục bộ / nội bộ không có remote origin.
+
+Mặc định, lệnh `audit` tập trung vào các repo `own` và `local`, tách riêng danh sách repo `third-party`. Sử dụng tùy chọn `--all` để hiển thị toàn bộ trong bảng chính.
+
+### Kiểm Tra Visibility & Xử Lý Remote Bị Xóa Qua GitHub CLI (`gh`)
+Khi công cụ GitHub CLI (`gh`) được cài đặt và xác thực, SmartDrive-OS sẽ truy vấn trạng thái hiển thị (`public`, `private`, `internal`, `missing`) của repo với timeout ngắn và bộ nhớ đệm cache theo phiên chạy. Các repo private đã xác thực sẽ không bị cảnh báo nguy cơ lộ dữ liệu công khai. Khi remote không tồn tại trên GitHub (bị xóa, đổi tên hoặc không có quyền truy cập), visibility được xác định là `missing` ("remote not found on GitHub") và loại trừ hoàn toàn các cảnh báo rò rỉ công khai giả.
+
+### Bảo Toàn Sản Phẩm Build Chủ Đích & Danh Sách Keep
+Các tệp đã commit được công nhận là sản phẩm build có chủ đích (không bao giờ tính là rác và không bao giờ bị untrack) khi:
+1. Được tham chiếu bởi tệp `package.json` gần nhất (các trường `bin`, `main`, `module`, `types`, hoặc `exports` kể cả các đối tượng lồng nhau; chuẩn hóa `./`);
+2. Được tái bao gồm bằng quy tắc phủ định negation trong `.gitignore` riêng của repo (ví dụ: `!dist/bundle.mjs`);
+3. Nằm trong danh sách giữ lại: git config `smartdrive.keep` (nhiều giá trị pattern) hoặc cờ `--keep <pattern>` (lặp lại được khi `audit` và `apply`).
+
+Khi một pattern khuyến nghị (như `dist/`) có thể bỏ qua tệp build chủ đích, khối quản trị sẽ tự động sử dụng `<dir>/*` kèm theo các dòng `!<file>` nếu mọi tệp chủ đích đều nằm trực tiếp trong thư mục đó (cho phép git tái bao gồm bundle); ngược lại sẽ an toàn bỏ qua pattern đó cho repo để tránh làm hỏng cơ chế clone-and-run.
+
+### Kiểm Toán Tệp Bí Mật Nguy Cấp Cao (Chỉ Hiện Tên Biến)
+Các tệp cấu hình và chứng chỉ nhạy cảm bị track nhầm (`.env`, `.env.*`, `*.pem`, `*.key`, `credentials*.json`) được tách thành mục cảnh báo **High Severity**, chỉ hiển thị **duy nhất tên biến / key** (tuyệt đối không bao giờ hiển thị giá trị bí mật) kèm lời khuyên thu hồi / rotate secret ngay lập tức. Tính năng `apply --yes --untrack` sẽ tự động hủy theo dõi chúng khỏi git index mà vẫn giữ nguyên tệp trên đĩa.
+
 ### Hủy theo dõi an toàn (`--untrack`)
-Nếu tệp rác hoặc dữ liệu cá nhân vô tình bị commit vào git từ trước, lệnh `smart-drive gitignore apply <repo> --yes --untrack` sẽ tự động loại bỏ chúng khỏi chỉ mục thông qua `git rm -r --cached`. **Tệp làm việc thực tế trên đĩa không bao giờ bị xóa**, hệ thống không tự động tạo commit mới, và thao tác untrack sẽ an toàn **từ chối thực hiện** nếu kho mã đang có các thay đổi chưa commit đã đưa vào staged.
+Nếu tệp rác hoặc dữ liệu cá nhân vô tình bị commit vào git từ trước, lệnh `smart-drive gitignore apply <repo> --yes --untrack` sẽ tự động loại bỏ chúng khỏi chỉ mục thông qua `git rm -r --cached`. **Tệp làm việc thực tế trên đĩa không bao giờ bị xóa**, các sản phẩm build có chủ đích luôn được bảo toàn, hệ thống không tự động tạo commit mới, và thao tác untrack sẽ an toàn **từ chối thực hiện** nếu kho mã đang có các thay đổi chưa commit đã đưa vào staged.
 
 ### Ví dụ Dòng Lệnh CLI
 ```bash
@@ -493,13 +515,19 @@ smart-drive gitignore audit
 # 2. Xuất báo cáo kiểm toán dưới dạng JSON cấu trúc:
 smart-drive gitignore audit --json
 
-# 3. Kiểm toán một repo dự án cụ thể:
+# 3. Kiểm toán bao gồm cả các clone mã nguồn bên thứ ba trong bảng chính:
+smart-drive gitignore audit --all
+
+# 4. Kiểm toán với chủ sở hữu chỉ định cụ thể:
+smart-drive gitignore audit --owner myorg
+
+# 5. Kiểm toán một repo dự án cụ thể:
 smart-drive gitignore audit D:\teamwork_projects\my_project
 
-# 4. Xem trước các thay đổi .gitignore (dry run):
+# 6. Xem trước các thay đổi .gitignore (dry run):
 smart-drive gitignore apply D:\teamwork_projects\my_project
 
-# 5. Áp dụng khối quản lý vào tệp và hủy theo dõi file rác đã commit nhầm:
+# 7. Áp dụng khối quản lý vào tệp và hủy theo dõi file rác/secret đã commit nhầm:
 smart-drive gitignore apply D:\teamwork_projects\my_project --yes --untrack
 ```
 
@@ -517,7 +545,7 @@ SmartDrive-OS hỗ trợ giao thức MCP tiêu chuẩn, cung cấp 9 công cụ 
 6. `ssd_check_safety`: Kiểm tra tính tương thích exFAT (quét 9 ký tự cấm Win32, 22 từ khóa DOS, và phát hiện symlink). *(chỉ đọc)*
 7. `ssd_status`: Kiểm tra trạng thái gắn kết SSD, khiên bảo vệ và phân vùng. *(chỉ đọc)*
 8. `ssd_auto_organize`: Tự động phân luồng và gom file giảm thiểu lãng phí slack kết hợp AcademicClassifier. *(sắp xếp/xóa rác)*
-9. `ssd_gitignore`: Kiểm toán và áp dụng khối .gitignore chuẩn hóa theo stack, ngăn rò rỉ dữ liệu cá nhân và untrack an toàn. *(kiểm toán/cập nhật .gitignore)*
+9. `ssd_gitignore`: Kiểm toán và áp dụng khối .gitignore chuẩn hóa theo stack, ngăn rò rỉ dữ liệu cá nhân, kiểm toán secret và untrack an toàn. *(kiểm toán/cập nhật .gitignore)*
 
 ### Đăng ký 1-Chạm Cho Tất Cả Trợ Lý AI
 ```bash
@@ -545,9 +573,9 @@ SmartDrive-OS được kiểm định độc lập và xếp hạng chính thứ
 
 ---
 
-## 13. Báo Cáo Kiểm Thử Tự Động (992 Bài Test, Pass 100%)
+## 13. Báo Cáo Kiểm Thử Tự Động (1014 Bài Test, Pass 100%)
 
-Hệ thống được bảo vệ và kiểm chứng bởi **992 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
+Hệ thống được bảo vệ và kiểm chứng bởi **1014 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
 
 ```bash
 # Chạy toàn bộ bài test bằng Python Standard Library unittest:
@@ -556,12 +584,12 @@ py -3.11 -m unittest discover tests -v
 
 ### Kết Quả Kiểm Thử Thực Tế:
 ```text
-Ran 992 tests in ~57s
+Ran 1014 tests in 45.765s
 OK (skipped=79)
 ```
 
-- **Tỷ lệ đậu**: **100.0%** (992 passed, 79 bài kiểm tra môi trường/sandbox bỏ qua theo thiết kế, 0 failures, 0 errors).
-- **Độ bao phủ Quản trị Gitignore**: Kiểm chứng phát hiện stack đa ngôn ngữ, tạo và ghép khối .gitignore bảo toàn CRLF và dòng của người dùng, tính lũy thừa, kiểm toán rác bị track (.agents/, pycache), hợp đồng dữ liệu cá nhân Constellation, untrack an toàn và từ chối khi có staged changes.
+- **Tỷ lệ đậu**: **100.0%** (933 passed, 79 bài kiểm tra môi trường/sandbox bỏ qua theo thiết kế, 0 failures, 0 errors).
+- **Độ bao phủ Quản trị Gitignore**: Phân loại chính xác chủ sở hữu repo (`own`, `third-party`, `local`), bảo toàn tệp build có chủ đích (`package.json` bin/main/module/types/exports), tôn trọng quy tắc phủ định (`!`) trong `.gitignore`, danh sách giữ lại linh hoạt (`smartdrive.keep` và `--keep`), tái bao gồm chọn lọc mẫu thư mục (`<dir>/*` kèm `!<file>`) và lược bỏ mẫu an toàn khi tệp lồng sâu, truy vấn visibility qua `gh` CLI kèm xử lý remote không tồn tại (`missing`), kiểm toán secret chỉ hiển thị tên biến, kiểm chứng phát hiện stack đa ngôn ngữ, tạo và ghép khối .gitignore bảo toàn CRLF và dòng của người dùng, tính lũy thừa, kiểm toán rác bị track (.agents/, pycache), hợp đồng dữ liệu cá nhân Constellation, untrack an toàn và từ chối khi có staged changes.
 - **Độ bao phủ Learning Units**: Kiểm chứng nhận diện Aurora Courses/Decks, Polaris Subjects, bảo vệ dữ liệu học tập nguyên khối, ghim cố định AutoZoner, loại trừ trùng lặp và dọn rác phân tầng cho `polaris/.cache`.
 - **Độ bao phủ đối kháng**: Kiểm tra các kích thước cluster khắc nghiệt từ 512B đến 32MB, các giá trị biên (0B, 1B, 512KB-1B, 512KB, 512KB+1B) và kiểm toán ứng suất hàng triệu tệp tin.
 - **Độ bao phủ tự bảo vệ**: Kiểm chứng cơ chế tự bảo vệ repo, thư mục Windows Apps, thư mục Game và database SQL Server.

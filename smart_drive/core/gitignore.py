@@ -13,17 +13,42 @@ import collections
 from dataclasses import asdict, dataclass, field
 import difflib
 import fnmatch
+import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import shutil
 import subprocess
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
 
 GIT_TIMEOUT = 30
+GH_TIMEOUT = 5
 
 MANAGED_HEADER = "# >>> smart-drive managed (do not edit inside) >>>"
 MANAGED_FOOTER = "# <<< smart-drive managed <<<"
+
+THIRD_PARTY_DIR_NAMES: FrozenSet[str] = frozenset({
+    "open_source",
+    "open-source",
+    "vendor",
+    "third_party",
+    "third-party",
+})
+
+# Installed-dependency folders: files inside them are never intentional build outputs.
+DEPENDENCY_DIR_NAMES: FrozenSet[str] = frozenset({
+    "node_modules",
+    "bower_components",
+    "jspm_packages",
+    ".venv",
+    "venv",
+    "site-packages",
+    "__pypackages__",
+})
+
+_GH_AUTH_CACHE: Optional[bool] = None
+_GH_VISIBILITY_CACHE: Dict[str, str] = {}
 
 # Base patterns: exFAT / macOS / Windows / Linux junk, logs, temp, agent scratch, secrets, runtime, node_modules
 BASE_PATTERNS: List[str] = [
@@ -51,15 +76,21 @@ BASE_PATTERNS: List[str] = [
     "*.bak",
     "*.swp",
     "*.swo",
-    # agent scratch
-    ".agents/",
+    # agent scratch (e.g. Antigravity teamwork runs); agent skills, workflows and rules stay tracked
+    "**/.agents/*",
+    "!**/.agents/skills/",
+    "!**/.agents/workflows/",
+    "!**/.agents/rules/",
     ".claude/settings.local.json",
     # secrets
     ".env",
     ".env.*",
     "!.env.example",
+    "!.env.sample",
+    "!.env.template",
     "*.pem",
     "*.key",
+    "credentials*.json",
     # SmartDrive runtime
     ".smart_drive/",
     # node_modules on exFAT
@@ -150,6 +181,7 @@ PERSONAL_DATA_PATTERNS: List[str] = [
     "orion-attempts.jsonl",
     "**/polaris/.cache/",
     "**/polaris/captures/",
+    ".polaris/",
 ]
 
 
@@ -314,14 +346,26 @@ def get_recommended_patterns(stacks: Sequence[str]) -> List[str]:
     return pats
 
 
-def generate_managed_block(stacks: Sequence[str], newline: str = "\n") -> str:
+def generate_managed_block(
+    stacks: Sequence[str],
+    newline: str = "\n",
+    intentional_files: Optional[Sequence[str]] = None,
+) -> str:
     """Builds the SmartDrive-managed .gitignore block for given stacks."""
     lines: List[str] = [
         MANAGED_HEADER,
         "# Base patterns (exFAT, OS metadata, agent scratch, secrets, runtime)",
     ]
     seen_patterns: Set[str] = set()
-    for pat in BASE_PATTERNS:
+
+    def _resolve(patterns: Sequence[str]) -> List[str]:
+        if not intentional_files:
+            return list(patterns)
+        resolved, _ = resolve_managed_patterns(patterns, intentional_files)
+        return resolved
+
+    base_resolved = _resolve(BASE_PATTERNS)
+    for pat in base_resolved:
         lines.append(pat)
         if not pat.startswith("#") and not pat.startswith("!"):
             seen_patterns.add(pat)
@@ -334,8 +378,9 @@ def generate_managed_block(stacks: Sequence[str], newline: str = "\n") -> str:
                 header_title += " (Constellation personal-data contract)"
             lines.append("")
             lines.append(header_title)
-            for pat in pats:
-                if pat not in seen_patterns:
+            stack_resolved = _resolve(pats)
+            for pat in stack_resolved:
+                if pat not in seen_patterns or pat.startswith("!"):
                     lines.append(pat)
                     if not pat.startswith("#") and not pat.startswith("!"):
                         seen_patterns.add(pat)
@@ -463,6 +508,234 @@ def is_personal_data_path(rel_path: str) -> bool:
 
 
 # -----------------------------------------------------------------------------
+# Intentional build outputs & keep list
+# -----------------------------------------------------------------------------
+
+def find_nearest_package_json(repo_dir: str, file_rel_path: str) -> Optional[str]:
+    """Finds the nearest package.json relative to repo_dir walking up from file directory."""
+    norm_file = file_rel_path.replace("\\", "/").strip("/")
+    curr = posixpath.dirname(norm_file)
+    while True:
+        candidate = os.path.join(repo_dir, curr, "package.json") if curr else os.path.join(repo_dir, "package.json")
+        if os.path.isfile(candidate):
+            return posixpath.join(curr, "package.json") if curr else "package.json"
+        if not curr or curr == ".":
+            break
+        parent = posixpath.dirname(curr)
+        if parent == curr:
+            break
+        curr = parent
+    return None
+
+
+def extract_package_json_references(repo_dir: str, pkg_rel_path: str) -> Set[str]:
+    """Extracts intentional build outputs referenced in nearest package.json.
+
+    Supports bin (string or object values), main, module, types, and exports
+    (all string values, nested objects included; normalise "./").
+    """
+    full_path = os.path.join(repo_dir, pkg_rel_path)
+    pkg_dir = posixpath.dirname(pkg_rel_path.replace("\\", "/"))
+    referenced: Set[str] = set()
+
+    try:
+        content = Path(full_path).read_text(encoding="utf-8", errors="replace")
+        data = json.loads(content)
+        if not isinstance(data, dict):
+            return referenced
+    except Exception:
+        return referenced
+
+    raw_candidates: List[str] = []
+
+    # bin: string or object values
+    bin_val = data.get("bin")
+    if isinstance(bin_val, str):
+        raw_candidates.append(bin_val)
+    elif isinstance(bin_val, dict):
+        for v in bin_val.values():
+            if isinstance(v, str):
+                raw_candidates.append(v)
+
+    # main, module, types: strings
+    for field_name in ("main", "module", "types"):
+        val = data.get(field_name)
+        if isinstance(val, str):
+            raw_candidates.append(val)
+
+    # exports: all string values, nested objects included
+    exports_val = data.get("exports")
+    if exports_val is not None:
+        def _walk_exports(obj: Any) -> None:
+            if isinstance(obj, str):
+                raw_candidates.append(obj)
+            elif isinstance(obj, dict):
+                for v in obj.values():
+                    _walk_exports(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _walk_exports(item)
+
+        _walk_exports(exports_val)
+
+    for raw in raw_candidates:
+        s = raw.replace("\\", "/").strip()
+        # Normalise leading "./"
+        while s.startswith("./"):
+            s = s[2:]
+        s = s.lstrip("/")
+        if not s:
+            continue
+        # Resolve relative to pkg_dir
+        if pkg_dir and pkg_dir != ".":
+            full_rel = posixpath.normpath(posixpath.join(pkg_dir, s))
+        else:
+            full_rel = posixpath.normpath(s)
+        full_rel = full_rel.replace("\\", "/").strip("/")
+        referenced.add(full_rel)
+
+    return referenced
+
+
+def find_intentional_files(
+    repo_path: str,
+    tracked_files: Sequence[str],
+    keep_patterns: Optional[Sequence[str]] = None,
+) -> Set[str]:
+    """Identifies intentional build outputs and files that must never be untracked or counted as junk.
+
+    A tracked file is intentional when:
+    (a) referenced by the nearest package.json (bin, main, module, types, exports);
+    (b) re-included by a negation in the repo's own .gitignore (outside managed block);
+    (c) in a keep list: git config smartdrive.keep or --keep <pattern>.
+    """
+    repo_path = os.path.abspath(repo_path)
+    tracked_norm = [f.replace("\\", "/").strip("/") for f in tracked_files if f.strip()]
+    if not tracked_norm:
+        return set()
+
+    intentional: Set[str] = set()
+
+    # (a) Nearest package.json references. Installed dependencies are never the repo's own
+    # build output: inside node_modules every package.json points at its own dist/ files.
+    pkg_cache: Dict[str, Optional[str]] = {}
+    pkg_refs_cache: Dict[str, Set[str]] = {}
+
+    for f in tracked_norm:
+        if any(seg in DEPENDENCY_DIR_NAMES for seg in f.split("/")[:-1]):
+            continue
+        f_dir = posixpath.dirname(f)
+        if f_dir not in pkg_cache:
+            pkg_cache[f_dir] = find_nearest_package_json(repo_path, f)
+        nearest_pkg = pkg_cache[f_dir]
+        if nearest_pkg:
+            if nearest_pkg not in pkg_refs_cache:
+                pkg_refs_cache[nearest_pkg] = extract_package_json_references(repo_path, nearest_pkg)
+            if f in pkg_refs_cache[nearest_pkg]:
+                intentional.add(f)
+
+    # (b) Re-included by a negation in repo's own .gitignore
+    gi_path = os.path.join(repo_path, ".gitignore")
+    if os.path.isfile(gi_path):
+        try:
+            gi_content = Path(gi_path).read_text(encoding="utf-8", errors="replace")
+            if MANAGED_HEADER in gi_content and MANAGED_FOOTER in gi_content:
+                s_idx = gi_content.find(MANAGED_HEADER)
+                e_idx = gi_content.find(MANAGED_FOOTER) + len(MANAGED_FOOTER)
+                user_content = gi_content[:s_idx] + "\n" + gi_content[e_idx:]
+            else:
+                user_content = gi_content
+
+            neg_patterns: List[str] = []
+            for line in user_content.splitlines():
+                line_s = line.strip()
+                if line_s.startswith("!"):
+                    neg_pat = line_s[1:].strip()
+                    if neg_pat:
+                        neg_patterns.append(neg_pat)
+
+            for neg_pat in neg_patterns:
+                for f in tracked_norm:
+                    if pattern_matches_path(f, neg_pat):
+                        intentional.add(f)
+        except OSError:
+            pass
+
+    # (c) Keep list: git config smartdrive.keep (multi-value) + keep_patterns
+    git_keep: List[str] = []
+    code, out, _ = _git(repo_path, "config", "--get-all", "smartdrive.keep")
+    if code == 0 and out.strip():
+        git_keep = [line.strip() for line in out.splitlines() if line.strip()]
+
+    combined_keep = list(git_keep) + list(keep_patterns or [])
+    for pat in combined_keep:
+        pat_clean = pat.strip()
+        if pat_clean.startswith("!"):
+            pat_clean = pat_clean[1:].strip()
+        if not pat_clean:
+            continue
+        for f in tracked_norm:
+            if pattern_matches_path(f, pat_clean) or fnmatch.fnmatchcase(f, pat_clean):
+                intentional.add(f)
+
+    return intentional
+
+
+def resolve_managed_patterns(
+    recommended_patterns: Sequence[str],
+    intentional_files: Sequence[str],
+) -> Tuple[List[str], Dict[str, str]]:
+    """Resolves recommended patterns against intentional build outputs.
+
+    If a recommended pattern would ignore intentional file(s):
+    - Uses `<dir>/*` followed by `!<file>` lines if every intentional file
+      sits directly in that directory.
+    - Otherwise omits that pattern for this repo and records the reason.
+    """
+    intentional_list = sorted(list(set(intentional_files)))
+    if not intentional_list:
+        return list(recommended_patterns), {}
+
+    resolved: List[str] = []
+    omitted: Dict[str, str] = {}
+
+    for pat in recommended_patterns:
+        pat_s = pat.strip()
+        if not pat_s or pat_s.startswith("#") or pat_s.startswith("!"):
+            resolved.append(pat)
+            continue
+
+        matching_intentional = [f for f in intentional_list if pattern_matches_path(f, pat_s)]
+        if not matching_intentional:
+            resolved.append(pat_s)
+            continue
+
+        if pat_s.endswith("/"):
+            dir_name = pat_s.rstrip("/")
+            all_directly_in_dir = all(
+                posixpath.dirname(f) == dir_name
+                for f in matching_intentional
+            )
+            if all_directly_in_dir:
+                resolved.append(f"{dir_name}/*")
+                for f in sorted(matching_intentional):
+                    resolved.append(f"!{f}")
+            else:
+                nested_files = [
+                    f for f in matching_intentional
+                    if posixpath.dirname(f) != dir_name
+                ]
+                sample_nested = nested_files[0] if nested_files else matching_intentional[0]
+                reason = f"contains nested intentional file: {sample_nested}"
+                omitted[pat_s] = reason
+        else:
+            reason = f"matches intentional file: {matching_intentional[0]}"
+            omitted[pat_s] = reason
+
+    return resolved, omitted
+
+
+# -----------------------------------------------------------------------------
 # Remote analysis (zero network calls)
 # -----------------------------------------------------------------------------
 
@@ -528,6 +801,11 @@ class GitignoreAuditResult:
     remote: str
     is_possibly_public: bool
     personal_data_at_risk: bool
+    owner_class: str = "own"  # "own" | "third-party" | "local"
+    visibility: str = "unknown"  # "public" | "private" | "internal" | "missing" | "unknown"
+    tracked_secrets: List[Dict[str, Any]] = field(default_factory=list)
+    intentional_files: List[str] = field(default_factory=list)
+    omitted_patterns: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -544,6 +822,8 @@ class GitignoreApplyResult:
     stacks: List[str]
     managed_patterns_count: int
     untracked_files: List[str]
+    intentional_files: List[str] = field(default_factory=list)
+    omitted_patterns: Dict[str, str] = field(default_factory=dict)
     error: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -551,11 +831,235 @@ class GitignoreApplyResult:
 
 
 # -----------------------------------------------------------------------------
+# GitHub CLI (gh) & Visibility
+# -----------------------------------------------------------------------------
+
+def _run_gh(*args: str, timeout: int = GH_TIMEOUT) -> Tuple[int, str, str]:
+    """Runs a gh CLI command without interactive prompts."""
+    env = dict(os.environ, GH_PROMPT_DISABLED="1")
+    try:
+        res = subprocess.run(
+            ["gh", *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            env=env,
+            check=False,
+        )
+        return res.returncode, res.stdout, res.stderr
+    except (OSError, subprocess.SubprocessError) as exc:
+        return 1, "", str(exc)
+
+
+def check_gh_authenticated(reset_cache: bool = False) -> bool:
+    """Checks whether the GitHub CLI (gh) is installed and authenticated."""
+    global _GH_AUTH_CACHE
+    if reset_cache or _GH_AUTH_CACHE is None:
+        if shutil.which("gh") is None:
+            _GH_AUTH_CACHE = False
+        else:
+            code, _, _ = _run_gh("auth", "status", timeout=GH_TIMEOUT)
+            _GH_AUTH_CACHE = (code == 0)
+    return bool(_GH_AUTH_CACHE)
+
+
+def query_gh_visibility(owner_repo: str, timeout: int = GH_TIMEOUT) -> str:
+    """Queries repository visibility via gh CLI ('public', 'private', 'internal', 'missing', or 'unknown')."""
+    global _GH_VISIBILITY_CACHE
+    if owner_repo in _GH_VISIBILITY_CACHE:
+        return _GH_VISIBILITY_CACHE[owner_repo]
+
+    if not check_gh_authenticated():
+        _GH_VISIBILITY_CACHE[owner_repo] = "unknown"
+        return "unknown"
+
+    code, out, err = _run_gh("repo", "view", owner_repo, "--json", "visibility", timeout=timeout)
+    if code == 0 and out.strip():
+        try:
+            data = json.loads(out)
+            vis = str(data.get("visibility", "")).strip().lower()
+            if vis in ("public", "private", "internal"):
+                _GH_VISIBILITY_CACHE[owner_repo] = vis
+                return vis
+        except Exception:
+            pass
+    else:
+        combined = (err + " " + out).lower()
+        if "could not resolve to a repository" in combined or "not found" in combined:
+            _GH_VISIBILITY_CACHE[owner_repo] = "missing"
+            return "missing"
+
+    _GH_VISIBILITY_CACHE[owner_repo] = "unknown"
+    return "unknown"
+
+
+def clear_gh_cache() -> None:
+    """Clears gh authentication and visibility caches (useful for testing)."""
+    global _GH_AUTH_CACHE, _GH_VISIBILITY_CACHE
+    _GH_AUTH_CACHE = None
+    _GH_VISIBILITY_CACHE.clear()
+
+
+# -----------------------------------------------------------------------------
+# Ownership & Secret Detection Helpers
+# -----------------------------------------------------------------------------
+
+def extract_remote_owner(remote_url: str) -> Optional[str]:
+    """Extracts remote repository owner/organization from a remote URL."""
+    url = (remote_url or "").strip()
+    if not url:
+        return None
+    if url.startswith("file://") or os.path.isabs(url) or re.match(r"^[A-Za-z]:[\\/]", url):
+        return None
+
+    u = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", url)
+    u = re.sub(r"^[^@/]+@", "", u)
+    u = re.sub(r"^([^/:]+):(\d+)/", r"\1/", u)
+    u = re.sub(r"^([^/:]+):", r"\1/", u)
+    parts = [p for p in u.replace("\\", "/").split("/") if p]
+    if len(parts) >= 2:
+        owner = parts[1]
+        if owner.endswith(".git"):
+            owner = owner[:-4]
+        return owner if owner else None
+    return None
+
+
+def extract_github_owner_repo(remote_url: str) -> Optional[str]:
+    """Extracts owner/repo for GitHub hosted remotes (e.g. DuongNAD/smart-drive-os)."""
+    url = (remote_url or "").strip()
+    if not url:
+        return None
+    if url.startswith("file://") or os.path.isabs(url) or re.match(r"^[A-Za-z]:[\\/]", url):
+        return None
+
+    u = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", url)
+    u = re.sub(r"^[^@/]+@", "", u)
+    u = re.sub(r"^([^/:]+):(\d+)/", r"\1/", u)
+    u = re.sub(r"^([^/:]+):", r"\1/", u)
+    parts = [p for p in u.replace("\\", "/").split("/") if p]
+    if len(parts) >= 3 and "github.com" in parts[0].lower():
+        owner = parts[1]
+        repo_name = parts[2]
+        if repo_name.endswith(".git"):
+            repo_name = repo_name[:-4]
+        return f"{owner}/{repo_name}"
+    return None
+
+
+def is_third_party_path(repo_path: str) -> bool:
+    """True if repo_path contains a folder named open_source, vendor, or third_party."""
+    norm = os.path.normpath(repo_path).replace("\\", "/")
+    segments = [s.lower() for s in norm.split("/") if s]
+    return any(seg in THIRD_PARTY_DIR_NAMES for seg in segments)
+
+
+def get_configured_git_owner(
+    repo_path: Optional[str] = None,
+    drive_root: Optional[str] = None,
+) -> Optional[str]:
+    """Resolves configured git owner from environment variable, git config, or drive config."""
+    # 1. Environment variable
+    env_owner = os.environ.get("SMART_DRIVE_GIT_OWNER")
+    if env_owner and env_owner.strip():
+        return env_owner.strip()
+
+    # 2. Git config smartdrive.owner
+    if repo_path and os.path.isdir(repo_path):
+        code, out, _ = _git(repo_path, "config", "--get", "smartdrive.owner")
+        if code == 0 and out.strip():
+            return out.strip()
+    code, out, _ = _git(".", "config", "--global", "--get", "smartdrive.owner")
+    if code == 0 and out.strip():
+        return out.strip()
+
+    # 3. Drive config file (.smart_drive/config.json)
+    if drive_root and os.path.isdir(drive_root):
+        cfg_file = os.path.join(drive_root, ".smart_drive", "config.json")
+        if os.path.isfile(cfg_file):
+            try:
+                data = json.loads(Path(cfg_file).read_text(encoding="utf-8", errors="replace"))
+                cfg_owner = data.get("git_owner") or data.get("owner")
+                if cfg_owner and str(cfg_owner).strip():
+                    return str(cfg_owner).strip()
+            except Exception:
+                pass
+
+    return None
+
+
+def is_secret_path(rel_path: str) -> bool:
+    """True if rel_path matches .env-like or secret credential files."""
+    norm = rel_path.replace("\\", "/")
+    filename = norm.split("/")[-1].lower()
+
+    # Exclude templates and examples
+    if (
+        filename in (".env.example", ".env.sample", ".env.template")
+        or filename.endswith(".example")
+        or filename.endswith(".template")
+    ):
+        return False
+
+    if filename == ".env" or filename.startswith(".env."):
+        return True
+    if filename.endswith(".pem") or filename.endswith(".key"):
+        return True
+    if fnmatch.fnmatchcase(filename, "credentials*.json"):
+        return True
+    return False
+
+
+def extract_secret_var_names(full_path: str, filename: Optional[str] = None) -> List[str]:
+    """Extracts variable or key names only (never values) from secret files."""
+    if not os.path.isfile(full_path):
+        return []
+
+    if filename is None:
+        filename = os.path.basename(full_path)
+
+    fn_low = filename.lower()
+    var_names: List[str] = []
+
+    try:
+        if fn_low == ".env" or fn_low.startswith(".env."):
+            content = Path(full_path).read_text(encoding="utf-8", errors="replace")
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[7:].strip()
+                if "=" in line:
+                    k = line.split("=", 1)[0].strip()
+                    if k and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", k):
+                        var_names.append(k)
+        elif fnmatch.fnmatchcase(fn_low, "credentials*.json"):
+            content = Path(full_path).read_text(encoding="utf-8", errors="replace")
+            data = json.loads(content)
+            if isinstance(data, dict):
+                for k in data.keys():
+                    if isinstance(k, str) and k.strip():
+                        var_names.append(k.strip())
+    except Exception:
+        pass
+
+    return list(dict.fromkeys(var_names))
+
+
+# -----------------------------------------------------------------------------
 # Core operations: audit and apply
 # -----------------------------------------------------------------------------
 
-def audit_repo(repo_path: str) -> GitignoreAuditResult:
-    """Audits one repository for .gitignore compliance, tracked junk, and personal data."""
+def audit_repo(
+    repo_path: str,
+    configured_owner: Optional[str] = None,
+    include_third_party_junk: bool = False,
+    keep_patterns: Optional[Sequence[str]] = None,
+) -> GitignoreAuditResult:
+    """Audits one repository for .gitignore compliance, tracked junk, personal data, and secrets."""
     repo_path = os.path.abspath(repo_path)
     gi_path = os.path.join(repo_path, ".gitignore")
     has_gitignore = os.path.exists(gi_path)
@@ -575,28 +1079,6 @@ def audit_repo(repo_path: str) -> GitignoreAuditResult:
 
     stacks = detect_stacks(repo_path)
     recommended = get_recommended_patterns(stacks)
-    missing_patterns = [p for p in recommended if not p.startswith("#") and p not in existing_patterns]
-
-    tracked_junk_count = 0
-    tracked_junk_by_pattern: Dict[str, int] = collections.defaultdict(int)
-    tracked_junk_files: List[str] = []
-    tracked_personal_data: List[str] = []
-
-    code, out, _ = _git(repo_path, "ls-files")
-    if code == 0 and out.strip():
-        for line in out.splitlines():
-            f = line.strip()
-            if not f:
-                continue
-            matched_pat = check_path_against_patterns(f, recommended)
-            if matched_pat:
-                tracked_junk_count += 1
-                tracked_junk_by_pattern[matched_pat] += 1
-                if len(tracked_junk_files) < 20:
-                    tracked_junk_files.append(f)
-
-            if is_personal_data_path(f):
-                tracked_personal_data.append(f)
 
     # Remote detection
     code, out, _ = _git(repo_path, "config", "--get", "remote.origin.url")
@@ -609,7 +1091,82 @@ def audit_repo(repo_path: str) -> GitignoreAuditResult:
     else:
         remote_url = out.strip()
 
-    is_public, _ = is_remote_possibly_public(remote_url)
+    # Ownership classification: own, third-party, local
+    if is_third_party_path(repo_path):
+        owner_class = "third-party"
+    elif not remote_url or remote_url.startswith("file://") or os.path.isabs(remote_url) or re.match(r"^[A-Za-z]:[\\/]", remote_url):
+        owner_class = "local"
+    else:
+        remote_owner = extract_remote_owner(remote_url)
+        cfg_owner = configured_owner or get_configured_git_owner(repo_path)
+        if cfg_owner and remote_owner and remote_owner.lower() == cfg_owner.lower():
+            owner_class = "own"
+        elif cfg_owner and remote_owner:
+            owner_class = "third-party"
+        else:
+            owner_class = "own"
+
+    # Visibility detection (gh queried only for own repos)
+    visibility = "unknown"
+    if owner_class == "own":
+        gh_owner_repo = extract_github_owner_repo(remote_url)
+        if gh_owner_repo:
+            visibility = query_gh_visibility(gh_owner_repo)
+
+    if visibility == "public":
+        is_public = True
+    elif visibility in ("private", "internal", "missing"):
+        is_public = False
+    else:
+        is_public, _ = is_remote_possibly_public(remote_url)
+
+    # Tracked files & intentional files detection
+    code, out, _ = _git(repo_path, "ls-files")
+    tracked_files: List[str] = []
+    if code == 0 and out.strip():
+        tracked_files = [f.strip() for f in out.splitlines() if f.strip()]
+
+    intentional_set = find_intentional_files(repo_path, tracked_files, keep_patterns=keep_patterns)
+    intentional_files = sorted(list(intentional_set))
+
+    effective_patterns, omitted_patterns = resolve_managed_patterns(recommended, intentional_files)
+
+    # Missing patterns check (third-party repos manage their own .gitignore)
+    if owner_class == "third-party" and not include_third_party_junk:
+        missing_patterns = []
+    else:
+        missing_patterns = [p for p in effective_patterns if not p.startswith("#") and p not in existing_patterns]
+
+    tracked_junk_count = 0
+    tracked_junk_by_pattern: Dict[str, int] = collections.defaultdict(int)
+    tracked_junk_files: List[str] = []
+    tracked_personal_data: List[str] = []
+    tracked_secrets: List[Dict[str, Any]] = []
+
+    for f in tracked_files:
+        if f in intentional_set:
+            continue
+
+        # Tracked secrets: .env, .env.*, *.pem, *.key, credentials*.json
+        if is_secret_path(f):
+            full_f = os.path.join(repo_path, f)
+            vnames = extract_secret_var_names(full_f, os.path.basename(f))
+            tracked_secrets.append({"path": f, "var_names": vnames, "vars": vnames})
+
+        # Personal learning data
+        if is_personal_data_path(f):
+            tracked_personal_data.append(f)
+
+        # Tracked junk: intentional files are never counted as junk
+        if owner_class != "third-party" or include_third_party_junk:
+            if not is_secret_path(f):
+                matched_pat = check_path_against_patterns(f, effective_patterns)
+                if matched_pat:
+                    tracked_junk_count += 1
+                    tracked_junk_by_pattern[matched_pat] += 1
+                    if len(tracked_junk_files) < 20:
+                        tracked_junk_files.append(f)
+
     personal_data_at_risk = bool(tracked_personal_data and is_public)
 
     return GitignoreAuditResult(
@@ -625,10 +1182,20 @@ def audit_repo(repo_path: str) -> GitignoreAuditResult:
         remote=remote_url,
         is_possibly_public=is_public,
         personal_data_at_risk=personal_data_at_risk,
+        owner_class=owner_class,
+        visibility=visibility,
+        tracked_secrets=tracked_secrets,
+        intentional_files=intentional_files,
+        omitted_patterns=omitted_patterns,
     )
 
 
-def audit_all(root: Optional[str] = None) -> List[GitignoreAuditResult]:
+def audit_all(
+    root: Optional[str] = None,
+    configured_owner: Optional[str] = None,
+    include_third_party_junk: bool = False,
+    keep_patterns: Optional[Sequence[str]] = None,
+) -> List[GitignoreAuditResult]:
     """Audits gitignore governance across all repositories discovered under root."""
     if not root:
         from smart_drive.core.root import resolve_drive_root
@@ -637,10 +1204,38 @@ def audit_all(root: Optional[str] = None) -> List[GitignoreAuditResult]:
 
     from smart_drive.core.repos import find_repositories
     repo_paths = find_repositories([root])
-    return [audit_repo(rp) for rp in repo_paths]
+
+    # Infer owner if not explicitly passed
+    cfg_owner = configured_owner or get_configured_git_owner(drive_root=root)
+    if not cfg_owner and repo_paths:
+        remote_owners: List[str] = []
+        for rp in repo_paths:
+            code, out, _ = _git(rp, "config", "--get", "remote.origin.url")
+            if code == 0 and out.strip():
+                o = extract_remote_owner(out.strip())
+                if o:
+                    remote_owners.append(o)
+        if remote_owners:
+            counter = collections.Counter(remote_owners)
+            cfg_owner = counter.most_common(1)[0][0]
+
+    return [
+        audit_repo(
+            rp,
+            configured_owner=cfg_owner,
+            include_third_party_junk=include_third_party_junk,
+            keep_patterns=keep_patterns,
+        )
+        for rp in repo_paths
+    ]
 
 
-def apply_repo(repo_path: str, dry_run: bool = True, untrack: bool = False) -> GitignoreApplyResult:
+def apply_repo(
+    repo_path: str,
+    dry_run: bool = True,
+    untrack: bool = False,
+    keep_patterns: Optional[Sequence[str]] = None,
+) -> GitignoreApplyResult:
     """Applies SmartDrive-managed .gitignore block and optionally untracks matching files.
 
     Refuses if untrack=True and repository has staged changes.
@@ -666,7 +1261,18 @@ def apply_repo(repo_path: str, dry_run: bool = True, untrack: bool = False) -> G
         except OSError as e:
             raise ValueError(f"Cannot read .gitignore: {e}")
 
-    managed_block = generate_managed_block(stacks, newline=newline)
+    code, out, _ = _git(repo_path, "ls-files")
+    tracked_files: List[str] = []
+    if code == 0 and out.strip():
+        tracked_files = [f.strip() for f in out.splitlines() if f.strip()]
+
+    intentional_set = find_intentional_files(repo_path, tracked_files, keep_patterns=keep_patterns)
+    intentional_files = sorted(list(intentional_set))
+
+    recommended = get_recommended_patterns(stacks)
+    effective_patterns, omitted_patterns = resolve_managed_patterns(recommended, intentional_files)
+
+    managed_block = generate_managed_block(stacks, newline=newline, intentional_files=intentional_files)
     new_content = merge_managed_block(old_content, managed_block, newline=newline)
 
     # Diff calculation
@@ -675,15 +1281,13 @@ def apply_repo(repo_path: str, dry_run: bool = True, untrack: bool = False) -> G
     from_file = ".gitignore (current)" if not created else "/dev/null"
     diff = "".join(difflib.unified_diff(old_lines, new_lines, fromfile=from_file, tofile=".gitignore (managed)"))
 
-    # Check matching tracked files
-    managed_patterns = get_recommended_patterns(stacks)
+    # Check matching tracked files (intentional files are never untracked)
     tracked_matching: List[str] = []
-    code, out, _ = _git(repo_path, "ls-files")
-    if code == 0 and out.strip():
-        for line in out.splitlines():
-            f = line.strip()
-            if f and check_path_against_patterns(f, managed_patterns):
-                tracked_matching.append(f)
+    for f in tracked_files:
+        if f in intentional_set:
+            continue
+        if check_path_against_patterns(f, effective_patterns) or is_secret_path(f):
+            tracked_matching.append(f)
 
     applied = False
     if not dry_run:
@@ -705,6 +1309,48 @@ def apply_repo(repo_path: str, dry_run: bool = True, untrack: bool = False) -> G
         gitignore_path=gi_path,
         created=created,
         stacks=stacks,
-        managed_patterns_count=len(managed_patterns),
+        managed_patterns_count=len(effective_patterns),
         untracked_files=tracked_matching if untrack else [],
+        intentional_files=intentional_files,
+        omitted_patterns=omitted_patterns,
     )
+
+
+__all__ = [
+    "BASE_PATTERNS",
+    "STACK_PATTERNS",
+    "PERSONAL_DATA_PATTERNS",
+    "MANAGED_HEADER",
+    "MANAGED_FOOTER",
+    "THIRD_PARTY_DIR_NAMES",
+    "GitignoreAuditResult",
+    "GitignoreApplyResult",
+    "detect_stacks",
+    "get_recommended_patterns",
+    "generate_managed_block",
+    "detect_line_ending",
+    "merge_managed_block",
+    "pattern_matches_path",
+    "check_path_against_patterns",
+    "is_personal_data_path",
+    "is_remote_possibly_public",
+    "has_staged_changes",
+    "check_gh_authenticated",
+    "query_gh_visibility",
+    "clear_gh_cache",
+    "extract_remote_owner",
+    "extract_github_owner_repo",
+    "is_third_party_path",
+    "get_configured_git_owner",
+    "is_secret_path",
+    "extract_secret_var_names",
+    "audit_repo",
+    "audit_all",
+    "apply_repo",
+    "find_intentional_files",
+    "find_nearest_package_json",
+    "extract_package_json_references",
+    "resolve_managed_patterns",
+    "_run_gh",
+]
+

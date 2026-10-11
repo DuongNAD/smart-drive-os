@@ -46,7 +46,7 @@ from smart_drive.search.parser import apply_size_spec, parse_search_query
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "smart-drive"
-SERVER_VERSION = "1.3.0"
+SERVER_VERSION = "1.3.1"
 
 # Sent as InitializeResult.instructions: the MCP spec puts it at the top level of the result, which is where
 # clients look for it (it was nested inside serverInfo, so no client ever saw it).
@@ -401,6 +401,18 @@ TOOLS: List[Dict[str, Any]] = [
                 "untrack": {
                     "type": "boolean",
                     "description": "If true, untracks files matching managed patterns from git index (leaves working files untouched).",
+                },
+                "all": {
+                    "type": "boolean",
+                    "description": "If true, audit includes all repositories including third-party clones in detailed report (default: false).",
+                },
+                "owner": {
+                    "type": "string",
+                    "description": "Override git owner for repository classification (optional).",
+                },
+                "keep": {
+                    "type": ["string", "array"],
+                    "description": "Pattern or list of patterns of intentional files to keep (never untracked or counted as junk).",
                 },
             },
             "required": ["action"],
@@ -1178,10 +1190,26 @@ class SmartDriveMCPServer:
         return {"status": "dry_run", "plan_count": len(plan), "actions": [a.to_dict() for a in plan]}
 
     def handle_ssd_gitignore(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        from smart_drive.core.gitignore import apply_repo, audit_all, audit_repo
+        from smart_drive.core.gitignore import (
+            apply_repo,
+            audit_all,
+            audit_repo,
+            extract_remote_owner,
+            get_configured_git_owner,
+        )
 
         action = str(args.get("action", "audit")).strip().lower()
         repo = args.get("repo")
+        show_all = self._parse_bool(args.get("all"), default=False)
+        owner_override = args.get("owner")
+        raw_keep = args.get("keep")
+        if isinstance(raw_keep, str):
+            keep_patterns = [raw_keep]
+        elif isinstance(raw_keep, list):
+            keep_patterns = [str(k) for k in raw_keep]
+        else:
+            keep_patterns = []
+
         if repo:
             repo_path = self._resolve_safe_path(repo, must_exist=True)
         else:
@@ -1189,26 +1217,59 @@ class SmartDriveMCPServer:
 
         if action == "audit":
             if repo_path and os.path.exists(os.path.join(repo_path, ".git")):
-                results = [audit_repo(repo_path)]
+                results = [audit_repo(repo_path, configured_owner=owner_override, keep_patterns=keep_patterns)]
             else:
                 root = repo_path or self._ensure_root()
                 from smart_drive.core.repos import find_repositories
                 repo_paths = find_repositories([root])
-                results = [audit_repo(rp) for rp in repo_paths]
+                cfg_owner = owner_override or get_configured_git_owner(drive_root=root)
+                if not cfg_owner and repo_paths:
+                    remote_owners = []
+                    for rp in repo_paths:
+                        c, out, _ = _git(rp, "config", "--get", "remote.origin.url")
+                        if c == 0 and out.strip():
+                            o = extract_remote_owner(out.strip())
+                            if o:
+                                remote_owners.append(o)
+                    if remote_owners:
+                        cfg_owner = collections.Counter(remote_owners).most_common(1)[0][0]
+                results = [audit_repo(rp, configured_owner=cfg_owner, keep_patterns=keep_patterns) for rp in repo_paths]
+
+            offenders = sorted(
+                [r for r in results if r.tracked_junk_count > 0 or r.tracked_secrets or r.personal_data_at_risk],
+                key=lambda r: (len(r.tracked_secrets), r.tracked_junk_count, len(r.tracked_personal_data)),
+                reverse=True,
+            )
 
             return {
                 "summary": {
                     "repos_audited": len(results),
+                    "own_repos": sum(1 for r in results if r.owner_class == "own"),
+                    "local_repos": sum(1 for r in results if r.owner_class == "local"),
+                    "third_party_repos": sum(1 for r in results if r.owner_class == "third-party"),
                     "compliant_repos": sum(
                         1 for r in results
-                        if not r.missing_patterns and not r.tracked_junk_count and not r.personal_data_at_risk
+                        if not r.missing_patterns and not r.tracked_junk_count and not r.personal_data_at_risk and not r.tracked_secrets and r.visibility != "missing"
                     ),
                     "repos_with_junk": sum(1 for r in results if r.tracked_junk_count > 0),
+                    "repos_with_secrets": sum(1 for r in results if r.tracked_secrets),
                     "repos_with_personal_data_at_risk": sum(1 for r in results if r.personal_data_at_risk),
+                    "remote_missing": sum(1 for r in results if r.visibility == "missing"),
+                    "top_offenders": [
+                        {
+                            "repo": r.repo,
+                            "tracked_junk_count": r.tracked_junk_count,
+                            "tracked_secrets_count": len(r.tracked_secrets),
+                            "owner_class": r.owner_class,
+                        }
+                        for r in offenders[:5]
+                    ],
                 },
                 "repos": [
                     {
                         "repo": r.repo,
+                        "owner_class": r.owner_class,
+                        "visibility": r.visibility,
                         "has_gitignore": r.has_gitignore,
                         "has_managed_block": r.has_managed_block,
                         "stacks": r.stacks,
@@ -1217,6 +1278,9 @@ class SmartDriveMCPServer:
                         "tracked_junk_top": r.tracked_junk_files[:5],
                         "tracked_personal_data": r.tracked_personal_data,
                         "personal_data_at_risk": r.personal_data_at_risk,
+                        "tracked_secrets": r.tracked_secrets,
+                        "intentional_files": r.intentional_files,
+                        "omitted_patterns": r.omitted_patterns,
                         "remote": r.remote,
                         "is_possibly_public": r.is_possibly_public,
                     }
@@ -1228,7 +1292,7 @@ class SmartDriveMCPServer:
                 raise ValueError("Parameter 'repo' is required for action 'apply'")
             apply_mode = self._parse_bool(args.get("apply"), default=False)
             untrack_mode = self._parse_bool(args.get("untrack"), default=False)
-            res = apply_repo(repo_path, dry_run=not apply_mode, untrack=untrack_mode)
+            res = apply_repo(repo_path, dry_run=not apply_mode, untrack=untrack_mode, keep_patterns=keep_patterns)
             diff_lines = res.diff.splitlines() if res.diff else []
             return {
                 "repo": res.repo,
@@ -1239,6 +1303,8 @@ class SmartDriveMCPServer:
                 "managed_patterns_count": res.managed_patterns_count,
                 "untracked_count": len(res.untracked_files),
                 "untracked_files": res.untracked_files[:20],
+                "intentional_files": res.intentional_files,
+                "omitted_patterns": res.omitted_patterns,
                 "diff_lines_count": len(diff_lines),
                 "diff_preview": diff_lines[:15],
             }

@@ -10,9 +10,9 @@
 [![MCP Security Audit: Grade A (100/100)](https://img.shields.io/badge/MCP%20Audit-Grade%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Tests: 992/992 Passed (100%)](https://img.shields.io/badge/tests-992%2F992%20passed%20(100%25)-brightgreen.svg)](#)
+[![Tests: 1014/1014 Passed (100%)](https://img.shields.io/badge/tests-1014%2F1014%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Portable Launchers](https://img.shields.io/badge/launchers-20%20portable%20scripts-blue.svg)](#)
-[![Release: v1.3.0](https://img.shields.io/badge/release-v1.3.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.3.0)
+[![Release: v1.3.1](https://img.shields.io/badge/release-v1.3.1-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.3.1)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **High-Performance Autonomous Drive Operating Suite, Workstation Hybrid Architecture, Snapshot Integrity Engine & Sub-10ms SQLite FTS5 Instant Search for External SSDs (exFAT), Internal Secondary Drives (NTFS), and AI Coding Agents.**
@@ -267,8 +267,8 @@ A project is meant to live once on the portable SSD and once on each machine it 
 ### 12. Gitignore Governance & Personal Data Protection (`smart-drive gitignore`)
 Ensures clean, robust `.gitignore` rules across every git repository on the drive without recursive disk scans:
 - **Stack-Aware Auto-Detection**: Dynamically detects repo tech stacks (Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models, and Learning) from root and shallow filesystem cues (<5ms).
-- **exFAT Cluster Slack Defense**: Automatically ignores high-slack micro-files on 512KB exFAT clusters—such as agent scratch trees (`.agents/`, which often hold hundreds of tiny files consuming hundreds of megabytes in cluster slack), `.claude/settings.local.json`, runtime caches (`__pycache__/`, `.pytest_cache/`, `node_modules/`), build outputs (`target/`, `dist/`, `bin/`, `obj/`), and OS metadata.
-- **Constellation "Personal-Data" Contract Protection**: For learning repositories (Aurora slides, Polaris briefs, Vega memory collections), automatically locks down personal learning history: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, and `**/polaris/captures/`.
+- **exFAT Cluster Slack Defense**: Automatically ignores high-slack micro-files on 512KB exFAT clusters—such as agent scratch trees (`**/.agents/*`, which often hold hundreds of tiny files consuming hundreds of megabytes in cluster slack; `.agents/skills/`, `.agents/workflows/` and `.agents/rules/` are agent configuration and stay tracked), `.claude/settings.local.json`, runtime caches (`__pycache__/`, `.pytest_cache/`, `node_modules/`), build outputs (`target/`, `dist/`, `bin/`, `obj/`), and OS metadata.
+- **Constellation "Personal-Data" Contract Protection**: For learning repositories (Aurora slides, Polaris briefs, Vega memory collections), automatically locks down personal learning history: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/`, and `.polaris/` (learner profile).
 - **Public Repository Leak Detection**: Zero-network remote URL inspection flags when personal learning data is tracked in repositories with public remotes (GitHub, GitLab, Bitbucket) or unconfigured remotes.
 - **Safe Untracking (`--untrack`)**: Runs `git rm -r --cached` on matching tracked files without touching files in the working tree and refusing when staged changes exist.
 
@@ -487,8 +487,30 @@ Public learning repositories can inadvertently leak personal study metrics, memo
 
 During `audit`, repositories with public remote hosts (GitHub, GitLab, Bitbucket) or unconfigured remotes are immediately flagged with an alert if personal learning data is tracked.
 
+### Precision Ownership & Third-Party Clone Exclusion
+Repositories are automatically categorized into three distinct ownership classes:
+- **`own`**: Remote origin owner matches configured owner (`--owner`, `SMART_DRIVE_GIT_OWNER`, git config `smartdrive.owner`, or drive-wide consensus).
+- **`third-party`**: Upstream clones located in `open_source/`, `vendor/`, `third_party/`, or with differing remote owners. Their upstream build and distribution files (`dist/`, `build/`) are respected and excluded from junk warnings.
+- **`local`**: Offline or air-gapped repositories without configured remote endpoints.
+
+Audit focuses by default on `own` and `local` repositories, separating third-party clones into their own section. Use `--all` to inspect all repositories in the primary listing.
+
+### Live GitHub Visibility & Missing Remote Precision
+When the GitHub CLI (`gh`) is authenticated, SmartDrive-OS queries repository visibility (`public`, `private`, `internal`, `missing`) with short timeouts and per-run caching. Verified private repositories omit public exposure warnings, verified public repositories receive precise alerts, and deleted, renamed, or inaccessible repositories are classified as `missing` ("remote not found on GitHub") without false public alarms.
+
+### Intentional Build Outputs & Keep Lists
+Tracked files are recognized as intentional build outputs (never counted as junk and never untracked) when:
+1. Referenced by the nearest `package.json` (`bin`, `main`, `module`, `types`, or `exports` fields, including nested exports objects; normalising `./`);
+2. Explicitly re-included by a negation in the repository's own `.gitignore` (e.g. `!dist/bundle.mjs`);
+3. Present in a keep list: git config `smartdrive.keep` (multi-value patterns) or `--keep <pattern>` (repeatable flag on `audit` and `apply`).
+
+When a recommended pattern (such as `dist/`) would ignore an intentional file, the managed block emits `<dir>/*` followed by `!<file>` lines if every intentional file sits directly in that directory (allowing git to re-include the bundle); otherwise it safely omits that pattern for the repo to prevent breaking clone-and-run workflows.
+
+### High-Severity Tracked Secrets Auditing
+Accidentally tracked credentials (`.env`, `.env.*`, `*.pem`, `*.key`, `credentials*.json`) are surfaced in a high-severity alert showing **variable and key names only** (strictly zero secret values exposed) along with key rotation advice. Safe untracking (`apply --yes --untrack`) stages their removal from the git index while keeping working files intact on disk.
+
 ### Safe Untracking (`--untrack`)
-If junk or personal data was mistakenly committed to git, `smart-drive gitignore apply <repo> --yes --untrack` stages the removal via `git rm -r --cached`. **Working files on disk are never deleted**, no commits are made automatically, and untracking is safely **refused** if the repository has uncommitted staged changes.
+If junk or personal data was mistakenly committed to git, `smart-drive gitignore apply <repo> --yes --untrack` stages the removal via `git rm -r --cached`. **Working files on disk are never deleted**, intentional build outputs are preserved, no commits are made automatically, and untracking is safely **refused** if the repository has uncommitted staged changes.
 
 ### CLI Examples
 ```bash
@@ -498,13 +520,19 @@ smart-drive gitignore audit
 # 2. Output audit report in structured JSON:
 smart-drive gitignore audit --json
 
-# 3. Audit a specific project repository:
+# 3. Audit including third-party vendor clones in the main report:
+smart-drive gitignore audit --all
+
+# 4. Audit with an explicit GitHub/GitLab owner override:
+smart-drive gitignore audit --owner myorg
+
+# 5. Audit a specific project repository:
 smart-drive gitignore audit D:\teamwork_projects\my_project
 
-# 4. Preview .gitignore changes (dry run):
+# 6. Preview .gitignore changes (dry run):
 smart-drive gitignore apply D:\teamwork_projects\my_project
 
-# 5. Apply managed block to disk and untrack mistakenly committed junk:
+# 7. Apply managed block to disk and untrack mistakenly committed junk:
 smart-drive gitignore apply D:\teamwork_projects\my_project --yes --untrack
 ```
 
@@ -522,7 +550,7 @@ SmartDrive-OS provides native MCP server support, exposing 9 specialized tools t
 6. `ssd_check_safety`: exFAT compatibility validator (audits 9 Win32 forbidden chars, 22 DOS stems, and symlinks). *(read-only)*
 7. `ssd_status`: SSD mount root status, shield health, and taxonomy status. *(read-only)*
 8. `ssd_auto_organize`: Autonomous drive auto-zoning and anti-slack relocation with AcademicClassifier. *(destructive)*
-9. `ssd_gitignore`: Stack-aware `.gitignore` governance, personal data defense, and safe untracking. *(idempotent)*
+9. `ssd_gitignore`: Stack-aware `.gitignore` governance, personal data defense, secrets audit, and safe untracking. *(idempotent)*
 
 ### 1-Click Multi-Agent Registration
 Register all installed AI assistants instantly:
@@ -551,9 +579,9 @@ SmartDrive-OS is officially certified and indexed on the [M8ven MCP Directory](h
 
 ---
 
-## Testing & Verification Record (992 Tests, 100% Pass Rate)
+## Testing & Verification Record (1014 Tests, 100% Pass Rate)
 
-SmartDrive-OS is tested across **992 automated unit, integration, stress, and adversarial test cases** using **100% pure standard library `unittest`**:
+SmartDrive-OS is tested across **1014 automated unit, integration, stress, and adversarial test cases** using **100% pure standard library `unittest`**:
 
 ```bash
 # Run full test suite with standard library unittest:
@@ -563,13 +591,13 @@ python -m unittest discover tests -v
 ### Verified Test Results:
 ```text
 ----------------------------------------------------------------------
-Ran 992 tests in 57.242s
+Ran 1014 tests in 45.765s
 
 OK (skipped=79)
 ```
 
-- **Pass Rate**: **100.0%** (913 passed, 79 platform-skipped on non-Windows/sandbox, 0 failures, 0 errors).
-- **Gitignore Governance Coverage**: Stack detection across 9 ecosystems, CRLF line ending preservation, idempotent re-application, dry-run safety, junk & personal data detection, and staged change protection.
+- **Pass Rate**: **100.0%** (933 passed, 79 platform-skipped on non-Windows/sandbox, 0 failures, 0 errors).
+- **Gitignore Governance Coverage**: Precision ownership classification (`own`, `third-party`, `local`), intentional build output preservation (`package.json` bin/main/module/types/exports), `.gitignore` negation re-inclusion, multi-value keep lists (`smartdrive.keep` and `--keep`), directory pattern selective re-inclusion (`<dir>/*` with `!<file>`) and omission safety for nested outputs, third-party junk suppression, live `gh` visibility auditing with missing remote resolution (`visibility: missing`), high-severity tracked secrets auditing (variable names only), stack detection across 9 ecosystems, CRLF line ending preservation, idempotent re-application, dry-run safety, junk & personal data detection, and staged change protection.
 - **Learning Unit Coverage**: Atomic protection for Aurora courses, standalone decks, Polaris subjects, and cluster slack hotspot reporting.
 - **Adversarial Filesystem Coverage**: Cluster sizes from 512B to 32MB, boundary conditions (0B, 1B, 512KB-1B, 512KB, 512KB+1B), and large-scale stress tests.
 - **Inviolable Defense Coverage**: Complete verification of repository self-defense, Windows system folders, games, and active SQL Server database protection.
