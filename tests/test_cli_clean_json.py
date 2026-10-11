@@ -162,7 +162,7 @@ class TestDirectoryPurgesAreVerified(unittest.TestCase):
         code, out = self.run_clean("--json")
         report = json.loads(out)
         self.assertEqual(code, 0, out)
-        self.assertEqual((report["deleted_count"], report["failed_count"]), (1, 0))
+        self.assertEqual((report["deleted_count"], report["failed_count"]), (1, 0), out)
         self.assertFalse((self.root / "proj" / ".pytest_cache").exists())
         self.assertTrue((self.root / "proj").is_dir())
 

@@ -210,8 +210,10 @@ class TestCleanersAndJunkProtection(unittest.TestCase):
 
     def setUp(self) -> None:
         clear_unit_cache()
-        self.temp_dir = tempfile.mkdtemp(prefix="test_lu_clean_")
-        self.root = Path(self.temp_dir)
+        # Resolved like JunkDetector's scan root: CI temp dirs are 8.3 short names on Windows
+        # (RUNNER~1) and /var -> /private/var on macOS.
+        self.root = Path(tempfile.mkdtemp(prefix="test_lu_clean_")).resolve()
+        self.temp_dir = str(self.root)
 
     def tearDown(self) -> None:
         clear_unit_cache()
