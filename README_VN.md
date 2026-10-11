@@ -1,4 +1,8 @@
+<p align="center"><img src="docs/banner.jpg" alt="SmartDrive-OS — Sao Thổ với các vành đai ngăn nắp giữa không gian vũ trụ" width="100%"></p>
+
 # SmartDrive-OS — Hướng Dẫn Sử Dụng (Tiếng Việt)
+
+*Vành đai Sao Thổ tựa như những làn lưu trữ ngăn nắp: quản trị chuẩn xác và quy hoạch trật tự cho toàn bộ ổ đĩa.*
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
 [![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](#)

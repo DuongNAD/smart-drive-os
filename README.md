@@ -1,4 +1,8 @@
+<p align="center"><img src="docs/banner.jpg" alt="SmartDrive-OS — Saturn and its orderly rings in deep space" width="100%"></p>
+
 # SmartDrive-OS
+
+*Saturn's rings as orderly storage lanes: every file in its lane, across the whole drive.*
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
 [![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](#)
