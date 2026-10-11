@@ -45,6 +45,7 @@ from smart_drive.cli.cmd_audit import cmd_audit
 from smart_drive.cli.cmd_backup import cmd_backup
 from smart_drive.cli.cmd_classify import cmd_classify
 from smart_drive.cli.cmd_clean import cmd_clean
+from smart_drive.cli.cmd_gitignore import cmd_gitignore
 from smart_drive.cli.cmd_health import cmd_health
 from smart_drive.cli.cmd_init import cmd_init
 from smart_drive.cli.cmd_mcp import cmd_mcp
@@ -448,6 +449,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_repos.add_argument("--max-depth", type=int, default=12, help="How deep to look for clones (default: 12)")
     p_repos.add_argument("--json", action="store_true", help="Output the full report in JSON format")
 
+    # 19. gitignore
+    p_gi = subparsers.add_parser(
+        "gitignore",
+        help="Audit and apply SmartDrive-managed .gitignore blocks per repo stack",
+    )
+    p_gi.add_argument("--root", help="Drive root directory")
+    p_gi.add_argument("--json", action="store_true", help="Output in JSON format")
+
+    gi_sub = p_gi.add_subparsers(dest="action", help="Gitignore action (audit, apply)")
+
+    # gitignore audit
+    p_ga = gi_sub.add_parser("audit", help="Audit .gitignore compliance and tracked junk/personal data")
+    p_ga.add_argument("repo", nargs="?", default=None, help="Target repository path (optional; defaults to all repositories on drive)")
+    p_ga.add_argument("--root", default=argparse.SUPPRESS, help="Drive root directory")
+    p_ga.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output audit report in JSON format")
+
+    # gitignore apply
+    p_gap = gi_sub.add_parser("apply", help="Apply SmartDrive-managed .gitignore block")
+    p_gap.add_argument("repo", help="Target repository path")
+    p_gap.add_argument("--yes", "-y", action="store_true", help="Write changes to disk (default is dry-run)")
+    p_gap.add_argument("--untrack", action="store_true", help="Untrack files matching managed patterns from git index")
+    p_gap.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output apply result in JSON format")
+
     # self-path-check subcommand
     p_path_check = subparsers.add_parser(
         "self-path-check",
@@ -488,6 +512,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "offload": cmd_offload,
         "health": cmd_health,
         "repos": cmd_repos,
+        "gitignore": cmd_gitignore,
         "self-path-check": cmd_path_check,
         "path-check": cmd_path_check,
         "self_path_check": cmd_path_check,

@@ -488,8 +488,8 @@ class TestMCPToolHintAnnotations(SmartDriveTestCase):
     """Verifies that all 8 MCP tools declare explicit boolean hints adhering to protocol specs."""
 
     def test_all_eight_tools_declare_hint_annotations(self) -> None:
-        """All 8 tools must declare readOnlyHint, destructiveHint, idempotentHint, and openWorldHint."""
-        self.assertEqual(len(TOOLS), 8)
+        """All tools must declare readOnlyHint, destructiveHint, idempotentHint, and openWorldHint."""
+        self.assertEqual(len(TOOLS), 9)
         required_hints = ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"]
 
         for tool in TOOLS:

@@ -89,7 +89,7 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
 
     def test_r1_mcp_tools_catalog_and_prompts_efficiency(self) -> None:
         """R1: Catalog declares all 8 tools with token-efficient prompts and boolean hints."""
-        self.assertEqual(len(TOOLS), 8, "Must expose exactly 8 standard MCP tools")
+        self.assertEqual(len(TOOLS), 9, "Must expose exactly 9 standard MCP tools")
         tool_names = {t["name"] for t in TOOLS}
         expected_tools = {
             "ssd_search",
@@ -100,6 +100,7 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
             "ssd_check_safety",
             "ssd_status",
             "ssd_auto_organize",
+            "ssd_gitignore",
         }
         self.assertEqual(tool_names, expected_tools)
 

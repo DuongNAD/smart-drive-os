@@ -46,7 +46,7 @@ from smart_drive.search.parser import apply_size_spec, parse_search_query
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "smart-drive"
-SERVER_VERSION = "1.2.0"
+SERVER_VERSION = "1.3.0"
 
 # Sent as InitializeResult.instructions: the MCP spec puts it at the top level of the result, which is where
 # clients look for it (it was nested inside serverInfo, so no client ever saw it).
@@ -366,6 +366,46 @@ TOOLS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "name": "ssd_gitignore",
+        "description": (
+            "Gitignore governance: audit and apply SmartDrive-managed .gitignore blocks per repo stack, "
+            "keep personal learning data out of public repositories, and optionally untrack committed junk."
+        ),
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["audit", "apply"],
+                    "description": "Action to perform: 'audit' (check compliance) or 'apply' (update .gitignore block).",
+                },
+                "repo": {
+                    "type": "string",
+                    "description": "Target repository path. For 'audit', defaults to all repositories on the drive if omitted.",
+                },
+                "apply": {
+                    "type": "boolean",
+                    "description": "If true, writes changes to disk. If false (default), runs in dry-run simulation mode.",
+                },
+                "untrack": {
+                    "type": "boolean",
+                    "description": "If true, untracks files matching managed patterns from git index (leaves working files untouched).",
+                },
+            },
+            "required": ["action"],
+        },
+    },
 ]
 
 
@@ -481,6 +521,7 @@ class SmartDriveMCPServer:
         "ssd_check_safety": "handle_ssd_check_safety",
         "ssd_status": "handle_ssd_status",
         "ssd_auto_organize": "handle_ssd_auto_organize",
+        "ssd_gitignore": "handle_ssd_gitignore",
     }
 
     def __init__(
@@ -1136,6 +1177,74 @@ class SmartDriveMCPServer:
             }
         return {"status": "dry_run", "plan_count": len(plan), "actions": [a.to_dict() for a in plan]}
 
+    def handle_ssd_gitignore(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        from smart_drive.core.gitignore import apply_repo, audit_all, audit_repo
+
+        action = str(args.get("action", "audit")).strip().lower()
+        repo = args.get("repo")
+        if repo:
+            repo_path = self._resolve_safe_path(repo, must_exist=True)
+        else:
+            repo_path = None
+
+        if action == "audit":
+            if repo_path and os.path.exists(os.path.join(repo_path, ".git")):
+                results = [audit_repo(repo_path)]
+            else:
+                root = repo_path or self._ensure_root()
+                from smart_drive.core.repos import find_repositories
+                repo_paths = find_repositories([root])
+                results = [audit_repo(rp) for rp in repo_paths]
+
+            return {
+                "summary": {
+                    "repos_audited": len(results),
+                    "compliant_repos": sum(
+                        1 for r in results
+                        if not r.missing_patterns and not r.tracked_junk_count and not r.personal_data_at_risk
+                    ),
+                    "repos_with_junk": sum(1 for r in results if r.tracked_junk_count > 0),
+                    "repos_with_personal_data_at_risk": sum(1 for r in results if r.personal_data_at_risk),
+                },
+                "repos": [
+                    {
+                        "repo": r.repo,
+                        "has_gitignore": r.has_gitignore,
+                        "has_managed_block": r.has_managed_block,
+                        "stacks": r.stacks,
+                        "missing_patterns_count": len(r.missing_patterns),
+                        "tracked_junk_count": r.tracked_junk_count,
+                        "tracked_junk_top": r.tracked_junk_files[:5],
+                        "tracked_personal_data": r.tracked_personal_data,
+                        "personal_data_at_risk": r.personal_data_at_risk,
+                        "remote": r.remote,
+                        "is_possibly_public": r.is_possibly_public,
+                    }
+                    for r in results
+                ],
+            }
+        elif action == "apply":
+            if not repo_path:
+                raise ValueError("Parameter 'repo' is required for action 'apply'")
+            apply_mode = self._parse_bool(args.get("apply"), default=False)
+            untrack_mode = self._parse_bool(args.get("untrack"), default=False)
+            res = apply_repo(repo_path, dry_run=not apply_mode, untrack=untrack_mode)
+            diff_lines = res.diff.splitlines() if res.diff else []
+            return {
+                "repo": res.repo,
+                "dry_run": res.dry_run,
+                "applied": res.applied,
+                "created": res.created,
+                "stacks": res.stacks,
+                "managed_patterns_count": res.managed_patterns_count,
+                "untracked_count": len(res.untracked_files),
+                "untracked_files": res.untracked_files[:20],
+                "diff_lines_count": len(diff_lines),
+                "diff_preview": diff_lines[:15],
+            }
+        else:
+            raise ValueError(f"Unknown gitignore action: '{action}'. Expected 'audit' or 'apply'.")
+
     def dispatch_tool(self, name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Dispatches a tool call with 100% static AST-resolvable branching."""
         if name == "ssd_search":
@@ -1154,6 +1263,8 @@ class SmartDriveMCPServer:
             return self.handle_ssd_status(args)
         elif name == "ssd_auto_organize":
             return self.handle_ssd_auto_organize(args)
+        elif name == "ssd_gitignore":
+            return self.handle_ssd_gitignore(args)
         else:
             raise ValueError(f"Unknown tool '{name}'")
 

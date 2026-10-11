@@ -5,7 +5,7 @@ Zero-dependency Python package (100% standard library) tailored for external SSD
 """
 from __future__ import annotations
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 __author__ = "DuongNAD, SmartDrive Team"
 
 from smart_drive.core.config import (
@@ -60,6 +60,16 @@ from smart_drive.core.duplicates import DuplicateDetector
 from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.sentinel import SentinelEngine
 from smart_drive.core.initializer import DriveInitializer
+from smart_drive.core.gitignore import (
+    GitignoreAuditResult,
+    GitignoreApplyResult,
+    audit_repo,
+    audit_all,
+    apply_repo,
+    detect_stacks,
+    generate_managed_block,
+    merge_managed_block,
+)
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
 from smart_drive.search.engine import SearchEngine, SearchMatch, SearchResult
@@ -125,6 +135,15 @@ __all__ = [
     "AutoZoner",
     "SentinelEngine",
     "DriveInitializer",
+    # Gitignore governance
+    "GitignoreAuditResult",
+    "GitignoreApplyResult",
+    "audit_repo",
+    "audit_all",
+    "apply_repo",
+    "detect_stacks",
+    "generate_managed_block",
+    "merge_managed_block",
     # Indexer & Search
     "DatabaseManager",
     "IndexManager",

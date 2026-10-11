@@ -81,7 +81,7 @@ class TestASTHandlerIsolation(unittest.TestCase):
         self.assertIsInstance(handlers, dict)
 
         declared_tool_names = {tool["name"] for tool in TOOLS}
-        self.assertEqual(len(declared_tool_names), 8)
+        self.assertEqual(len(declared_tool_names), 9)
         self.assertEqual(set(handlers.keys()), declared_tool_names)
 
         # Each handler must map to handle_ssd_<suffix> and be an existing callable method
@@ -136,7 +136,7 @@ class TestASTHandlerIsolation(unittest.TestCase):
             declared_tool_names,
             f"Static AST comparison mismatch. Missing: {declared_tool_names - statically_compared_tools}",
         )
-        self.assertEqual(len(statically_compared_tools), 8)
+        self.assertEqual(len(statically_compared_tools), 9)
 
     def test_ast_dispatch_tool_handler_method_calls(self) -> None:
         """Inspects dispatch_tool AST to verify each branch invokes self.handle_<tool>(args)."""
@@ -425,7 +425,7 @@ class TestAuthenticationAndAccessControl(SmartDriveTestCase):
         self.assertIsNotNone(resp_list)
         self.assertIn("result", resp_list)
         self.assertIn("tools", resp_list["result"])
-        self.assertEqual(len(resp_list["result"]["tools"]), 8)
+        self.assertEqual(len(resp_list["result"]["tools"]), 9)
 
         # tools/call succeeds immediately
         resp_call = server.handle_request({
@@ -737,12 +737,12 @@ class TestDomainConsistencyAndPackagingMetadata(unittest.TestCase):
         self.assertEqual(dependencies, [])
 
     def test_mcp_server_version(self) -> None:
-        """smart_drive.mcp.server.SERVER_VERSION must be '1.2.0' matching package version."""
-        self.assertEqual(SERVER_VERSION, "1.2.0")
+        """smart_drive.mcp.server.SERVER_VERSION must be '1.3.0' matching package version."""
+        self.assertEqual(SERVER_VERSION, "1.3.0")
 
     def test_smart_drive_init_metadata(self) -> None:
         """smart_drive package version and author must be synchronized."""
-        self.assertEqual(smart_drive.__version__, "1.2.0")
+        self.assertEqual(smart_drive.__version__, "1.3.0")
         self.assertIn("DuongNAD", smart_drive.__author__)
         self.assertIn("SmartDrive Team", smart_drive.__author__)
 

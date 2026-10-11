@@ -10,9 +10,9 @@
 [![Kiểm định Bảo mật MCP: Hạng A (100/100)](https://img.shields.io/badge/MCP%20Audit-H%E1%BA%A1ng%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Kiểm thử: 968/968 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-968%2F968%20passed%20(100%25)-brightgreen.svg)](#)
+[![Kiểm thử: 992/992 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-992%2F992%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Launcher Portable](https://img.shields.io/badge/launchers-20%20t%E1%BB%87p%20kh%E1%BB%9Fi%20ch%E1%BA%A1y-blue.svg)](#)
-[![Phiên bản: v1.2.0](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.2.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.2.0)
+[![Phiên bản: v1.3.0](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.3.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.3.0)
 [![Giấy phép: MIT](https://img.shields.io/badge/Gi%E1%BA%A5y%20ph%C3%A9p-MIT-yellow.svg)](LICENSE)
 
 > **Hệ điều hành Quản trị Dữ liệu Tự hành Máy trạm (Workstation Hybrid), Hệ thống Snapshot Toàn vẹn Dữ liệu SHA-256 và Công cụ Tìm kiếm Siêu tốc SQLite FTS5 (<10ms) dành cho Ổ cứng Di động Ngoài (exFAT), Ổ phụ Gắn trong (NTFS) và các Trợ lý Lập trình AI.**
@@ -42,6 +42,7 @@
    - [9. Động cơ Snapshot SHA-256 Dạng Dòng & Sao lưu Tăng số](#9-động-cơ-snapshot-sha-256-dạng-dòng--sao-lưu-tăng-số)
    - [10. Cam kết 100% Zero External Pip Dependencies](#10-cam-kết-100-zero-external-pip-dependencies)
    - [11. Clone trùng lặp & Bản đối chiếu trên SSD di động (`smart-drive repos`)](#11-clone-trùng-lặp--bản-đối-chiếu-trên-ssd-di-động-smart-drive-repos)
+   - [12. Quản lý .gitignore & Bảo vệ Dữ liệu Cá nhân (`smart-drive gitignore`)](#12-quản-lý-gitignore--bảo-vệ-dữ-liệu-cá-nhân-smart-drive-gitignore)
 4. [Khởi Động Nhanh Trong 3 Bước](#4-khởi-động-nhanh-trong-3-bước)
 5. [5 Cấu Hình Mẫu Chuyên Biệt (Preset Profiles)](#5-5-cấu-hình-mẫu-chuyên-biệt-preset-profiles)
 6. [Hướng Dẫn Sử Dụng Bộ Khởi Chạy 1-Chạm (20 Launchers)](#6-hướng-dẫn-sử-dụng-bộ-khởi-chạy-1-chạm-20-launchers)
@@ -49,10 +50,11 @@
 8. [Cú Pháp Tìm Kiếm Nâng Cao](#8-cú-pháp-tìm-kiếm-nâng-cao)
 9. [Kết Hợp Với Aurora Slides Và Polaris](#9-kết-hợp-với-aurora-slides-và-polaris)
 10. [Cơ Chế Dọn Rác An Toàn 3 Tầng & Danh Sách Bảo Vệ Whitelist](#10-cơ-chế-dọn-rác-an-toàn-3-tầng--danh-sách-bảo-vệ-whitelist)
-11. [Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình](#11-tích-hợp-máy-chủ-mcp-với-các-trợ-lý-ai-lập-trình)
-12. [Báo Cáo Kiểm Thử Tự Động (968 Bài Test, Pass 100%)](#12-báo-cáo-kiểm-thử-tự-động-968-bài-test-pass-100)
-13. [Bảo Mật & Quyền Riêng Tư Dữ Liệu](#13-bảo-mật--quyền-riêng-tư-dữ-liệu)
-14. [Đóng Góp Mã Nguồn & Giấy Phép](#14-đóng-góp-mã-nguồn--giấy-phép)
+11. [Quản Lý .gitignore & Bảo Vệ Dữ Liệu Cá Nhân](#11-quản-lý-gitignore--bảo-vệ-dữ-liệu-cá-nhân)
+12. [Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình](#12-tích-hợp-máy-chủ-mcp-với-các-trợ-lý-ai-lập-trình)
+13. [Báo Cáo Kiểm Thử Tự Động (992 Bài Test, Pass 100%)](#13-báo-cáo-kiểm-thử-tự-động-992-bài-test-pass-100)
+14. [Bảo Mật & Quyền Riêng Tư Dữ Liệu](#14-bảo-mật--quyền-riêng-tư-dữ-liệu)
+15. [Đóng Góp Mã Nguồn & Giấy Phép](#15-đóng-góp-mã-nguồn--giấy-phép)
 
 ---
 
@@ -262,6 +264,14 @@ Mỗi dự án nên có một bản trên SSD di động và một bản trên m
 - Worktree liên kết là một phần của clone, không bị tính là bản trùng; worktree đã mất thư mục được liệt kê kèm lệnh `git worktree prune`.
 - Chỉ đọc: không fetch, không ghi, không xoá gì. Không quét thư mục thư viện, thư mục build và thư mục ẩn. `--json` trả về toàn bộ báo cáo cho AI agent.
 
+### 12. Quản lý .gitignore & Bảo vệ Dữ liệu Cá nhân (`smart-drive gitignore`)
+Thiết lập và quản trị chuẩn hóa tệp `.gitignore` trên toàn bộ các kho mã Git trong ổ đĩa mà không cần quét đệ quy chậm chạp:
+- **Tự động nhận diện công nghệ (Stack-Aware)**: Tự động phát hiện các stack công nghệ của repo (Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models và Learning) dựa trên các dấu hiệu ở thư mục gốc và thư mục con tầng nông (<5ms).
+- **Phòng thủ lãng phí Cluster Slack trên exFAT**: Tự động loại trừ các tệp vi mô gây lãng phí nghiêm trọng trên cluster 512KB exFAT — chẳng hạn thư mục nháp của AI agent (`.agents/`, thường chứa hàng trăm file nhỏ làm lãng phí hàng trăm megabytes dung lượng thực), cấu hình cục bộ `.claude/settings.local.json`, cache môi trường (`__pycache__/`, `.pytest_cache/`, `node_modules/`), sản phẩm biên dịch (`target/`, `dist/`, `bin/`, `obj/`) và metadata hệ điều hành.
+- **Bảo vệ chuẩn hợp đồng "Personal-Data" của Constellation**: Đối với các kho tài liệu học tập (Aurora slides, đề cương Polaris, bộ nhớ ôn tập Vega), tự động khóa chặt lịch sử học tập cá nhân: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, và `**/polaris/captures/`.
+- **Phát hiện nguy cơ rò rỉ trên Repo công khai**: Kiểm tra URL remote (không gọi mạng) để cảnh báo tức thì khi dữ liệu học tập cá nhân bị theo dõi trong repo có remote công khai (GitHub, GitLab, Bitbucket) hoặc remote chưa xác định.
+- **Hủy theo dõi an toàn (`--untrack`)**: Chạy lệnh `git rm -r --cached` cho các tệp khớp mà không làm mất tệp làm việc thực tế trên đĩa và từ chối thực hiện nếu repo đang có thay đổi đã staged.
+
 ---
 
 ## 4. Khởi Động Nhanh Trong 3 Bước
@@ -358,6 +368,8 @@ Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `pyth
 | `health` | `[ổ_đĩa]`, `--root <đường_dẫn>`, `--json` | Kiểm tra sức khỏe ổ cứng SSD, trạng thái TRIM (Windows), cluster geometry và dung lượng trống. Nhận ký tự ổ đĩa trên Windows hoặc đường dẫn ổ (`/Volumes/MySSD`) trên macOS/Linux. |
 | `dup` | `--root <đường_dẫn>`, `--json` | Tìm kiếm tệp tin trùng lặp qua 3 giai đoạn SHA-256 kèm thống kê dung lượng slack thu hồi được. Nhiều tên cho cùng một dữ liệu (hard link) được coi là một tệp, không bao giờ được đề xuất như bản sao để xoá. |
 | `repos` | `[đường_dẫn...]`, `--root <ssd>`, `--portable <đường_dẫn>`, `--max-depth <n>`, `--json` | Báo cáo chỉ đọc về các clone git: bản trùng của cùng dự án ở cùng một nơi (kèm đề xuất giữ / xoá / chuyển thành worktree) và trạng thái đồng bộ giữa bản trên SSD và bản trên máy. |
+| `gitignore audit` | `[repo]`, `--root <đường_dẫn>`, `--json` | Kiểm toán các repository git để tìm mẫu .gitignore còn thiếu, rác bị commit nhầm (.agents, pycache) và dữ liệu học tập cá nhân bị lộ trong repo công khai. |
+| `gitignore apply` | `<repo>`, `--yes`, `--untrack`, `--json` | Áp dụng khối .gitignore do SmartDrive quản lý theo stack (mặc định dry-run; `--yes` để ghi file; `--untrack` để xóa file rác khỏi chỉ mục git). |
 | `index` | `--root <đường_dẫn>`, `--db <đường_dẫn>`, `--batch <n>` | Lập chỉ mục toàn bộ ổ đĩa với SQLite FTS5 (tốc độ >15.000 tệp/giây). |
 | `update` | `--root <đường_dẫn>`, `--db <đường_dẫn>`, `--json` | Đồng bộ chỉ mục tìm kiếm tăng số siêu nhanh với độ phức tạp $O(1)$ (<2 giây). |
 
@@ -451,9 +463,51 @@ SmartDrive-OS phân tầng rác hệ thống thành 3 mức độ rõ ràng:
 
 ---
 
-## 11. Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình
+## 11. Quản Lý .gitignore & Bảo Vệ Dữ Liệu Cá Nhân
 
-SmartDrive-OS hỗ trợ giao thức MCP tiêu chuẩn, cung cấp 8 công cụ chuyên dụng cho AI Agents:
+### Giới thiệu tính năng
+Lệnh `smart-drive gitignore` kiểm toán và áp dụng các quy tắc `.gitignore` chuẩn hóa, nhận biết stack công nghệ cho mọi kho mã Git trên ổ đĩa. Tính năng tự động nhận diện framework của dự án (Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models và Learning) và duy trì một khối chuẩn hóa, lũy thừa (idempotent) nằm giữa `# >>> smart-drive managed (do not edit inside) >>>` và `# <<< smart-drive managed <<<`. Mọi quy tắc do người dùng tự viết bên ngoài khối luôn được giữ nguyên trọn vẹn, và định dạng xuống dòng gốc (CRLF hoặc LF) được bảo tồn tuyệt đối.
+
+### Vì sao cần thiết trên exFAT?
+Trên các phân vùng exFAT với cluster 512KB, các tệp tin nhỏ gây lãng phí dung lượng đĩa cực kỳ lớn do cluster slack. Ví dụ, thư mục nháp của các AI agent (`.agents/`) có thể dễ dàng tích tụ hơn 500 tệp vi mô. Một thư mục `.agents/` chỉ nặng 2.4 MB trên thực tế sẽ chiếm dụng **hơn 260 MB** dung lượng vật lý của ổ SSD! Ngoài ra, `node_modules/`, `__pycache__/`, các môi trường ảo (venv) và sản phẩm biên dịch sinh ra hàng trăm nghìn tệp vi mô gây thắt cổ chai I/O và độ trễ truy xuất rất cao.
+
+### Bảo vệ Dữ liệu Học tập Cá nhân
+Các kho lưu trữ tài liệu học tập công khai có thể vô tình làm rò rỉ chỉ số học tập cá nhân, bộ nhớ ghi nhớ và kết quả làm bài tập trắc nghiệm/lab. SmartDrive thực thi nghiêm ngặt hợp đồng `personal-data` chuẩn tắc của Constellation trên mọi repo học tập:
+- `.vega/` (Cơ sở dữ liệu lặp lại ngắt quãng kiểu Anki/SuperMemo)
+- `**/progress.jsonl` (Nhật ký tiến độ học tập Aurora)
+- `aurora-progress-*.jsonl` (Tiến độ bài học dạng phiên)
+- `orion-attempts.jsonl` (Lịch sử làm bài lab tương tác)
+- `**/polaris/.cache/` (Cache truy vấn API)
+- `**/polaris/captures/` (Dữ liệu trích dẫn học tập thô)
+
+Trong quá trình `audit`, các kho mã có máy chủ remote công khai (GitHub, GitLab, Bitbucket) hoặc remote chưa xác định sẽ lập tức nhận cảnh báo nếu dữ liệu học tập cá nhân đang bị theo dõi (tracked).
+
+### Hủy theo dõi an toàn (`--untrack`)
+Nếu tệp rác hoặc dữ liệu cá nhân vô tình bị commit vào git từ trước, lệnh `smart-drive gitignore apply <repo> --yes --untrack` sẽ tự động loại bỏ chúng khỏi chỉ mục thông qua `git rm -r --cached`. **Tệp làm việc thực tế trên đĩa không bao giờ bị xóa**, hệ thống không tự động tạo commit mới, và thao tác untrack sẽ an toàn **từ chối thực hiện** nếu kho mã đang có các thay đổi chưa commit đã đưa vào staged.
+
+### Ví dụ Dòng Lệnh CLI
+```bash
+# 1. Kiểm toán toàn bộ repository trên ổ đĩa để tìm pattern thiếu và file rác bị track:
+smart-drive gitignore audit
+
+# 2. Xuất báo cáo kiểm toán dưới dạng JSON cấu trúc:
+smart-drive gitignore audit --json
+
+# 3. Kiểm toán một repo dự án cụ thể:
+smart-drive gitignore audit D:\teamwork_projects\my_project
+
+# 4. Xem trước các thay đổi .gitignore (dry run):
+smart-drive gitignore apply D:\teamwork_projects\my_project
+
+# 5. Áp dụng khối quản lý vào tệp và hủy theo dõi file rác đã commit nhầm:
+smart-drive gitignore apply D:\teamwork_projects\my_project --yes --untrack
+```
+
+---
+
+## 12. Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình
+
+SmartDrive-OS hỗ trợ giao thức MCP tiêu chuẩn, cung cấp 9 công cụ chuyên dụng cho AI Agents:
 
 1. `ssd_search`: Tìm kiếm FTS5 tức thì trả về token rút gọn (<2.000 tokens/lần truy vấn). *(chỉ đọc)*
 2. `ssd_audit`: Thống kê dung lượng và phân tích lãng phí cluster slack có chế độ nén gọn. *(chỉ đọc)*
@@ -463,6 +517,7 @@ SmartDrive-OS hỗ trợ giao thức MCP tiêu chuẩn, cung cấp 8 công cụ 
 6. `ssd_check_safety`: Kiểm tra tính tương thích exFAT (quét 9 ký tự cấm Win32, 22 từ khóa DOS, và phát hiện symlink). *(chỉ đọc)*
 7. `ssd_status`: Kiểm tra trạng thái gắn kết SSD, khiên bảo vệ và phân vùng. *(chỉ đọc)*
 8. `ssd_auto_organize`: Tự động phân luồng và gom file giảm thiểu lãng phí slack kết hợp AcademicClassifier. *(sắp xếp/xóa rác)*
+9. `ssd_gitignore`: Kiểm toán và áp dụng khối .gitignore chuẩn hóa theo stack, ngăn rò rỉ dữ liệu cá nhân và untrack an toàn. *(kiểm toán/cập nhật .gitignore)*
 
 ### Đăng ký 1-Chạm Cho Tất Cả Trợ Lý AI
 ```bash
@@ -485,14 +540,14 @@ SmartDrive-OS được kiểm định độc lập và xếp hạng chính thứ
 - **Xác Thực Handshake Thời Gian Hằng Số**: Hỗ trợ xác thực token an toàn chống timing attack qua `hmac.compare_digest` chuẩn JSON-RPC `auth/handshake`. Hỗ trợ các tham số `--auth-token`, `--require-auth` hoặc biến môi trường `SMART_DRIVE_MCP_AUTH_TOKEN`.
 - **Bộ Giới Hạn Tần Suất Trượt (Rate Limiter)**: Cơ chế `SlidingWindowRateLimiter` thread-safe ngăn ngừa agent gọi lặp vô tận (runaway loop), phản hồi mã lỗi chuẩn `-32000` kèm header `Retry-After` chính xác tới millisecond.
 - **Chặn Đứng Path Traversal & Escape**: Hàm `_resolve_safe_path` cô lập 100% các vector tấn công vượt cấp (`..`), null-byte (`\0`) và nhảy ổ đĩa.
-- **Tuân Thủ Chuẩn M8ven, Claude & OpenAI**: Khai báo minh bạch các thuộc tính an toàn `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` cho toàn bộ 8 công cụ.
+- **Tuân Thủ Chuẩn M8ven, Claude & OpenAI**: Khai báo minh bạch các thuộc tính an toàn `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` cho toàn bộ 9 công cụ.
 - **Không Gửi Dữ Liệu Ra Ngoài**: Đảm bảo 100% giao tiếp qua luồng `stdio` cục bộ, không mở port mạng, không chứa thư viện tracking/telemetry.
 
 ---
 
-## 12. Báo Cáo Kiểm Thử Tự Động (968 Bài Test, Pass 100%)
+## 13. Báo Cáo Kiểm Thử Tự Động (992 Bài Test, Pass 100%)
 
-Hệ thống được bảo vệ và kiểm chứng bởi **968 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
+Hệ thống được bảo vệ và kiểm chứng bởi **992 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
 
 ```bash
 # Chạy toàn bộ bài test bằng Python Standard Library unittest:
@@ -501,11 +556,12 @@ py -3.11 -m unittest discover tests -v
 
 ### Kết Quả Kiểm Thử Thực Tế:
 ```text
-Ran 968 tests in ~45s
+Ran 992 tests in ~57s
 OK (skipped=79)
 ```
 
-- **Tỷ lệ đậu**: **100.0%** (968 passed, 79 bài kiểm tra môi trường/sandbox bỏ qua theo thiết kế, 0 failures, 0 errors).
+- **Tỷ lệ đậu**: **100.0%** (992 passed, 79 bài kiểm tra môi trường/sandbox bỏ qua theo thiết kế, 0 failures, 0 errors).
+- **Độ bao phủ Quản trị Gitignore**: Kiểm chứng phát hiện stack đa ngôn ngữ, tạo và ghép khối .gitignore bảo toàn CRLF và dòng của người dùng, tính lũy thừa, kiểm toán rác bị track (.agents/, pycache), hợp đồng dữ liệu cá nhân Constellation, untrack an toàn và từ chối khi có staged changes.
 - **Độ bao phủ Learning Units**: Kiểm chứng nhận diện Aurora Courses/Decks, Polaris Subjects, bảo vệ dữ liệu học tập nguyên khối, ghim cố định AutoZoner, loại trừ trùng lặp và dọn rác phân tầng cho `polaris/.cache`.
 - **Độ bao phủ đối kháng**: Kiểm tra các kích thước cluster khắc nghiệt từ 512B đến 32MB, các giá trị biên (0B, 1B, 512KB-1B, 512KB, 512KB+1B) và kiểm toán ứng suất hàng triệu tệp tin.
 - **Độ bao phủ tự bảo vệ**: Kiểm chứng cơ chế tự bảo vệ repo, thư mục Windows Apps, thư mục Game và database SQL Server.
@@ -513,7 +569,7 @@ OK (skipped=79)
 
 ---
 
-## 13. Bảo Mật & Quyền Riêng Tư Dữ Liệu
+## 14. Bảo Mật & Quyền Riêng Tư Dữ Liệu
 
 SmartDrive-OS tuân thủ triệt để nguyên tắc **Local-First & Quyền Riêng Tư Tối Đa**:
 
@@ -527,7 +583,7 @@ Xem toàn văn cam kết bảo mật và quyền riêng tư tại [PRIVACY.md](P
 
 ---
 
-## 13. Đóng Góp Mã Nguồn & Giấy Phép
+## 15. Đóng Góp Mã Nguồn & Giấy Phép
 
 ### Đóng Góp Mã Nguồn
 SmartDrive-OS là dự án mã nguồn mở vì cộng đồng và luôn chào đón mọi sự đóng góp:

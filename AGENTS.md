@@ -15,3 +15,4 @@ Workspace: External High-Speed SSD (exFAT, Allocation Unit: 512 KB).
 - Standard taxonomies (01_AI_Models .. 06_Archives_Storage) must never be deleted.
 - Never place symlinks or illegal Windows characters (`\ / : * ? " < > |`) on exFAT.
 - Cluster slack prevention: bundle micro-files and avoid unignored build caches.
+- Gitignore governance: run `smart-drive gitignore audit` before committing.

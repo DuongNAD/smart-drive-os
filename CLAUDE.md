@@ -5,3 +5,4 @@
 - Search files using `smart-drive search "<query>"`.
 - Search lessons and research with `smart-drive search --kind slide|fact|capture "<query>"` (MCP ssd_search kind/content).
 - Verify SSD health using `smart-drive sentinel`.
+- Run `smart-drive gitignore audit` before committing.

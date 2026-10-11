@@ -47,6 +47,7 @@ class TestMCPToolsCatalog(SmartDriveTestCase):
             "ssd_check_safety",
             "ssd_status",
             "ssd_auto_organize",
+            "ssd_gitignore",
         }
         self.assertEqual(tool_names, expected_tools)
 
@@ -228,7 +229,7 @@ class TestMCPProtocolJSONRPC(SmartDriveTestCase):
 
         self.assertEqual(resp["id"], 3)
         self.assertIn("tools", resp["result"])
-        self.assertEqual(len(resp["result"]["tools"]), 8)
+        self.assertEqual(len(resp["result"]["tools"]), 9)
 
     def test_protocol_tools_call_success(self) -> None:
         """tools/call executes tool and formats result as JSON-RPC content array."""
