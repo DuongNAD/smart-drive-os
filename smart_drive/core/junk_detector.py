@@ -33,6 +33,27 @@ from smart_drive.core.learning_units import find_unit_root
 from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOptions
 
 
+def _drop_items_inside_junk_dirs(items: List["JunkItem"]) -> List["JunkItem"]:
+    """A junk directory is purged as a whole: drop the items that sit inside another reported directory.
+
+    The scanner does not prune detected junk directories, and on POSIX the entries inside one match its
+    rule too, so `.pytest_cache` and `.pytest_cache/pkg` were both reported, sized and "deleted".
+    """
+    junk_dirs = {item.path for item in items if item.is_dir}
+    if not junk_dirs:
+        return items
+
+    def inside_junk_dir(path: str) -> bool:
+        child, parent = path, os.path.dirname(path)
+        while parent and parent != child:
+            if parent in junk_dirs:
+                return True
+            child, parent = parent, os.path.dirname(parent)
+        return False
+
+    return [item for item in items if not inside_junk_dir(item.path)]
+
+
 # ---------------------------------------------------------------------------
 # Data Models
 # ---------------------------------------------------------------------------
@@ -305,7 +326,7 @@ class JunkDetector:
                 except (PermissionError, FileNotFoundError, OSError):
                     continue
 
-        return junk_items
+        return _drop_items_inside_junk_dirs(junk_items)
 
     def get_summary(self, items: Sequence[JunkItem]) -> Dict[str, Any]:
         """Calculates aggregated metrics across a collection of junk items."""

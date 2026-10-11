@@ -268,12 +268,13 @@ class TestCleanersAndJunkProtection(unittest.TestCase):
         self.assertIn(str(outside_junk), t1_paths)
         self.assertNotIn(str(cache_item), t1_paths)
 
-        # Tier 2 scan: polaris/.cache is reported as Tier 2
+        # Tier 2 scan: polaris/.cache is reported as Tier 2, once, as the directory that is purged whole
         det_t2 = JunkDetector(str(self.root), max_tier=JunkTier.TIER_2_DEV_CACHE)
         items_t2 = det_t2.find_junk()
         t2_paths = [i.path for i in items_t2]
         self.assertIn(str(outside_junk), t2_paths)
-        self.assertIn(str(cache_item), t2_paths)
+        self.assertIn(str(cache_item.parent), t2_paths)
+        self.assertNotIn(str(cache_item), t2_paths)
 
         # Purge execution at Tier 2 safely removes cache and leaves errorlog.md intact
         guard = SecurityGuard(drive_root=str(self.root))

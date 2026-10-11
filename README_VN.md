@@ -10,7 +10,7 @@
 [![Kiểm định Bảo mật MCP: Hạng A (100/100)](https://img.shields.io/badge/MCP%20Audit-H%E1%BA%A1ng%20A%20(100%2F100)-brightgreen.svg)](#)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Kiểm thử: 1014/1014 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-1014%2F1014%20passed%20(100%25)-brightgreen.svg)](#)
+[![Kiểm thử: 1016/1016 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-1016%2F1016%20passed%20(100%25)-brightgreen.svg)](#)
 [![20 Launcher Portable](https://img.shields.io/badge/launchers-20%20t%E1%BB%87p%20kh%E1%BB%9Fi%20ch%E1%BA%A1y-blue.svg)](#)
 [![Phiên bản: v1.3.1](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.3.1-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.3.1)
 [![Giấy phép: MIT](https://img.shields.io/badge/Gi%E1%BA%A5y%20ph%C3%A9p-MIT-yellow.svg)](LICENSE)
@@ -573,9 +573,9 @@ SmartDrive-OS được kiểm định độc lập và xếp hạng chính thứ
 
 ---
 
-## 13. Báo Cáo Kiểm Thử Tự Động (1014 Bài Test, Pass 100%)
+## 13. Báo Cáo Kiểm Thử Tự Động (1016 Bài Test, Pass 100%)
 
-Hệ thống được bảo vệ và kiểm chứng bởi **1014 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
+Hệ thống được bảo vệ và kiểm chứng bởi **1016 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
 
 ```bash
 # Chạy toàn bộ bài test bằng Python Standard Library unittest:
@@ -584,7 +584,7 @@ py -3.11 -m unittest discover tests -v
 
 ### Kết Quả Kiểm Thử Thực Tế:
 ```text
-Ran 1014 tests in 45.765s
+Ran 1016 tests in 46.9s
 OK (skipped=79)
 ```
 

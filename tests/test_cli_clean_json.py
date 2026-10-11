@@ -137,6 +137,46 @@ class TestCleanReportsFailuresHonestly(unittest.TestCase):
         self.assertTrue(failed[0]["reason"])
 
 
+class TestNestedJunkIsReportedOnce(unittest.TestCase):
+    """The scanner does not prune junk directories, and on POSIX the entries inside one matched its rule too:
+    `.pytest_cache` and `.pytest_cache/pkg` were both reported, sized and counted as deleted."""
+
+    def test_items_inside_a_reported_junk_directory_are_dropped(self) -> None:
+        from smart_drive.core.config import JunkTier
+        from smart_drive.core.junk_detector import JunkItem, _drop_items_inside_junk_dirs
+
+        root = os.path.abspath(os.path.join(os.sep, "drive"))
+
+        def item(rel: str, is_dir: bool) -> JunkItem:
+            return JunkItem(path=os.path.join(root, *rel.split("/")), rel_path=rel, name=rel.split("/")[-1],
+                            size=0, allocated_size=0, is_dir=is_dir, tier=JunkTier.TIER_2_DEV_CACHE,
+                            description="test", os_source="Dev")
+
+        items = [
+            item("proj/.pytest_cache", True),
+            item("proj/.pytest_cache/pkg", True),
+            item("proj/.pytest_cache/pkg/file.js", False),
+            item("proj/.pytest_cache_backup", True),  # a sibling sharing the name prefix is not inside it
+            item("Thumbs.db", False),
+        ]
+        kept = [i.rel_path for i in _drop_items_inside_junk_dirs(items)]
+        self.assertEqual(kept, ["proj/.pytest_cache", "proj/.pytest_cache_backup", "Thumbs.db"])
+
+    def test_clean_lists_a_junk_tree_once(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="sd_clean_once_")).resolve()
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        nested = root / "proj" / ".pytest_cache" / "pkg"
+        nested.mkdir(parents=True)
+        (nested / "file.js").write_text("x", encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = main(["clean", "--root", str(root), "--tier", "2", "--json"])
+        report = json.loads(out.getvalue())
+        self.assertEqual(code, 0, out.getvalue())
+        listed = [j["rel_path"].replace("\\", "/") for j in report["junk_items"]]
+        self.assertEqual(listed, ["proj/.pytest_cache"], out.getvalue())
+
+
 @unittest.skipIf(_can_ignore_permissions(), "needs a POSIX user that directory permissions apply to")
 class TestDirectoryPurgesAreVerified(unittest.TestCase):
     """shutil.rmtree reports problems only through its callback, which swallowed them: a directory that was
