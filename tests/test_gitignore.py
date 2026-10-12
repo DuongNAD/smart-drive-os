@@ -5,7 +5,7 @@ Tests:
 2. Block insertion preserves user rules and CRLF line endings.
 3. Idempotent re-apply (no-op diff, no duplicated blocks).
 4. Dry run changes nothing on disk.
-5. Audit finds tracked junk (.agents/, __pycache__) and personal learning data (.vega, progress.jsonl).
+5. Audit finds tracked junk (.agents/, __pycache__) and personal learning data (.vega, .sirius, progress.jsonl).
 6. Untrack removes files from the git index only and preserves working files on disk.
 7. Refusal when repository has staged changes.
 8. Repository discovery reuses pruning without recursive scans of deep junk trees.
@@ -169,6 +169,11 @@ class TestGitignoreStackDetection(unittest.TestCase):
         l3 = self.temp_dir / "l3"
         (l3 / ".vega").mkdir(parents=True)
         self.assertIn("learning", detect_stacks(str(l3)))
+
+        # .sirius directory (Sirius execution journal)
+        l4 = self.temp_dir / "l4"
+        (l4 / ".sirius").mkdir(parents=True)
+        self.assertEqual(detect_stacks(str(l4)), ["learning"])
 
     def test_multi_stack_combination(self) -> None:
         (self.temp_dir / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
@@ -418,6 +423,56 @@ class TestGitignoreGovernanceWorkflow(unittest.TestCase):
         from smart_drive.core.gitignore import STACK_PATTERNS
         self.assertEqual(STACK_PATTERNS["learning"], PERSONAL_DATA_PATTERNS)
         self.assertIn(".polaris/", PERSONAL_DATA_PATTERNS)
+        self.assertIn(".sirius/", STACK_PATTERNS["learning"])
+        self.assertIn(".sirius/", PERSONAL_DATA_PATTERNS)
+
+    def test_state_folders_beyond_the_shallow_scan_are_found_through_git(self) -> None:
+        """The shallow scan stops two levels down; tracked files must still reveal a deeper .vega/.sirius."""
+        for name in (".vega", ".sirius"):
+            with self.subTest(folder=name):
+                repo = self.temp_root / ("deep_" + name.lstrip("."))
+                state_file = repo / "hub" / "a" / "b" / name / "state.jsonl"
+                state_file.parent.mkdir(parents=True)
+                state_file.write_text("{}\n", encoding="utf-8")
+                git_cmd(repo, "init", "-b", "main")
+                self.assertEqual(detect_stacks(str(repo)), [], "an untracked deep folder is outside the shallow scan")
+
+                git_cmd(repo, "add", ".")
+                self.assertEqual(detect_stacks(str(repo)), ["learning"])
+
+    def test_audit_flags_a_tracked_sirius_journal(self) -> None:
+        self.assertTrue(is_personal_data_path(".sirius/journal.jsonl"))
+        self.assertTrue(is_personal_data_path("hub/.sirius/journal.jsonl"))
+        self.assertFalse(is_personal_data_path("sirius/journal.jsonl"))
+
+        journal = self.repo / ".sirius" / "journal.jsonl"
+        journal.parent.mkdir()
+        journal.write_text('{"event": "session_start"}\n', encoding="utf-8")
+        git_cmd(self.repo, "add", ".")
+        git_cmd(self.repo, "commit", "-m", "track the sirius journal by mistake")
+
+        audit = audit_repo(str(self.repo))
+        self.assertIn("learning", audit.stacks)
+        self.assertIn(".sirius/journal.jsonl", [f.replace("\\", "/") for f in audit.tracked_personal_data])
+        self.assertIn(".sirius/", audit.missing_patterns)
+        # No remote is configured, so the audit treats the repository as possibly public.
+        self.assertTrue(audit.personal_data_at_risk)
+
+    def test_apply_ignores_the_sirius_journal(self) -> None:
+        journal = self.repo / ".sirius" / "journal.jsonl"
+        journal.parent.mkdir()
+        journal.write_text('{"event": "session_start"}\n', encoding="utf-8")
+
+        res = apply_repo(str(self.repo), dry_run=False)
+        self.assertTrue(res.applied)
+        self.assertIn("learning", res.stacks)
+        content = (self.repo / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn(".sirius/", content.splitlines())
+
+        # Real git agrees: the journal can no longer be committed by accident.
+        ignored = subprocess.run(["git", "check-ignore", ".sirius/journal.jsonl"],
+                                 cwd=str(self.repo), capture_output=True, text=True)
+        self.assertEqual(ignored.returncode, 0, "the Sirius journal should be ignored")
 
     def test_line_endings_of_an_existing_gitignore_are_kept(self) -> None:
         for name, eol in (("crlf", b"\r\n"), ("lf", b"\n")):

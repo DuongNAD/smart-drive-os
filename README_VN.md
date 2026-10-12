@@ -272,7 +272,7 @@ Mỗi dự án nên có một bản trên SSD di động và một bản trên m
 Thiết lập và quản trị chuẩn hóa tệp `.gitignore` trên toàn bộ các kho mã Git trong ổ đĩa mà không cần quét đệ quy chậm chạp:
 - **Tự động nhận diện công nghệ (Stack-Aware)**: Tự động phát hiện các stack công nghệ của repo (Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models và Learning) dựa trên các dấu hiệu ở thư mục gốc và thư mục con tầng nông (<5ms).
 - **Phòng thủ lãng phí Cluster Slack trên exFAT**: Tự động loại trừ các tệp vi mô gây lãng phí nghiêm trọng trên cluster 512KB exFAT — chẳng hạn thư mục nháp của AI agent (`**/.agents/*`, thường chứa hàng trăm file nhỏ làm lãng phí hàng trăm megabytes dung lượng thực; riêng `.agents/skills/`, `.agents/workflows/` và `.agents/rules/` là cấu hình agent nên vẫn được track), cấu hình cục bộ `.claude/settings.local.json`, cache môi trường (`__pycache__/`, `.pytest_cache/`, `node_modules/`), sản phẩm biên dịch (`target/`, `dist/`, `bin/`, `obj/`) và metadata hệ điều hành.
-- **Bảo vệ chuẩn hợp đồng "Personal-Data" của Constellation**: Đối với các kho tài liệu học tập (Aurora slides, đề cương Polaris, bộ nhớ ôn tập Vega), tự động khóa chặt lịch sử học tập cá nhân: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/` và `.polaris/` (hồ sơ người học).
+- **Bảo vệ chuẩn hợp đồng "Personal-Data" của Constellation**: Đối với các kho tài liệu học tập (Aurora slides, đề cương Polaris, bộ nhớ ôn tập Vega, nhật ký thực thi Sirius), tự động khóa chặt lịch sử học tập cá nhân: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/`, `.polaris/` (hồ sơ người học) và `.sirius/` (nhật ký thực thi).
 - **Phát hiện nguy cơ rò rỉ trên Repo công khai**: Kiểm tra URL remote (không gọi mạng) để cảnh báo tức thì khi dữ liệu học tập cá nhân bị theo dõi trong repo có remote công khai (GitHub, GitLab, Bitbucket) hoặc remote chưa xác định.
 - **Hủy theo dõi an toàn (`--untrack`)**: Chạy lệnh `git rm -r --cached` cho các tệp khớp mà không làm mất tệp làm việc thực tế trên đĩa và từ chối thực hiện nếu repo đang có thay đổi đã staged.
 
@@ -483,6 +483,8 @@ Các kho lưu trữ tài liệu học tập công khai có thể vô tình làm 
 - `orion-attempts.jsonl` (Lịch sử làm bài lab tương tác)
 - `**/polaris/.cache/` (Cache truy vấn API)
 - `**/polaris/captures/` (Dữ liệu trích dẫn học tập thô)
+- `.polaris/` (Hồ sơ người học)
+- `.sirius/` (Nhật ký thực thi Sirius)
 
 Trong quá trình `audit`, các kho mã có máy chủ remote công khai (GitHub, GitLab, Bitbucket) hoặc remote chưa xác định sẽ lập tức nhận cảnh báo nếu dữ liệu học tập cá nhân đang bị theo dõi (tracked).
 

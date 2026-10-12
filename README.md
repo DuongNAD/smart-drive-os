@@ -272,7 +272,7 @@ A project is meant to live once on the portable SSD and once on each machine it 
 Ensures clean, robust `.gitignore` rules across every git repository on the drive without recursive disk scans:
 - **Stack-Aware Auto-Detection**: Dynamically detects repo tech stacks (Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models, and Learning) from root and shallow filesystem cues (<5ms).
 - **exFAT Cluster Slack Defense**: Automatically ignores high-slack micro-files on 512KB exFAT clusters—such as agent scratch trees (`**/.agents/*`, which often hold hundreds of tiny files consuming hundreds of megabytes in cluster slack; `.agents/skills/`, `.agents/workflows/` and `.agents/rules/` are agent configuration and stay tracked), `.claude/settings.local.json`, runtime caches (`__pycache__/`, `.pytest_cache/`, `node_modules/`), build outputs (`target/`, `dist/`, `bin/`, `obj/`), and OS metadata.
-- **Constellation "Personal-Data" Contract Protection**: For learning repositories (Aurora slides, Polaris briefs, Vega memory collections), automatically locks down personal learning history: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/`, and `.polaris/` (learner profile).
+- **Constellation "Personal-Data" Contract Protection**: For learning repositories (Aurora slides, Polaris briefs, Vega memory collections, Sirius execution journals), automatically locks down personal learning history: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/`, `.polaris/` (learner profile), and `.sirius/` (execution journal).
 - **Public Repository Leak Detection**: Zero-network remote URL inspection flags when personal learning data is tracked in repositories with public remotes (GitHub, GitLab, Bitbucket) or unconfigured remotes.
 - **Safe Untracking (`--untrack`)**: Runs `git rm -r --cached` on matching tracked files without touching files in the working tree and refusing when staged changes exist.
 
@@ -488,6 +488,8 @@ Public learning repositories can inadvertently leak personal study metrics, memo
 - `orion-attempts.jsonl` (interactive lab attempts)
 - `**/polaris/.cache/` (API query caches)
 - `**/polaris/captures/` (raw learning captures)
+- `.polaris/` (learner profile)
+- `.sirius/` (Sirius execution journal)
 
 During `audit`, repositories with public remote hosts (GitHub, GitLab, Bitbucket) or unconfigured remotes are immediately flagged with an alert if personal learning data is tracked.
 
