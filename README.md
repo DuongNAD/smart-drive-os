@@ -402,12 +402,23 @@ SmartDrive-OS seamlessly integrates with [Aurora Slides MCP](https://github.com/
 
 ### Ecosystem
 
-| Project | Role |
-|---|---|
-| **SmartDrive-OS** (this repo) | SSD governance, learning-aware search, protection of learning units, post-write index hook |
-| [Polaris](https://github.com/DuongNAD/polaris-mcp) | Course architect |
-| [Aurora Slides](https://github.com/DuongNAD/aurora-slides-mcp) | Lessons, practice and progress |
-| [Constellation](https://github.com/DuongNAD/constellation-mcp) | One manifest, registration into Claude Code / Antigravity / Cursor / Codex, health checks, drift doctor, updates |
+All projects by DuongNAD:
+
+| Project | Role | Repository |
+| :--- | :--- | :--- |
+| **Polaris** | Course architect: sources, facts with locators, roadmap, schedule, error log | [polaris-mcp](https://github.com/DuongNAD/polaris-mcp) |
+| **Aurora Slides** | Keynote-style lessons: quizzes, predict and trace slides, progress events | [aurora-slides-mcp](https://github.com/DuongNAD/aurora-slides-mcp) |
+| **Vega** | FSRS memory engine and the single review queue (card inbox) | [vega-mcp](https://github.com/DuongNAD/vega-mcp) |
+| **Orion** | Practice labs with real tests, tutoring ladder and PRIMM warm-up | [orion-mcp](https://github.com/DuongNAD/orion-mcp) |
+| **Mira** | Code-tracing lab: real Python traces, line-by-line players with prediction gates | [mira-mcp](https://github.com/DuongNAD/mira-mcp) |
+| **Rigel** | Grounded tutor: answers from the learner's lesson materials with [ref] citations | [rigel-mcp](https://github.com/DuongNAD/rigel-mcp) |
+| **Sirius** | Execution loop: deadlines, triage, today router, session timer, weekly review | [sirius-mcp](https://github.com/DuongNAD/sirius-mcp) |
+| **Constellation** | MCP registration, health checks and shared contracts | [constellation-mcp](https://github.com/DuongNAD/constellation-mcp) |
+| **SmartDrive-OS** | SSD governance, index and learning search | [smart-drive-os](https://github.com/DuongNAD/smart-drive-os) |
+
+### Connections
+
+- **SmartDrive-OS**: its index serves Polaris (learning search), Sirius and Rigel (file discovery) and receives post-write updates from Polaris and Mira; it owns the learning-stack ignore patterns of the `personal-data` contract.
 
 The learning-unit markers and the post-write hook (`smart-drive update <dir> --quiet`) are defined canonically in [Constellation's contracts](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts). SmartDrive's own one-click registration keeps registering SmartDrive itself, while registering the whole ecosystem in every agent is Constellation's job (`constellation register --dry-run`, then `constellation register`).
 

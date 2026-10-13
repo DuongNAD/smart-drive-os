@@ -397,12 +397,23 @@ SmartDrive-OS tích hợp liền mạch với [Aurora Slides MCP](https://github
 
 ### Hệ sinh thái
 
-| Dự án | Vai trò |
-|---|---|
-| **SmartDrive-OS** (kho mã này) | Quản trị SSD, tìm kiếm nhận biết dữ liệu học tập, bảo vệ learning unit, post-write index hook |
-| [Polaris](https://github.com/DuongNAD/polaris-mcp) | Kiến trúc sư khóa học |
-| [Aurora Slides](https://github.com/DuongNAD/aurora-slides-mcp) | Bài học, thực hành và tiến độ |
-| [Constellation](https://github.com/DuongNAD/constellation-mcp) | Một manifest, đăng ký vào Claude Code / Antigravity / Cursor / Codex, kiểm tra sức khỏe, drift doctor, cập nhật |
+Mọi dự án của DuongNAD:
+
+| Dự án | Vai trò | Kho mã |
+| :--- | :--- | :--- |
+| **Polaris** | Kiến trúc khóa học: nguồn, dữ kiện có vị trí trích, lộ trình, lịch học, Sổ lỗi | [polaris-mcp](https://github.com/DuongNAD/polaris-mcp) |
+| **Aurora Slides** | Bài học kiểu keynote: trắc nghiệm, slide dự đoán và dò code, sự kiện tiến độ | [aurora-slides-mcp](https://github.com/DuongNAD/aurora-slides-mcp) |
+| **Vega** | Bộ nhớ FSRS và hàng đợi ôn tập duy nhất (hộp thư thẻ) | [vega-mcp](https://github.com/DuongNAD/vega-mcp) |
+| **Orion** | Lab thực hành chấm bằng test thật, bậc thang gợi ý, bậc khởi động PRIMM | [orion-mcp](https://github.com/DuongNAD/orion-mcp) |
+| **Mira** | Dò code: trace Python thật, trình phát từng dòng có điểm dừng dự đoán | [mira-mcp](https://github.com/DuongNAD/mira-mcp) |
+| **Rigel** | Gia sư bám tài liệu: trả lời từ tài liệu bài học, có trích dẫn [ref] | [rigel-mcp](https://github.com/DuongNAD/rigel-mcp) |
+| **Sirius** | Vòng thực thi: hạn chót, phân loại việc, hôm nay học gì, bấm giờ, tổng kết tuần | [sirius-mcp](https://github.com/DuongNAD/sirius-mcp) |
+| **Constellation** | Đăng ký MCP, kiểm tra sức khỏe, hợp đồng dữ liệu chung | [constellation-mcp](https://github.com/DuongNAD/constellation-mcp) |
+| **SmartDrive-OS** | Quản trị SSD, chỉ mục và tìm kiếm tài liệu học | [smart-drive-os](https://github.com/DuongNAD/smart-drive-os) |
+
+### Kết nối
+
+- **SmartDrive-OS**: chỉ mục của SmartDrive-OS phục vụ Polaris (tìm kiếm tài liệu học), Sirius và Rigel (tìm file), đồng thời nhận cập nhật sau khi ghi (post-write) từ Polaris và Mira; SmartDrive-OS quản lý các mẫu `.gitignore` của bộ công cụ học tập theo hợp đồng `personal-data`.
 
 Các dấu hiệu nhận diện learning unit và post-write hook (`smart-drive update <dir> --quiet`) được định nghĩa chuẩn tắc trong [contracts của Constellation](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts). Tính năng đăng ký 1-chạm của SmartDrive tiếp tục đăng ký riêng SmartDrive, trong khi đăng ký toàn bộ hệ sinh thái vào mọi agent là nhiệm vụ của Constellation (`constellation register --dry-run`, sau đó `constellation register`).
 
