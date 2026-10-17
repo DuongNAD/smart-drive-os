@@ -943,28 +943,75 @@ class TestGitignoreCliAuditOptions(unittest.TestCase):
         git_cmd(repo, "add", ".")
         git_cmd(repo, "commit", "-m", "init")
 
+        tp = temp_dir / "vendor" / "upstream_pkg"
+        tp.mkdir(parents=True)
+        git_cmd(tp, "init")
+        git_cmd(tp, "remote", "add", "origin", "https://github.com/other/upstream_pkg.git")
+        (tp / "package.json").write_text("{}", encoding="utf-8")
+        (tp / "dist").mkdir()
+        (tp / "dist" / "bundle.js").write_text("// bundle\n", encoding="utf-8")
+        git_cmd(tp, "add", ".")
+        git_cmd(tp, "commit", "-m", "upstream build")
+
         stdout = io.StringIO()
         with patch("sys.stdout", stdout):
-            ret = main(["gitignore", "audit", str(repo), "--owner", "myorg", "--json"])
+            ret = main(["gitignore", "audit", str(temp_dir), "--owner", "myorg", "--json"])
         self.assertEqual(ret, 0)
-        data = json.loads(stdout.getvalue())
-        self.assertIsInstance(data, list)
-        self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]["owner_class"], "own")
-        self.assertIn("visibility", data[0])
-        self.assertIn("tracked_secrets", data[0])
+        data = {os.path.basename(r["repo"]): r for r in json.loads(stdout.getvalue())}
+        self.assertEqual(data["my_repo"]["owner_class"], "own")
+        self.assertEqual(data["upstream_pkg"]["owner_class"], "third-party")
+        self.assertEqual(data["upstream_pkg"]["tracked_junk_count"], 0)
+        self.assertEqual(data["upstream_pkg"]["missing_patterns"], [])
 
+        stdout_all = io.StringIO()
+        with patch("sys.stdout", stdout_all):
+            ret_all = main(["gitignore", "audit", str(temp_dir), "--owner", "myorg", "--all", "--json"])
+        self.assertEqual(ret_all, 0)
+        data_all = {os.path.basename(r["repo"]): r for r in json.loads(stdout_all.getvalue())}
+        self.assertEqual(data_all["upstream_pkg"]["owner_class"], "third-party")
+        self.assertGreater(data_all["upstream_pkg"]["tracked_junk_count"], 0)
+        self.assertIn("dist/", data_all["upstream_pkg"]["missing_patterns"])
+
+        stdout_text = io.StringIO()
+        with patch("sys.stdout", stdout_text):
+            main(["gitignore", "audit", str(temp_dir), "--owner", "myorg", "--all"])
+        self.assertIn("Files to untrack:", stdout_text.getvalue())
+
+    @unittest.skipIf(GIT is None, "git executable not found")
     def test_mcp_options_all_and_owner(self) -> None:
         temp_root = Path(tempfile.mkdtemp(prefix="sd_gi_mcp_")).resolve()
         self.addCleanup(shutil.rmtree, temp_root, onerror=_force_remove)
 
+        own_repo = temp_root / "own_repo"
+        own_repo.mkdir()
+        git_cmd(own_repo, "init")
+        git_cmd(own_repo, "remote", "add", "origin", "https://github.com/testuser/own_repo.git")
+        (own_repo / "README.md").write_text("hi\n", encoding="utf-8")
+        git_cmd(own_repo, "add", ".")
+        git_cmd(own_repo, "commit", "-m", "init")
+
+        tp_repo = temp_root / "vendor" / "tp_repo"
+        tp_repo.mkdir(parents=True)
+        git_cmd(tp_repo, "init")
+        git_cmd(tp_repo, "remote", "add", "origin", "https://github.com/other/tp_repo.git")
+        (tp_repo / "package.json").write_text("{}", encoding="utf-8")
+        (tp_repo / "dist").mkdir()
+        (tp_repo / "dist" / "bundle.js").write_text("// bundle\n", encoding="utf-8")
+        git_cmd(tp_repo, "add", ".")
+        git_cmd(tp_repo, "commit", "-m", "init")
+
         server = SmartDriveMCPServer(root=str(temp_root))
-        res = server.dispatch_tool("ssd_gitignore", {"action": "audit", "all": True, "owner": "testuser"})
-        self.assertIn("summary", res)
-        self.assertIn("repos", res)
-        self.assertIn("own_repos", res["summary"])
-        self.assertIn("local_repos", res["summary"])
-        self.assertIn("third_party_repos", res["summary"])
+        # Also exercises drive-wide owner inference when owner is omitted
+        res_default = server.dispatch_tool("ssd_gitignore", {"action": "audit", "all": False})
+        by_name_def = {os.path.basename(r["repo"]): r for r in res_default["repos"]}
+        self.assertEqual(by_name_def["tp_repo"]["tracked_junk_count"], 0)
+
+        res_all = server.dispatch_tool("ssd_gitignore", {"action": "audit", "all": True, "owner": "testuser"})
+        self.assertIn("summary", res_all)
+        self.assertEqual(res_all["summary"]["own_repos"], 1)
+        self.assertEqual(res_all["summary"]["third_party_repos"], 1)
+        by_name_all = {os.path.basename(r["repo"]): r for r in res_all["repos"]}
+        self.assertGreater(by_name_all["tp_repo"]["tracked_junk_count"], 0)
 
 
 class TestGitignoreIntentionalFilesAndMissingRemotes(unittest.TestCase):

@@ -251,7 +251,12 @@ def format_audit_report(
         lines.append(f"Third-Party Repositories ({len(third_party_repos)} repos, upstream-managed - junk checks skipped):")
         if show_all:
             for r in third_party_repos:
-                lines.extend(_format_repo_details(r, show_untrack_info=False))
+                lines.extend(
+                    _format_repo_details(
+                        r,
+                        show_untrack_info=bool(r.tracked_junk_count or r.tracked_secrets),
+                    )
+                )
         else:
             for r in third_party_repos:
                 remote_desc = r.remote if r.remote else "(none configured)"
@@ -328,11 +333,23 @@ def cmd_gitignore(args: argparse.Namespace) -> int:
 
         if explicit_repo and os.path.exists(os.path.join(explicit_repo, ".git")):
             # Audit single repository
-            results = [audit_repo(explicit_repo, configured_owner=explicit_owner, keep_patterns=keep_patterns)]
+            results = [
+                audit_repo(
+                    explicit_repo,
+                    configured_owner=explicit_owner,
+                    include_third_party_junk=show_all,
+                    keep_patterns=keep_patterns,
+                )
+            ]
             desc = explicit_repo
         elif explicit_repo and os.path.isdir(explicit_repo):
             # Treat as root
-            results = audit_all(explicit_repo, configured_owner=explicit_owner, keep_patterns=keep_patterns)
+            results = audit_all(
+                explicit_repo,
+                configured_owner=explicit_owner,
+                include_third_party_junk=show_all,
+                keep_patterns=keep_patterns,
+            )
             desc = explicit_repo
         else:
             try:
@@ -343,7 +360,12 @@ def cmd_gitignore(args: argparse.Namespace) -> int:
                     sys.stderr.write(f"{e}\n")
                     return 2
                 drive_root = os.getcwd()
-            results = audit_all(drive_root, configured_owner=explicit_owner, keep_patterns=keep_patterns)
+            results = audit_all(
+                drive_root,
+                configured_owner=explicit_owner,
+                include_third_party_junk=show_all,
+                keep_patterns=keep_patterns,
+            )
             desc = drive_root
 
         if is_json:

@@ -1194,8 +1194,6 @@ class SmartDriveMCPServer:
             apply_repo,
             audit_all,
             audit_repo,
-            extract_remote_owner,
-            get_configured_git_owner,
         )
 
         action = str(args.get("action", "audit")).strip().lower()
@@ -1217,23 +1215,22 @@ class SmartDriveMCPServer:
 
         if action == "audit":
             if repo_path and os.path.exists(os.path.join(repo_path, ".git")):
-                results = [audit_repo(repo_path, configured_owner=owner_override, keep_patterns=keep_patterns)]
+                results = [
+                    audit_repo(
+                        repo_path,
+                        configured_owner=owner_override,
+                        include_third_party_junk=show_all,
+                        keep_patterns=keep_patterns,
+                    )
+                ]
             else:
                 root = repo_path or self._ensure_root()
-                from smart_drive.core.repos import find_repositories
-                repo_paths = find_repositories([root])
-                cfg_owner = owner_override or get_configured_git_owner(drive_root=root)
-                if not cfg_owner and repo_paths:
-                    remote_owners = []
-                    for rp in repo_paths:
-                        c, out, _ = _git(rp, "config", "--get", "remote.origin.url")
-                        if c == 0 and out.strip():
-                            o = extract_remote_owner(out.strip())
-                            if o:
-                                remote_owners.append(o)
-                    if remote_owners:
-                        cfg_owner = collections.Counter(remote_owners).most_common(1)[0][0]
-                results = [audit_repo(rp, configured_owner=cfg_owner, keep_patterns=keep_patterns) for rp in repo_paths]
+                results = audit_all(
+                    root,
+                    configured_owner=owner_override,
+                    include_third_party_junk=show_all,
+                    keep_patterns=keep_patterns,
+                )
 
             offenders = sorted(
                 [r for r in results if r.tracked_junk_count > 0 or r.tracked_secrets or r.personal_data_at_risk],
