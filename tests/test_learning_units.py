@@ -114,16 +114,21 @@ class TestLearningUnitDetectionAndCaching(unittest.TestCase):
         self.assertEqual(found_after_clear.resolve(), course_dir.resolve())
 
     def test_boundary_respects_drive_root(self) -> None:
-        """Traversal stops at drive_root and does not search above it."""
-        mock_drive = self.root / "mock_drive"
-        mock_drive.mkdir()
+        """Traversal stops at drive_root, does not search above it, and keys cache by boundary."""
+        outer_course = self.root / "outer_course"
+        mock_drive = outer_course / "mock_drive"
         sub_dir = mock_drive / "folder"
-        sub_dir.mkdir()
-        # Even if parent of mock_drive had course.json, drive_root stops it
-        (self.root / "course.json").write_text("{}", encoding="utf-8")
+        sub_dir.mkdir(parents=True)
+        # Even if parent of mock_drive has course.json, drive_root=mock_drive stops it
+        (outer_course / "course.json").write_text("{}", encoding="utf-8")
 
-        found_with_boundary = find_unit_root(sub_dir, drive_root=mock_drive)
-        self.assertIsNone(found_with_boundary)
+        found_with_inner_boundary = find_unit_root(sub_dir, drive_root=mock_drive)
+        self.assertIsNone(found_with_inner_boundary)
+
+        # Lookup with a wider boundary must not be poisoned by the cached None above
+        found_with_outer_boundary = find_unit_root(sub_dir, drive_root=self.root)
+        self.assertIsNotNone(found_with_outer_boundary)
+        self.assertEqual(found_with_outer_boundary.resolve(), outer_course.resolve())
 
 
 class TestMoversPinLearningUnits(unittest.TestCase):
@@ -464,10 +469,15 @@ class TestLearningSummaryInStatus(unittest.TestCase):
 
     def test_get_learning_summary_and_sentinel(self) -> None:
         """get_learning_summary counts courses, standalone decks, subjects, and doc_chunks."""
-        # 1. Course
+        # 1. Course (with a nested lesson deck and nested polaris folder that must not be double-counted)
         course_dir = self.root / "02_Learning_Knowledge" / "course_1"
         course_dir.mkdir(parents=True)
         (course_dir / "course.json").write_text("{}", encoding="utf-8")
+        lesson_dir = course_dir / "01_lesson"
+        lesson_dir.mkdir()
+        (lesson_dir / "deck.json").write_text("{}", encoding="utf-8")
+        (course_dir / "nested_subj" / "polaris").mkdir(parents=True)
+        (course_dir / "nested_subj" / "polaris" / "brief.json").write_text("{}", encoding="utf-8")
 
         # 2. Standalone deck
         deck_dir = self.root / "02_Learning_Knowledge" / "deck_1"

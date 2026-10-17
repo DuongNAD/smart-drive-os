@@ -19,8 +19,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-# Global in-memory cache: resolved path string -> unit root Path (or None)
-_UNIT_ROOT_CACHE: Dict[str, Optional[Path]] = {}
+# Global in-memory cache: (resolved directory path, resolved drive_root or "") -> unit root Path (or None)
+_UNIT_ROOT_CACHE: Dict[Tuple[str, str], Optional[Path]] = {}
 
 
 def clear_unit_cache() -> None:
@@ -93,16 +93,17 @@ def find_unit_root(
     except (OSError, PermissionError):
         curr_dir = resolved.parent
 
-    cache_key = str(curr_dir)
-    if cache_key in _UNIT_ROOT_CACHE:
-        return _UNIT_ROOT_CACHE[cache_key]
-
     resolved_drive_root: Optional[Path] = None
     if drive_root is not None:
         try:
             resolved_drive_root = Path(drive_root).resolve()
         except (OSError, RuntimeError, ValueError):
             resolved_drive_root = None
+
+    boundary_key = str(resolved_drive_root) if resolved_drive_root is not None else ""
+    cache_key = (str(curr_dir), boundary_key)
+    if cache_key in _UNIT_ROOT_CACHE:
+        return _UNIT_ROOT_CACHE[cache_key]
 
     # Walk upwards collecting all unit roots on the path
     unit_roots: List[Path] = []
@@ -131,7 +132,7 @@ def find_unit_root(
 
     # Populate cache for all visited directories along this walk
     for v_key in visited_on_walk:
-        _UNIT_ROOT_CACHE[v_key] = chosen_root
+        _UNIT_ROOT_CACHE[(v_key, boundary_key)] = chosen_root
 
     return chosen_root
 
@@ -213,16 +214,20 @@ def get_learning_summary(
             k = unit_kind(curr)
             if k == "Aurora course":
                 courses_count += 1
-                # Do not recurse into course lessons to double-count lesson decks as standalone decks
+                # Do not recurse into course lessons to double-count lesson decks or nested units
+                dirnames[:] = []
                 continue
             elif k == "Polaris subject":
                 polaris_count += 1
+                dirnames[:] = []
                 continue
             elif k == "Aurora deck":
                 # Check if it's not inside an already counted course
                 parent_unit = find_unit_root(curr.parent, drive_root=root_p)
                 if parent_unit is None or unit_kind(parent_unit) != "Aurora course":
                     decks_count += 1
+                dirnames[:] = []
+                continue
 
     # Query SQLite database for doc_chunks and last_index_update
     chunk_count = 0
