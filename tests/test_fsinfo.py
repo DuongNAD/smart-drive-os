@@ -192,7 +192,9 @@ class TestReportsNameTheRealFilesystem(_Root):
             self.assertTrue(cmd_sentinel._use_color())
             os.environ["NO_COLOR"] = "1"
             self.assertFalse(cmd_sentinel._use_color())
-        self.assertFalse(cmd_sentinel._use_color())  # captured, not a terminal
+        with patch.object(sys, "stdout", io.StringIO()), patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NO_COLOR", None)
+            self.assertFalse(cmd_sentinel._use_color())  # not a terminal
         _, text = self.cli("sentinel", "--root", str(self.root), "--no-heal")
         self.assertNotIn("\x1b[", text)
         self.assertIn("\x1b[", cmd_sentinel.format_ansi_report({"drive_root": "x", "mount": {}}, color=True))
