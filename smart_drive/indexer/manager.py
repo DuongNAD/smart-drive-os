@@ -227,7 +227,9 @@ class IndexManager:
                 to_delete_ids = [r[0] for r in cur.fetchall()]
                 if to_delete_ids:
                     cur.executemany("DELETE FROM files WHERE id = ?;", [(i,) for i in to_delete_ids])
-                    con.commit()
+                    cur.executemany("DELETE FROM doc_chunks WHERE file_id = ?;", [(i,) for i in to_delete_ids])
+                cur.execute("REPLACE INTO index_meta (key, value) VALUES ('last_incremental_index', ?);", (str(now),))
+                con.commit()
                 return IncrementalStats(
                     added=0,
                     modified=0,
@@ -270,9 +272,10 @@ class IndexManager:
                 to_insert,
             )
             inserted_learning = [p[0] for p in to_insert if is_learning_file(p[0])]
-            if inserted_learning:
-                placeholders = ", ".join("?" for _ in inserted_learning)
-                cur.execute(f"SELECT id, path FROM files WHERE path IN ({placeholders});", inserted_learning)
+            for i in range(0, len(inserted_learning), 400):
+                batch_paths = inserted_learning[i:i + 400]
+                placeholders = ", ".join("?" for _ in batch_paths)
+                cur.execute(f"SELECT id, path FROM files WHERE path IN ({placeholders});", batch_paths)
                 for f_id, f_path in cur.fetchall():
                     full_path = os.path.join(self.drive_root, f_path)
                     chunks = parse_learning_file(full_path, f_path)
@@ -291,19 +294,21 @@ class IndexManager:
             )
             updated_ids = [t[-1] for t in to_update]
             if updated_ids:
-                placeholders = ", ".join("?" for _ in updated_ids)
-                cur.execute(f"DELETE FROM doc_chunks WHERE file_id IN ({placeholders});", updated_ids)
-                cur.execute(f"SELECT id, path FROM files WHERE id IN ({placeholders});", updated_ids)
-                for f_id, f_path in cur.fetchall():
-                    if is_learning_file(f_path):
-                        full_path = os.path.join(self.drive_root, f_path)
-                        chunks = parse_learning_file(full_path, f_path)
-                        if chunks:
-                            cur.executemany(
-                                "INSERT INTO doc_chunks (file_id, kind, unit_id, locator, snippet, content) "
-                                "VALUES (?, ?, ?, ?, ?, ?);",
-                                [(f_id, c.kind, c.unit_id, c.locator, c.snippet, c.content) for c in chunks],
-                            )
+                cur.executemany("DELETE FROM doc_chunks WHERE file_id = ?;", [(i,) for i in updated_ids])
+                for i in range(0, len(updated_ids), 400):
+                    batch_ids = updated_ids[i:i + 400]
+                    placeholders = ", ".join("?" for _ in batch_ids)
+                    cur.execute(f"SELECT id, path FROM files WHERE id IN ({placeholders});", batch_ids)
+                    for f_id, f_path in cur.fetchall():
+                        if is_learning_file(f_path):
+                            full_path = os.path.join(self.drive_root, f_path)
+                            chunks = parse_learning_file(full_path, f_path)
+                            if chunks:
+                                cur.executemany(
+                                    "INSERT INTO doc_chunks (file_id, kind, unit_id, locator, snippet, content) "
+                                    "VALUES (?, ?, ?, ?, ?, ?);",
+                                    [(f_id, c.kind, c.unit_id, c.locator, c.snippet, c.content) for c in chunks],
+                                )
 
         if to_delete_ids:
             cur.executemany(
@@ -315,11 +320,19 @@ class IndexManager:
                 [(i,) for i in to_delete_ids],
             )
 
-        # Backfill any existing recognized learning files that currently have no chunks
-        cur.execute(
-            "SELECT f.id, f.path FROM files f "
-            "WHERE NOT EXISTS (SELECT 1 FROM doc_chunks c WHERE c.file_id = f.id);"
-        )
+        # Backfill any existing recognized learning files in scope that currently have no chunks
+        if directory and rel_dir:
+            cur.execute(
+                "SELECT f.id, f.path FROM files f "
+                "WHERE (f.path = ? OR f.path GLOB ?) "
+                "AND NOT EXISTS (SELECT 1 FROM doc_chunks c WHERE c.file_id = f.id);",
+                (rel_dir, f"{rel_dir}/*"),
+            )
+        else:
+            cur.execute(
+                "SELECT f.id, f.path FROM files f "
+                "WHERE NOT EXISTS (SELECT 1 FROM doc_chunks c WHERE c.file_id = f.id);"
+            )
         for f_id, f_path in cur.fetchall():
             if is_learning_file(f_path):
                 full_path = os.path.join(self.drive_root, f_path)

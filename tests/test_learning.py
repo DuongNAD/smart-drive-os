@@ -455,6 +455,47 @@ class TestLearningIndexManager(SmartDriveTestCase):
         self.assertEqual(cur.fetchone()[0], 1)
         db.close()
 
+    def test_scoped_delete_purges_doc_chunks_and_scopes_backfill(self) -> None:
+        mock_root = self.test_dir / "mock_drive_scoped"
+        mock_root.mkdir(parents=True, exist_ok=True)
+        db_path = mock_root / ".smart_drive" / "index.db"
+
+        unit_a = mock_root / "unit_a"
+        unit_a.mkdir()
+        (unit_a / "deck.json").write_text(
+            json.dumps({"title": "Deck A", "slides": [{"id": "a1", "title": "Slide A", "text": "Alpha"}]}),
+            encoding="utf-8",
+        )
+        unit_b = mock_root / "unit_b"
+        unit_b.mkdir()
+        (unit_b / "deck.json").write_text(
+            json.dumps({"title": "Deck B", "slides": [{"id": "b1", "title": "Slide B", "text": "Beta"}]}),
+            encoding="utf-8",
+        )
+
+        db = DatabaseManager(str(db_path))
+        db.initialize_schema()
+        mgr = IndexManager(db, str(mock_root))
+        mgr.full_index()
+
+        con = db.get_connection()
+        cur = con.cursor()
+        cur.execute("SELECT COUNT(*) FROM doc_chunks;")
+        self.assertEqual(cur.fetchone()[0], 2)
+
+        # Remove unit_a directory and sync only unit_a
+        import shutil
+        shutil.rmtree(unit_a)
+        inc = mgr.incremental_update(directory=str(unit_a))
+        self.assertEqual(inc.deleted, 1)
+
+        cur.execute("SELECT COUNT(*) FROM doc_chunks;")
+        self.assertEqual(cur.fetchone()[0], 1)
+        engine = SearchEngine(db)
+        self.assertEqual(engine.search(parse_search_query("kind:slide Alpha")).total_count, 0)
+        self.assertEqual(engine.search(parse_search_query("kind:slide Beta")).total_count, 1)
+        db.close()
+
 
 class TestLearningSearchEngine(SmartDriveTestCase):
     """Tests for Vietnamese diacritic-insensitive matching, kind filters, and locators."""
