@@ -312,6 +312,15 @@ Khởi tạo cấu trúc thư mục chuẩn, cài khiên bảo vệ và tạo c�
 smart-drive mcp register --all
 ```
 
+### Bước 4: Cài đặt hệ sinh thái MCP (một lệnh)
+Tải Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira rồi đăng ký chúng, cùng với SmartDrive, vào mọi trợ lý lập trình đã cài trên máy (Windows, macOS và Linux). Đây là lệnh coding agent nên chạy ngay sau khi clone dự án: không hỏi gì, chạy lại nhiều lần vẫn an toàn.
+```bash
+python3 -m smart_drive setup     # macOS / Linux  (Windows: python -m smart_drive setup)
+```
+- Cần Node.js >= 22.4 và git. Các máy chủ được clone vào `~/.smart-drive/mcp` (không đặt lên ổ exFAT) và đăng ký qua Constellation vào Claude Code, Antigravity, Cursor và Codex.
+- `--dry-run` để xem trước, `--check --json` để đọc trạng thái (mã thoát `3` nghĩa là còn cần cài đặt), `--no-clone` không đụng tới mạng, `--agents claude,cursor` giới hạn nơi đăng ký.
+- Máy chủ đã được đăng ký sẵn trên máy sẽ được dùng lại, không clone lần hai. `mcp-agy` không nằm trong lệnh này: nó cần venv riêng, Python >= 3.10 và API key.
+
 ---
 
 ## 5. 5 Cấu Hình Mẫu Chuyên Biệt (Preset Profiles)
@@ -363,6 +372,7 @@ Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `pyth
 | `sentinel` | `--root <đường_dẫn>`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng (hệ tệp được nhận diện, trạng thái git), phục hồi khiên bảo vệ bị thiếu (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <đường_dẫn>`, `--all`, `--auth-token <token>`, `--require-auth` | Khởi chạy máy chủ MCP stdio (`serve`) hoặc đăng ký cấu hình cho các AI agent (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Tự động đăng ký máy chủ MCP vào các tệp cấu hình của các IDE và AI Agent. |
+| `setup` | `--check`, `--dry-run`, `--json`, `--agents <danh_sách>`, `--only <danh_sách>`, `--dest <thư_mục>`, `--no-clone`, `--no-health`, `--repair` | Một lệnh: tải hệ sinh thái MCP (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira), đăng ký vào các trợ lý lập trình đã cài (Claude Code, Antigravity, Cursor, Codex) rồi kiểm tra sức khỏe. `--check` thoát với mã `3` nghĩa là còn cần cài đặt. |
 | `snapshot create` | `[tên]`, `--partitions <danh_sách>`, `--include-hidden`, `--root <đường_dẫn>`, `--json` | Tạo bản ghi nhận trạng thái kèm băm SHA-256 dạng dòng cho các phân vùng chỉ định. |
 | `snapshot list` | `--root <đường_dẫn>`, `--json` | Liệt kê toàn bộ các bản snapshot đã lưu kèm dung lượng và số lượng tệp tin. |
 | `snapshot verify` | `<tên>`, `--no-untracked`, `--root <đường_dẫn>`, `--json` | Kiểm toán tính toàn vẹn dữ liệu so với bản snapshot để phát hiện tệp bị sửa đổi hoặc suy thoái (bit rot). |
@@ -415,7 +425,7 @@ Mọi dự án của DuongNAD:
 
 - **SmartDrive-OS**: chỉ mục của SmartDrive-OS phục vụ Polaris (tìm kiếm tài liệu học), Sirius và Rigel (tìm file), đồng thời nhận cập nhật sau khi ghi (post-write) từ Polaris và Mira; SmartDrive-OS quản lý các mẫu `.gitignore` của bộ công cụ học tập theo hợp đồng `personal-data`.
 
-Các dấu hiệu nhận diện learning unit và post-write hook (`smart-drive update <dir> --quiet`) được định nghĩa chuẩn tắc trong [contracts của Constellation](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts). Tính năng đăng ký 1-chạm của SmartDrive tiếp tục đăng ký riêng SmartDrive, trong khi đăng ký toàn bộ hệ sinh thái vào mọi agent là nhiệm vụ của Constellation (`constellation register --dry-run`, sau đó `constellation register`).
+Các dấu hiệu nhận diện learning unit và post-write hook (`smart-drive update <dir> --quiet`) được định nghĩa chuẩn tắc trong [contracts của Constellation](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts). `smart-drive mcp register` đăng ký riêng SmartDrive; `smart-drive setup` tải toàn bộ hệ sinh thái và đăng ký vào mọi agent thông qua Constellation (làm tay thì dùng `constellation register --dry-run`, sau đó `constellation register`).
 
 ### 1. Chỉ Mục Tri Thức Học Tập & Nghiên Cứu Chuyên Sâu
 SmartDrive-OS phân tích và bóc tách các bài thuyết trình slide, giáo trình môn học, ghi chú nghiên cứu và tài liệu học tập thành các đoạn văn bản có mật độ thông tin cao (`doc_chunks`) hỗ trợ xếp hạng BM25 tức thì (<10ms):
@@ -586,7 +596,7 @@ SmartDrive-OS được kiểm định độc lập và xếp hạng chính thứ
 - **Bộ Giới Hạn Tần Suất Trượt (Rate Limiter)**: Cơ chế `SlidingWindowRateLimiter` thread-safe ngăn ngừa agent gọi lặp vô tận (runaway loop), phản hồi mã lỗi chuẩn `-32000` kèm header `Retry-After` chính xác tới millisecond.
 - **Chặn Đứng Path Traversal & Escape**: Hàm `_resolve_safe_path` cô lập 100% các vector tấn công vượt cấp (`..`), null-byte (`\0`) và nhảy ổ đĩa.
 - **Tuân Thủ Chuẩn M8ven, Claude & OpenAI**: Khai báo minh bạch các thuộc tính an toàn `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` cho toàn bộ 9 công cụ.
-- **Không Gửi Dữ Liệu Ra Ngoài**: Đảm bảo 100% giao tiếp qua luồng `stdio` cục bộ, không mở port mạng, không chứa thư viện tracking/telemetry.
+- **Không Gửi Dữ Liệu Ra Ngoài**: Đảm bảo 100% giao tiếp qua luồng `stdio` cục bộ, không mở port mạng, không chứa thư viện tracking/telemetry. Truy cập mạng duy nhất là lệnh `git clone` tường minh, do chính bạn chạy, của `smart-drive setup` (bỏ qua bằng `--no-clone`).
 
 ---
 
@@ -621,7 +631,7 @@ SmartDrive-OS tuân thủ triệt để nguyên tắc **Local-First & Quyền Ri
 - **Hoạt động 100% Cục bộ (Local-Only)**: Toàn bộ quá trình quét ổ đĩa, đánh chỉ mục tìm kiếm SQLite FTS5 và xác thực snapshot SHA-256 đều diễn ra trực tiếp trên phần cứng của bạn. Tuyệt đối không gửi dữ liệu ra ngoài.
 - **Zero Telemetry**: Hoàn toàn không chứa mã thu thập hành vi, không gửi báo cáo sử dụng và không có kết nối ngầm.
 - **Zero PII Logging**: Tuyệt đối không đọc, bóc tách hay thu thập nội dung nhạy cảm (mã nguồn bí mật, token, private key); chỉ lưu metadata tệp tin cần thiết trong cơ sở dữ liệu nội bộ `.smart_drive/index.db`.
-- **Sẵn sàng cho môi trường Air-Gap**: Không có dependencies ngoài (`dependencies = []`). Máy chủ MCP giao tiếp thuần túy qua luồng `stdio`, và SmartDrive-OS không mở bất kỳ cổng mạng nào.
+- **Sẵn sàng cho môi trường Air-Gap**: Không có dependencies ngoài (`dependencies = []`). Máy chủ MCP giao tiếp thuần túy qua luồng `stdio`, và SmartDrive-OS không mở bất kỳ cổng mạng nào. `smart-drive setup --no-clone` luôn chạy ngoại tuyến.
 - **Khiên Bảo vệ Bất khả Xâm phạm**: Ngăn chặn hoàn toàn việc xóa nhầm các tệp cấu hình cốt lõi (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`) và các ứng dụng hệ thống.
 
 Xem toàn văn cam kết bảo mật và quyền riêng tư tại [PRIVACY.md](PRIVACY.md).

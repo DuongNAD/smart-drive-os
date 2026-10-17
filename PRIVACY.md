@@ -37,7 +37,8 @@ SmartDrive-OS does not inspect, parse, harvest, or log sensitive personal data:
 
 ### 2.4 Zero External Network Transmission & Air-Gap Readiness
 SmartDrive-OS is designed for mission-critical, air-gapped workstations and restricted offline corporate environments:
-- **Zero Outbound Sockets**: SmartDrive-OS makes **zero outbound HTTP/HTTPS, TCP, or UDP socket connections**.
+- **Zero Outbound Sockets**: SmartDrive-OS makes **zero outbound HTTP/HTTPS, TCP, or UDP socket connections**, with the single explicit, opt-in exception described in the next bullet.
+- **One Opt-In Exception - `smart-drive setup`**: only when you run this command yourself, SmartDrive-OS asks `git` to `git clone --depth 1` the MCP servers it sets up (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira) from `https://github.com/DuongNAD/`. SmartDrive-OS itself opens no socket and sends no data of its own; the clone request is the only network access. No other command, the MCP server, or any MCP tool ever does this, and `--no-clone` keeps the command fully offline (on an air-gapped machine, place the repositories in `--dest` beforehand).
 - **No Listening Sockets**: SmartDrive-OS opens no network port. The CLI runs in your terminal and the MCP server talks to your AI agent over local `stdio` only.
 - **Zero External Runtime Dependencies**: SmartDrive-OS is built with **100% Python Standard Library** modules (`sqlite3`, `hashlib`, `json`, `pathlib`, `collections`, `threading`, `time`). The project invariant `dependencies = []` guarantees zero supply-chain attack surfaces and zero transitive dependency network calls.
 
@@ -93,7 +94,7 @@ In compliance with the Anthropic Model Context Protocol specification, all 8 MCP
 
 ### 5.3 M8ven MCP Directory & Trust Index Compliance
 - **Trust Index**: Verified 100% Python Standard Library execution with zero runtime pip dependencies (`dependencies = []`).
-- **No Hidden Network Calls**: Audited and certified for zero external outbound communication.
+- **No Hidden Network Calls**: Audited and certified for zero external outbound communication; the only network access is the explicit, opt-in `git clone` of `smart-drive setup` (see section 2.4).
 - **Transparency**: Fully open-source under the MIT license, with full test coverage (523+ tests passing at 100%).
 
 ---

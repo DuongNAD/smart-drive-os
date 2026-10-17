@@ -312,6 +312,15 @@ Register SmartDrive-OS as an MCP Server across all your AI coding assistants in 
 smart-drive mcp register --all
 ```
 
+### Step 4: Set Up the MCP Ecosystem (one command)
+Fetch Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius and Mira and register them, together with SmartDrive, in every coding agent installed on this machine (Windows, macOS and Linux). It is the command a coding agent should run on a fresh clone: no prompts, safe to repeat.
+```bash
+python3 -m smart_drive setup     # macOS / Linux  (Windows: python -m smart_drive setup)
+```
+- Needs Node.js >= 22.4 and git. The servers are cloned to `~/.smart-drive/mcp` (not onto the exFAT drive) and registered through Constellation in Claude Code, Antigravity, Cursor and Codex.
+- `--dry-run` previews, `--check --json` reports the state (exit code `3` means setup is still needed), `--no-clone` never touches the network, `--agents claude,cursor` limits the targets.
+- Servers that are already registered on the machine are reused, never cloned twice. `mcp-agy` is not part of it: it needs its own venv, Python >= 3.10 and an API key.
+
 ---
 
 ## The 5 Preset Profiles
@@ -365,6 +374,7 @@ All commands can be invoked via `smart-drive <command>` or `python -m smart_driv
 | `sentinel` | `--root <path>`, `--auto-heal`, `--no-heal`, `--json` | 1-touch health audit (detected filesystem, git repo status) and shield self-healing (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <path>`, `--all`, `--auth-token <token>`, `--require-auth` | Starts the JSON-RPC 2.0 stdio MCP server (`serve`) or registers configs for AI agents (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Auto-registers SmartDrive MCP Server in standard AI coding agent config files. |
+| `setup` | `--check`, `--dry-run`, `--json`, `--agents <list>`, `--only <list>`, `--dest <dir>`, `--no-clone`, `--no-health`, `--repair` | One command: fetches the MCP ecosystem (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira) and registers it with the installed coding agents (Claude Code, Antigravity, Cursor, Codex), then health-checks it. Exit code `3` from `--check` means setup is still needed. |
 | `snapshot create` | `[name]`, `--partitions <list>`, `--include-hidden`, `--root <path>`, `--json` | Generates a point-in-time manifest with 64KB-chunk streaming SHA-256 hashes. |
 | `snapshot list` | `--root <path>`, `--json` | Lists all recorded point-in-time snapshots with sizes and file counts. |
 | `snapshot verify` | `<name>`, `--no-untracked`, `--root <path>`, `--json` | Validates data integrity of files against snapshot manifest to detect tampering or bit rot. |
@@ -420,7 +430,7 @@ All projects by DuongNAD:
 
 - **SmartDrive-OS**: its index serves Polaris (learning search), Sirius and Rigel (file discovery) and receives post-write updates from Polaris and Mira; it owns the learning-stack ignore patterns of the `personal-data` contract.
 
-The learning-unit markers and the post-write hook (`smart-drive update <dir> --quiet`) are defined canonically in [Constellation's contracts](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts). SmartDrive's own one-click registration keeps registering SmartDrive itself, while registering the whole ecosystem in every agent is Constellation's job (`constellation register --dry-run`, then `constellation register`).
+The learning-unit markers and the post-write hook (`smart-drive update <dir> --quiet`) are defined canonically in [Constellation's contracts](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts). `smart-drive mcp register` registers SmartDrive itself; `smart-drive setup` fetches the whole ecosystem and registers it in every agent through Constellation (`constellation register --dry-run`, then `constellation register`, is the same step by hand).
 
 ### 1. Learning-Aware Knowledge Indexing
 SmartDrive-OS parses and chunks slide presentations, course curricula, research notes, and study materials into high-density searchable document chunks (`doc_chunks`) with sub-10ms BM25 ranking:
@@ -592,7 +602,7 @@ SmartDrive-OS is officially certified and indexed on the [M8ven MCP Directory](h
 - **In-Memory Rate Limiting**: Built-in thread-safe `SlidingWindowRateLimiter` preventing agent DoS loops with millisecond-accurate `Retry-After` headers and JSON-RPC `-32000` error codes.
 - **Strict Input Boundary Sanitizers**: Parameter validation enforcing safe path resolution (`_resolve_safe_path`), preventing path traversal (`../`), null-byte injection (`\0`), and cross-drive jumping.
 - **Tool Hint Annotations & Schema Parity**: All 9 tools declare explicit boolean hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) meeting Anthropic Claude, OpenAI Actions, and M8ven trust standards.
-- **Zero Hidden Outbound Calls**: Certified 100% offline, local-first stdio execution with zero external telemetry, zero tracking packages, and zero data leakage.
+- **Zero Hidden Outbound Calls**: Certified 100% offline, local-first stdio execution with zero external telemetry, zero tracking packages, and zero data leakage. The single network access is the explicit, opt-in `git clone` that `smart-drive setup` runs when you invoke it (skipped with `--no-clone`).
 
 ---
 
@@ -629,7 +639,7 @@ SmartDrive-OS is engineered from the ground up with a strict **local-first, zero
 - **100% Local-Only Operations**: All filesystem scanning, SQLite FTS5 search indexing, and SHA-256 snapshotting occur exclusively on your local storage. No data is ever transmitted over the network.
 - **Zero Telemetry & Phone-Home**: Zero analytics, zero usage trackers, and zero background network beacons.
 - **Zero PII Logging**: File contents, credentials, and source code secrets are never parsed or harvested; only basic filesystem metadata is stored in local `.smart_drive/index.db`.
-- **Air-Gap Ready**: Zero external pip dependencies (`dependencies = []`). The MCP Server operates solely over local `stdio`, and nothing in SmartDrive-OS listens on a network port.
+- **Air-Gap Ready**: Zero external pip dependencies (`dependencies = []`). The MCP Server operates solely over local `stdio`, and nothing in SmartDrive-OS listens on a network port. `smart-drive setup --no-clone` stays fully offline.
 - **Defensive Safeguards**: Inviolable whitelist protecting critical files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`), mandatory dry-run defaults for cleanup, and strict input boundary validation.
 
 For full architectural details, security models, and compliance specifications, please read our authoritative [PRIVACY.md](PRIVACY.md).

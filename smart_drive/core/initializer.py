@@ -142,6 +142,10 @@ Workspace: External High-Speed SSD (exFAT, Allocation Unit: 512 KB).
 - Standard taxonomies (01_AI_Models .. 06_Archives_Storage) must never be deleted.
 - Never place symlinks or illegal Windows characters (`\\ / : * ? " < > |`) on exFAT.
 - Cluster slack prevention: bundle micro-files and avoid unignored build caches.
+
+## 3. First-Time Setup (MCP ecosystem)
+- Run once per machine: `smart-drive setup` (no prompts; `--dry-run` previews, `--check --json` reports state, exit code 3 = setup needed).
+- Needs Node >= 22.4 and git. It fetches the MCP servers (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira) and registers them with the installed coding agents.
 """
 
 GEMINI_MD_TEMPLATE = """# GEMINI.md - SSD Workspace Guidelines & Directives
@@ -153,6 +157,9 @@ Allocation Unit: 524,288 bytes (512 KB).
 - Run `smart-drive sentinel` or `smart-drive agent-check` to verify mount, shields, and index.
 - Use `smart-drive clean` (Tier 1 safe by default, `--apply` required for purge).
 - Use `smart-drive organize` for auto-zoning and anti-slack rebalancing.
+
+## MCP Ecosystem Setup
+- Run `smart-drive setup` once per machine to fetch and register the MCP ecosystem (`--dry-run` previews).
 """
 
 CLAUDE_MD_TEMPLATE = """# CLAUDE.md - AI Coding Instructions for SSD Workspace
@@ -161,6 +168,7 @@ CLAUDE_MD_TEMPLATE = """# CLAUDE.md - AI Coding Instructions for SSD Workspace
 - Avoid loose micro-files to minimize cluster slack waste.
 - Search files using `smart-drive search "<query>"`.
 - Verify SSD health using `smart-drive sentinel`.
+- First time on a machine: run `smart-drive setup` to fetch and register the MCP ecosystem (`--dry-run` previews).
 """
 
 

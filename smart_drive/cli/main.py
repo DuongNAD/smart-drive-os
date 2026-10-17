@@ -11,6 +11,7 @@ Provides subcommands:
 - sentinel: 1-touch SSD self-healing and Git repository status (alias: agent-check).
 - mcp: Zero-dependency JSON-RPC 2.0 stdio MCP server.
 - mcp-config: Multi-IDE MCP configuration registrar.
+- setup: One command that fetches the MCP ecosystem and registers it with your coding agents.
 - dup: 3-phase SHA-256 duplicate file detection.
 - index: Full SQLite FTS5 search index creation.
 - update: Fast incremental search index synchronization.
@@ -56,6 +57,7 @@ from smart_drive.cli.cmd_path_check import cmd_path_check
 from smart_drive.cli.cmd_repos import cmd_repos
 from smart_drive.cli.cmd_search import cmd_search
 from smart_drive.cli.cmd_sentinel import cmd_sentinel
+from smart_drive.cli.cmd_setup import cmd_setup
 from smart_drive.cli.cmd_snapshot import cmd_snapshot
 from smart_drive.cli.cmd_status import cmd_status
 from smart_drive.core.duplicates import DuplicateDetector
@@ -494,6 +496,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_gap.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Output apply result in JSON format")
 
+    # 20. setup
+    p_setup = subparsers.add_parser(
+        "setup",
+        help="One command: fetch the MCP ecosystem (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira) and register it with your coding agents",
+    )
+    p_setup.add_argument("--check", action="store_true", help="Read-only; exit code 3 means setup is still needed")
+    p_setup.add_argument("--dry-run", action="store_true", help="Show what would be cloned and registered; change nothing")
+    p_setup.add_argument("--agents", help="Comma-separated agents to register in: claude,antigravity,cursor,codex (default: every detected one)")
+    p_setup.add_argument("--only", help="Comma-separated servers to set up (default: all)")
+    p_setup.add_argument("--dest", help="Directory to clone the servers into (default: ~/.smart-drive/mcp)")
+    p_setup.add_argument("--no-clone", action="store_true", help="Never run git clone (offline or air-gapped machines)")
+    p_setup.add_argument("--no-health", action="store_true", help="Skip the final stdio health check")
+    p_setup.add_argument("--repair", action="store_true", help="Replace manifest entries whose files no longer exist")
+    p_setup.add_argument("--yes", "-y", action="store_true", help="Accepted for convenience; setup never prompts")
+    p_setup.add_argument("--json", action="store_true", help="Output the report in JSON format")
+
     # self-path-check subcommand
     p_path_check = subparsers.add_parser(
         "self-path-check",
@@ -535,6 +553,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "health": cmd_health,
         "repos": cmd_repos,
         "gitignore": cmd_gitignore,
+        "setup": cmd_setup,
         "self-path-check": cmd_path_check,
         "path-check": cmd_path_check,
         "self_path_check": cmd_path_check,
