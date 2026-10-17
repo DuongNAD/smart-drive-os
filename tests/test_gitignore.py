@@ -175,6 +175,32 @@ class TestGitignoreStackDetection(unittest.TestCase):
         (l4 / ".sirius").mkdir(parents=True)
         self.assertEqual(detect_stacks(str(l4)), ["learning"])
 
+        # .polaris hub directory and Orion/Aurora personal-data files
+        l5 = self.temp_dir / "l5"
+        (l5 / ".polaris").mkdir(parents=True)
+        self.assertEqual(detect_stacks(str(l5)), ["learning"])
+
+        l6 = self.temp_dir / "l6"
+        l6.mkdir()
+        (l6 / "orion-attempts.jsonl").write_text("{}\n", encoding="utf-8")
+        self.assertEqual(detect_stacks(str(l6)), ["learning"])
+
+        if GIT is not None:
+            l7 = self.temp_dir / "l7"
+            l7.mkdir()
+            git_cmd(l7, "init")
+            (l7 / ".polaris").mkdir()
+            (l7 / ".polaris" / "state.json").write_text("{}\n", encoding="utf-8")
+            (l7 / "orion-attempts.jsonl").write_text("{}\n", encoding="utf-8")
+            git_cmd(l7, "add", ".")
+            git_cmd(l7, "commit", "-m", "track personal data")
+
+            res = apply_repo(str(l7), dry_run=False, untrack=True)
+            self.assertIn("learning", res.stacks)
+            untracked_norm = {f.replace("\\", "/") for f in res.untracked_files}
+            self.assertIn(".polaris/state.json", untracked_norm)
+            self.assertIn("orion-attempts.jsonl", untracked_norm)
+
     def test_multi_stack_combination(self) -> None:
         (self.temp_dir / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
         (self.temp_dir / "model.onnx").write_bytes(b"")

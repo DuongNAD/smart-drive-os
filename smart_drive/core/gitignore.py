@@ -187,9 +187,9 @@ PERSONAL_DATA_PATTERNS: List[str] = [
     ".sirius/",
 ]
 
-# Hub folders where the learning servers keep personal state (Vega cards, Sirius execution journal);
-# finding either one marks a repository as the "learning" stack.
-LEARNING_STATE_DIR_NAMES: FrozenSet[str] = frozenset({".vega", ".sirius"})
+# Hub folders where the learning servers keep personal state (Vega cards, Sirius execution journal, Polaris hub);
+# finding any of them marks a repository as the "learning" stack.
+LEARNING_STATE_DIR_NAMES: FrozenSet[str] = frozenset({".vega", ".sirius", ".polaris"})
 
 
 def _write_text_in_place(path: str, content: str) -> None:
@@ -269,7 +269,7 @@ def detect_stacks(repo_path: str) -> List[str]:
                     if entry.is_dir(follow_symlinks=False):
                         if name_lower in prune_dirs:
                             continue
-                        if entry.name in LEARNING_STATE_DIR_NAMES:
+                        if name_lower in LEARNING_STATE_DIR_NAMES:
                             stacks.add("learning")
                             continue
                         if depth < 2:
@@ -330,12 +330,14 @@ def detect_stacks(repo_path: str) -> List[str]:
         if any(filename.endswith(ext) for ext in (".gguf", ".safetensors", ".pt", ".onnx")):
             stacks.add("ai-models")
 
-        # Learning: course.json, deck.json, polaris/brief.json, .vega, .sirius
+        # Learning: course.json, deck.json, polaris/brief.json, .vega, .sirius, .polaris, and personal-data files
         if filename in ("course.json", "deck.json"):
             stacks.add("learning")
-        if filename == "brief.json" and "polaris" in parts:
+        elif filename == "brief.json" and "polaris" in parts:
             stacks.add("learning")
-        if not LEARNING_STATE_DIR_NAMES.isdisjoint(parts):
+        elif not LEARNING_STATE_DIR_NAMES.isdisjoint(parts):
+            stacks.add("learning")
+        elif is_personal_data_path(rel_path):
             stacks.add("learning")
 
     return sorted(stacks)
