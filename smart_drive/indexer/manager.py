@@ -27,6 +27,16 @@ from smart_drive.indexer.learning import is_learning_file, parse_learning_file
 logger = logging.getLogger("smart_drive.indexer.manager")
 
 
+def _glob_under(rel_dir: str) -> str:
+    """`rel_dir/*` for `GLOB`, with *, ? and [ in the folder name matched literally.
+
+    GLOB has no escape character, so each one becomes a one-character class ([*], [?], [[]); left as is,
+    'Khoa hoc [2024]' would miss its own rows and match 'Khoa hoc 2/...' instead.
+    """
+    escaped = "".join(f"[{ch}]" if ch in "*?[" else ch for ch in rel_dir)
+    return f"{escaped}/*"
+
+
 @dataclass
 class IndexStats:
     """Statistics returned from a full index run."""
@@ -221,7 +231,7 @@ class IndexManager:
                 rel_dir = ""
 
         if directory and rel_dir:
-            prefix_glob = f"{rel_dir}/*"
+            prefix_glob = _glob_under(rel_dir)
             if not os.path.exists(target_full):
                 cur.execute("SELECT id FROM files WHERE path = ? OR path GLOB ?;", (rel_dir, prefix_glob))
                 to_delete_ids = [r[0] for r in cur.fetchall()]
@@ -326,7 +336,7 @@ class IndexManager:
                 "SELECT f.id, f.path FROM files f "
                 "WHERE (f.path = ? OR f.path GLOB ?) "
                 "AND NOT EXISTS (SELECT 1 FROM doc_chunks c WHERE c.file_id = f.id);",
-                (rel_dir, f"{rel_dir}/*"),
+                (rel_dir, _glob_under(rel_dir)),
             )
         else:
             cur.execute(

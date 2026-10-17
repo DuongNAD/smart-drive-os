@@ -28,7 +28,7 @@ from smart_drive.indexer.learning import (
     is_learning_file,
     parse_learning_file,
 )
-from smart_drive.indexer.manager import IndexManager
+from smart_drive.indexer.manager import IndexManager, _glob_under
 from smart_drive.mcp.server import SmartDriveMCPServer
 from smart_drive.search.engine import SearchEngine
 from smart_drive.search.formatter import format_table
@@ -495,6 +495,71 @@ class TestLearningIndexManager(SmartDriveTestCase):
         self.assertEqual(engine.search(parse_search_query("kind:slide Alpha")).total_count, 0)
         self.assertEqual(engine.search(parse_search_query("kind:slide Beta")).total_count, 1)
         db.close()
+
+    def _index_drive_with_bracketed_folder(self):
+        """Indexed drive holding 'Khoa hoc [2024]' and 'Khoa hoc 2', which that name matches as a GLOB class."""
+        mock_root = self.test_dir / "mock_drive_brackets"
+        db_path = mock_root / ".smart_drive" / "index.db"
+        for folder, text in (("Khoa hoc [2024]", "Bracketed"), ("Khoa hoc 2", "Sibling")):
+            (mock_root / folder).mkdir(parents=True)
+            (mock_root / folder / "deck.json").write_text(
+                json.dumps({"title": folder, "slides": [{"id": "s1", "title": "Slide", "text": text}]}),
+                encoding="utf-8",
+            )
+
+        db = DatabaseManager(str(db_path))
+        db.initialize_schema()
+        mgr = IndexManager(db, str(mock_root))
+        mgr.full_index()
+        return db, mgr, mock_root / "Khoa hoc [2024]"
+
+    def test_scoped_sync_treats_brackets_in_folder_name_literally(self) -> None:
+        db, mgr, bracketed = self._index_drive_with_bracketed_folder()
+        con = db.get_connection()
+        cur = con.cursor()
+        # As if indexed before chunking: the scoped backfill must re-chunk this folder and only this one
+        cur.execute("DELETE FROM doc_chunks;")
+        con.commit()
+
+        inc = mgr.incremental_update(directory=str(bracketed))
+        self.assertEqual((inc.added, inc.modified, inc.deleted, inc.unchanged), (0, 0, 0, 1))
+
+        cur.execute("SELECT path FROM files ORDER BY path;")
+        self.assertEqual([r[0] for r in cur.fetchall()], ["Khoa hoc 2/deck.json", "Khoa hoc [2024]/deck.json"])
+        engine = SearchEngine(db)
+        self.assertEqual(engine.search(parse_search_query("kind:slide Bracketed")).total_count, 1)
+        self.assertEqual(engine.search(parse_search_query("kind:slide Sibling")).total_count, 0)
+        db.close()
+
+    def test_scoped_delete_treats_brackets_in_folder_name_literally(self) -> None:
+        db, mgr, bracketed = self._index_drive_with_bracketed_folder()
+
+        import shutil
+        shutil.rmtree(bracketed)
+        inc = mgr.incremental_update(directory=str(bracketed))
+        self.assertEqual(inc.deleted, 1)
+
+        cur = db.get_connection().cursor()
+        cur.execute("SELECT path FROM files;")
+        self.assertEqual([r[0] for r in cur.fetchall()], ["Khoa hoc 2/deck.json"])
+        cur.execute("SELECT COUNT(*) FROM doc_chunks;")
+        self.assertEqual(cur.fetchone()[0], 1)
+        engine = SearchEngine(db)
+        self.assertEqual(engine.search(parse_search_query("kind:slide Bracketed")).total_count, 0)
+        self.assertEqual(engine.search(parse_search_query("kind:slide Sibling")).total_count, 1)
+        db.close()
+
+    def test_scope_glob_matches_every_glob_metacharacter_literally(self) -> None:
+        # '*' and '?' cannot appear in exFAT or Windows names, so the pattern is checked in SQLite directly
+        con = sqlite3.connect(":memory:")
+        try:
+            for folder, lookalike in (("a*b", "a-x-b"), ("a?b", "a-b"), ("a[bc]", "ab"), ("[^x]", "y")):
+                with self.subTest(folder=folder):
+                    pattern = _glob_under(folder)
+                    self.assertEqual(con.execute("SELECT ? GLOB ?;", (f"{folder}/f.txt", pattern)).fetchone()[0], 1)
+                    self.assertEqual(con.execute("SELECT ? GLOB ?;", (f"{lookalike}/f.txt", pattern)).fetchone()[0], 0)
+        finally:
+            con.close()
 
 
 class TestLearningSearchEngine(SmartDriveTestCase):
