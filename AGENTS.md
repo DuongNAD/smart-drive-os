@@ -1,6 +1,6 @@
 # AGENTS.md - Autonomous AI Coding Agent Manifest
 
-Target: Autonomous AI Coding Agents (Antigravity 2.0, Claude Code, Codex, Cursor).
+Target: Autonomous AI Coding Agents (Antigravity 2.0, Claude Code, Codex, GLM, Cursor, Windsurf).
 Workspace: External High-Speed SSD (exFAT, Allocation Unit: 512 KB).
 
 ## 1. Fast-Path Protocol (<10ms)
@@ -26,3 +26,10 @@ python -m smart_drive setup     # Windows
 - Needs Node >= 22.4 and git. Fetches Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius and Mira into `~/.smart-drive/mcp`, registers them and SmartDrive with the installed coding agents (Claude Code, Antigravity, Cursor, Codex), then health-checks them.
 - Check state without changing anything: `python3 -m smart_drive setup --check --json` (exit code 3 = setup needed). Preview: `--dry-run`. Offline: `--no-clone`.
 - Afterwards restart the agent (new conversation) so it loads the new MCP servers.
+
+## 4. Atomic Commit & Verification Discipline
+Every AI agent working in this workspace must commit in small, verified steps:
+- **One logical change per commit**: Keep each commit small and self-contained (`fix(scope): ...`, `feat(scope): ...`, `test(scope): ...`, `docs: ...`). Never bundle unrelated fixes or features into one commit.
+- **Explain why, not just what**: State the root cause or invariant protected in the commit body.
+- **Lock every fix with a regression test**: Add or update a deterministic test in the same commit as the code change, and run the test suite before committing so every commit passes on its own.
+- **Audit before staging**: Run `smart-drive gitignore audit` and check `git status` / `git diff --staged` before committing so secrets, personal learning state (`.vega/`, `.polaris/`, `.sirius/`), and build/OS junk are never tracked.

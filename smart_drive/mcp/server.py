@@ -58,7 +58,8 @@ SERVER_INSTRUCTIONS = (
     "3. Never delete or relocate the 6 standard taxonomies (01_AI_Models .. 06_Archives_Storage).\n"
     "4. Never place symlinks or Windows-illegal characters (\\ / : * ? \" < > |) on the drive.\n"
     "5. Keep small micro-files bundled to prevent 512KB cluster slack waste.\n"
-    "6. Search lessons and research with smart-drive search --kind slide|fact|capture \"<query>\" (MCP ssd_search kind/content)."
+    "6. Search lessons and research with smart-drive search --kind slide|fact|capture \"<query>\" (MCP ssd_search kind/content).\n"
+    "7. Commit in small, atomic steps: one logical fix or feature per commit, paired with a regression test and a green test run, after checking ssd_gitignore (or smart-drive gitignore audit)."
 )
 
 # Mistakes a client can make (bad path, unknown tool, no drive configured): one log line, not a traceback.

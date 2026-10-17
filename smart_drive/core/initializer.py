@@ -128,7 +128,7 @@ PROFILES = {
 
 AGENTS_MD_TEMPLATE = """# AGENTS.md - Autonomous AI Coding Agent Manifest
 
-Target: Autonomous AI Coding Agents (Antigravity 2.0, Claude Code, Codex, Cursor).
+Target: Autonomous AI Coding Agents (Antigravity 2.0, Claude Code, Codex, GLM, Cursor, Windsurf).
 Workspace: External High-Speed SSD (exFAT, Allocation Unit: 512 KB).
 
 ## 1. Fast-Path Protocol (<10ms)
@@ -137,15 +137,24 @@ Workspace: External High-Speed SSD (exFAT, Allocation Unit: 512 KB).
   ```bash
   smart-drive search "<query>"
   ```
+- Search lessons and research with: `smart-drive search --kind slide|fact|capture "<query>"` (MCP `ssd_search` kind/content).
 
 ## 2. Hard Invariants & Zero Data Loss
 - Standard taxonomies (01_AI_Models .. 06_Archives_Storage) must never be deleted.
 - Never place symlinks or illegal Windows characters (`\\ / : * ? " < > |`) on exFAT.
 - Cluster slack prevention: bundle micro-files and avoid unignored build caches.
+- Gitignore governance: run `smart-drive gitignore audit` before committing.
 
 ## 3. First-Time Setup (MCP ecosystem)
 - Run once per machine: `smart-drive setup` (no prompts; `--dry-run` previews, `--check --json` reports state, exit code 3 = setup needed).
 - Needs Node >= 22.4 and git. It fetches the MCP servers (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira) and registers them with the installed coding agents.
+
+## 4. Atomic Commit & Verification Discipline
+Every AI agent working in this workspace must commit in small, verified steps:
+- **One logical change per commit**: Keep each commit small and self-contained (`fix(scope): ...`, `feat(scope): ...`, `test(scope): ...`, `docs: ...`). Never bundle unrelated fixes or features into one commit.
+- **Explain why, not just what**: State the root cause or invariant protected in the commit body.
+- **Lock every fix with a regression test**: Add or update a deterministic test in the same commit as the code change, and run the test suite before committing so every commit passes on its own.
+- **Audit before staging**: Run `smart-drive gitignore audit` and check `git status` / `git diff --staged` before committing so secrets, personal learning state (`.vega/`, `.polaris/`, `.sirius/`), and build/OS junk are never tracked.
 """
 
 GEMINI_MD_TEMPLATE = """# GEMINI.md - SSD Workspace Guidelines & Directives
@@ -155,11 +164,18 @@ Allocation Unit: 524,288 bytes (512 KB).
 
 ## Automated SSD Health Check
 - Run `smart-drive sentinel` or `smart-drive agent-check` to verify mount, shields, and index.
+- Search lessons and research with `smart-drive search --kind slide|fact|capture "<query>"` (MCP ssd_search kind/content).
 - Use `smart-drive clean` (Tier 1 safe by default, `--apply` required for purge).
 - Use `smart-drive organize` for auto-zoning and anti-slack rebalancing.
+- Run `smart-drive gitignore audit` before committing.
 
 ## MCP Ecosystem Setup
 - Run `smart-drive setup` once per machine to fetch and register the MCP ecosystem (`--dry-run` previews).
+
+## Atomic Commit & Verification Discipline
+- Make small, self-contained commits (one logical fix or feature per commit: `fix(scope): ...`, `feat(scope): ...`).
+- Include a regression test in the same commit and run the test suite before committing.
+- Explain the root cause or invariant in the commit body, and verify `git diff --staged` contains no secrets, personal learning state, or exFAT junk.
 """
 
 CLAUDE_MD_TEMPLATE = """# CLAUDE.md - AI Coding Instructions for SSD Workspace
@@ -167,7 +183,10 @@ CLAUDE_MD_TEMPLATE = """# CLAUDE.md - AI Coding Instructions for SSD Workspace
 - Filesystem: exFAT (512KB clusters).
 - Avoid loose micro-files to minimize cluster slack waste.
 - Search files using `smart-drive search "<query>"`.
+- Search lessons and research with `smart-drive search --kind slide|fact|capture "<query>"` (MCP ssd_search kind/content).
 - Verify SSD health using `smart-drive sentinel`.
+- Run `smart-drive gitignore audit` before committing.
+- Commit in small, atomic steps: one logical fix or feature per commit (`fix(scope): ...`, `feat(scope): ...`), paired with a regression test in the same commit, and run the test suite before committing.
 - First time on a machine: run `smart-drive setup` to fetch and register the MCP ecosystem (`--dry-run` previews).
 """
 

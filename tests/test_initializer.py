@@ -49,6 +49,20 @@ from smart_drive.search.parser import parse_search_query
 from tests.helpers import SmartDriveTestCase
 
 
+def _without_setup(manifest: str) -> str:
+    """A manifest minus its MCP ecosystem setup instructions, which differ on purpose:
+    a drive's copy names the installed `smart-drive setup`, this repository's copy
+    `python3 -m smart_drive setup` run from a clone (see test_mcp_setup_run)."""
+    kept = []
+    in_setup = False
+    for line in manifest.strip().splitlines():
+        if line.startswith("## "):
+            in_setup = "mcp ecosystem" in line.lower()
+        if not in_setup and not line.startswith("- First time on a machine:"):
+            kept.append(line)
+    return "\n".join(kept)
+
+
 class TestPresetProfiles(SmartDriveTestCase):
     """Tier 1: Validates available preset profiles and metadata."""
 
@@ -97,6 +111,12 @@ class TestDriveInitialization(SmartDriveTestCase):
         self.assertTrue((target / "AGENTS.md").exists())
         self.assertTrue((target / "GEMINI.md").exists())
         self.assertTrue((target / "CLAUDE.md").exists())
+        for name in ("AGENTS.md", "GEMINI.md", "CLAUDE.md"):
+            text = (target / name).read_text(encoding="utf-8")
+            self.assertIn("gitignore audit", text)
+            self.assertIn("regression test", text)
+            repo_text = (PROJECT_ROOT / name).read_text(encoding="utf-8")
+            self.assertEqual(_without_setup(text), _without_setup(repo_text), name)
 
         # Search database
         self.assertTrue(res["database_initialized"])
