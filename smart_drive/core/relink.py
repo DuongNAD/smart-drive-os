@@ -126,7 +126,7 @@ class PathMapper:
     """Rewrites paths under moved folders while preserving separator and casing style."""
 
     def __init__(self, moves: Iterable[Move]) -> None:
-        rules: List[Tuple[Tuple[str, ...], Tuple[str, List[str]]]] = []
+        rules: List[Tuple[Tuple[str, ...], Tuple[str, List[str]], Tuple[str, List[str]]]] = []
         seen_keys: Set[Tuple[str, ...]] = set()
         needles: Set[str] = set()
         has_non_ascii = False
@@ -146,7 +146,7 @@ class PathMapper:
             if old_k == new_k or old_k in seen_keys:
                 continue
             seen_keys.add(old_k)
-            rules.append((old_k, (new_anchor, new_names)))
+            rules.append((old_k, (old_anchor, old_names), (new_anchor, new_names)))
             last_name = old_names[-1]
             if not last_name.isascii():
                 has_non_ascii = True
@@ -180,7 +180,7 @@ class PathMapper:
         if not names:
             return None
         key = _key(anchor, names)
-        for old_key, (new_anchor, new_names) in self._rules:
+        for old_key, (old_anchor, old_names), (new_anchor, new_names) in self._rules:
             if key[:len(old_key)] != old_key:
                 continue
             sep = "/" if anchor == "/" or "\\" not in text else "\\"
@@ -188,7 +188,9 @@ class PathMapper:
             mapped = "/" + tail if new_anchor == "/" else new_anchor + sep + tail
             if text[-1] in "\\/" and len(text) > len(anchor) + 1:
                 mapped += sep
-            result = mapped.lower() if text.islower() else mapped
+            # Lowercase only when the agent lowercased a path that originally had capitals (e.g. Codex/Gemini).
+            lowered = text.islower() and (anchor, names[:len(old_names)]) != (old_anchor, old_names)
+            result = mapped.lower() if lowered else mapped
             return None if result == text else result
         return None
 

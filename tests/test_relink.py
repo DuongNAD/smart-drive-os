@@ -173,12 +173,12 @@ class TestRelink(SmartDriveTestCase):
         codex_file = self.fake_home / ".codex" / "config.toml"
         codex_file.parent.mkdir(parents=True, exist_ok=True)
         old_lower = old_str.lower()
-        new_lower = new_str.lower()
-        escaped_old = old_str.replace("\\", "\\\\")
+        expected_codex_proj = new_str.lower() if old_str != old_str.lower() else new_str
+        escaped_old = str(old_dir / "run.py").replace("\\", "\\\\")
         codex_raw = (
             f"[projects.'{old_lower}']\n"
             f'trust_level = "trusted"\n'
-            f'command = "{escaped_old}\\\\run.py"\n'
+            f'command = "{escaped_old}"\n'
         )
         codex_file.write_bytes(codex_raw.encode("utf-8"))
 
@@ -196,7 +196,7 @@ class TestRelink(SmartDriveTestCase):
 
         # 5) git-worktrees.json: tab indent with final newline
         wt_file = self.fake_appdata / "Claude" / "git-worktrees.json"
-        wt_obj = {"worktrees": [f"{old_str}\\.claude\\worktrees\\wt1", sibling_str]}
+        wt_obj = {"worktrees": [str(old_dir / ".claude" / "worktrees" / "wt1"), sibling_str]}
         wt_raw = json.dumps(wt_obj, indent="\t") + "\n"
         wt_file.write_bytes(wt_raw.encode("utf-8"))
 
@@ -258,9 +258,9 @@ class TestRelink(SmartDriveTestCase):
 
         # Verify Codex config.toml
         codex_after = codex_file.read_text(encoding="utf-8")
-        self.assertIn(f"[projects.'{new_lower}']", codex_after)
-        escaped_new = new_str.replace("\\", "\\\\")
-        self.assertIn(f'command = "{escaped_new}\\\\run.py"', codex_after)
+        self.assertIn(f"[projects.'{expected_codex_proj}']", codex_after)
+        escaped_new = str(new_dir / "run.py").replace("\\", "\\\\")
+        self.assertIn(f'command = "{escaped_new}"', codex_after)
 
         # Verify compact session file & no backup
         sess_bytes = session_file.read_bytes()
@@ -275,7 +275,7 @@ class TestRelink(SmartDriveTestCase):
         wt_text = wt_file.read_text(encoding="utf-8")
         self.assertIn('\n\t"worktrees":', wt_text)
         wt_after = json.loads(wt_text)
-        self.assertEqual(wt_after["worktrees"], [f"{new_str}\\.claude\\worktrees\\wt1", sibling_str])
+        self.assertEqual(wt_after["worktrees"], [str(new_dir / ".claude" / "worktrees" / "wt1"), sibling_str])
 
         # Verify Constellation & root .mcp.json
         eco_after = json.loads(eco_file.read_text(encoding="utf-8"))
@@ -798,7 +798,19 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(len(r3.warnings), 1)
         self.assertIn(long_move_old, r3.warnings[0])
 
+    def test_20_lowercase_path_keeps_new_case(self) -> None:
+        mapper = PathMapper([("/tmp/t/drive/proj", "/tmp/t/drive/03_Development_Projects/proj")])
+        self.assertEqual(
+            mapper.map("/tmp/t/drive/proj/x"),
+            "/tmp/t/drive/03_Development_Projects/proj/x",
+        )
+        if sys.platform in ("win32", "darwin"):
+            ci_mapper = PathMapper([("D:\\Proj", "D:\\03_Development_Projects\\Proj")])
+            self.assertEqual(
+                ci_mapper.map("d:\\proj\\sub"),
+                "d:\\03_development_projects\\proj\\sub",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
-
