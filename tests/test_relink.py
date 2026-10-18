@@ -12,6 +12,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -21,6 +22,7 @@ from smart_drive.core.relink import (
     PathMapper,
     agent_files,
     claude_slug,
+    find_moved,
     journal_path,
     last_moves,
     record_moves,
@@ -810,6 +812,257 @@ class TestRelink(SmartDriveTestCase):
                 ci_mapper.map("d:\\proj\\sub"),
                 "d:\\03_development_projects\\proj\\sub",
             )
+
+    def test_21_find_moved_same_name_ambiguous_renamed_not_found_unreadable_grouping_journal(self) -> None:
+        drive = self.test_dir / "drive"
+        drive.mkdir()
+
+        # 1) same-name one level down (A/*/<name>)
+        one_down_new = drive / "03_Development_Projects" / "proj_one"
+        one_down_new.mkdir(parents=True)
+
+        # 2) same-name two levels down (A/*/*/<name>)
+        two_down_new = drive / "03_Development_Projects" / "ai_agents" / "proj_two"
+        two_down_new.mkdir(parents=True)
+
+        # 3) ambiguous (two candidates)
+        amb_c1 = drive / "zone_a" / "proj_amb"
+        amb_c2 = drive / "zone_b" / "sub" / "proj_amb"
+        amb_c1.mkdir(parents=True)
+        amb_c2.mkdir(parents=True)
+
+        # 4) renamed parent (old_parent/sub_a and old_parent/sub_b remembered; new_parent has sub_a and sub_b)
+        renamed_new = drive / "new_parent"
+        (renamed_new / "sub_a").mkdir(parents=True)
+        (renamed_new / "sub_b").mkdir(parents=True)
+
+        # 5) journal beats same-name search
+        journal_target = drive / "06_Archives_Storage" / "proj_journal_custom"
+        journal_decoy = drive / "03_Development_Projects" / "proj_journal"
+        journal_target.mkdir(parents=True)
+        journal_decoy.mkdir(parents=True)
+        record_moves(
+            str(drive),
+            [(str(drive / "proj_journal"), str(journal_target))],
+            "organize",
+        )
+
+        # 6) grouped paths across multiple files (.claude.json and .codex/config.toml)
+        grouped_old = drive / "proj_one"
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(
+            json.dumps({
+                "projects": {
+                    str(grouped_old): {},
+                    str(grouped_old / "src" / "main.py"): {},
+                    str(drive / "proj_two" / "dist" / "index.mjs"): {},
+                    str(drive / "proj_amb"): {},
+                    str(drive / "old_parent" / "sub_a"): {},
+                    str(drive / "old_parent" / "sub_b"): {},
+                    str(drive / "proj_journal" / "sub"): {},
+                    str(drive / "vanished_proj"): {},
+                },
+                "badList": ["E:ProjectWithoutSlash"],
+            }),
+            encoding="utf-8",
+        )
+
+        codex_file = self.fake_home / ".codex" / "config.toml"
+        codex_file.parent.mkdir(parents=True, exist_ok=True)
+        codex_file.write_text(
+            f"[projects.'{str(grouped_old / 'README.md')}']\ntrust_level = \"trusted\"\n",
+            encoding="utf-8",
+        )
+
+        entries = find_moved(root=str(drive), home=self.fake_home, app_data=self.fake_appdata)
+        by_old = {e.old: e for e in entries}
+
+        # same-name 1 level down + grouped (3 paths across Claude Code and Codex)
+        e_one = by_old[str(grouped_old)]
+        self.assertEqual(e_one.kind, "same-name")
+        self.assertEqual(e_one.new, str(one_down_new))
+        self.assertEqual(e_one.paths, 3)
+        self.assertEqual(e_one.agents, ["Claude Code", "Codex"])
+
+        # same-name 2 levels down
+        e_two = by_old[str(drive / "proj_two")]
+        self.assertEqual(e_two.kind, "same-name")
+        self.assertEqual(e_two.new, str(two_down_new))
+
+        # ambiguous
+        e_amb = by_old[str(drive / "proj_amb")]
+        self.assertEqual(e_amb.kind, "ambiguous")
+        self.assertIsNone(e_amb.new)
+        self.assertEqual(e_amb.candidates, [str(amb_c1), str(amb_c2)])
+
+        # renamed parent
+        e_ren = by_old[str(drive / "old_parent")]
+        self.assertEqual(e_ren.kind, "renamed")
+        self.assertEqual(e_ren.new, str(renamed_new))
+        self.assertEqual(e_ren.paths, 2)
+
+        # journal beats same-name
+        e_jrn = by_old[str(drive / "proj_journal")]
+        self.assertEqual(e_jrn.kind, "journal")
+        self.assertEqual(e_jrn.new, str(journal_target))
+
+        # not-found
+        e_nf = by_old[str(drive / "vanished_proj")]
+        self.assertEqual(e_nf.kind, "not-found")
+        self.assertIsNone(e_nf.new)
+
+        # unreadable
+        e_unr = by_old["E:ProjectWithoutSlash"]
+        self.assertEqual(e_unr.kind, "unreadable")
+        self.assertIsNone(e_unr.new)
+        self.assertEqual(e_unr.agents, ["Claude Code"])
+
+    def test_22_find_moved_ignores_perm_scratch_worktree_and_temp_paths(self) -> None:
+        drive = self.test_dir / "drive"
+        drive.mkdir()
+        existing_repo = drive / "repo"
+        existing_repo.mkdir()
+
+        cfg_file = self.fake_appdata / "Claude" / "claude_desktop_config.json"
+        cfg_file.parent.mkdir(parents=True, exist_ok=True)
+        sys_temp_gone = Path(tempfile.gettempdir()) / "sd_nonexistent_temp_folder_999" / "work"
+        home_temp_gone = self.fake_home / "AppData" / "Local" / "Temp" / "gone_temp"
+        scratch_gone = self.fake_appdata / "Claude" / "scratch-workspaces" / "ws1" / "scratch-1"
+        worktree_gone = existing_repo / ".claude" / "worktrees" / "wt-removed"
+
+        cfg_file.write_text(
+            json.dumps({
+                "preferences": {
+                    "epitaxyPrefs": {
+                        "epitaxy-folder-permission-mode.1": {str(drive / "perm_gone"): "auto"},
+                        "epitaxy-perm-mode-acks.1": [str(drive / "perm_gone_2")],
+                    }
+                },
+                "projects": {
+                    str(scratch_gone): {},
+                    str(worktree_gone): {},
+                    str(sys_temp_gone): {},
+                    str(home_temp_gone): {},
+                },
+            }),
+            encoding="utf-8",
+        )
+
+        entries = find_moved(root=str(drive), home=self.fake_home, app_data=self.fake_appdata)
+        self.assertEqual(entries, [])
+
+    def test_23_cli_relink_find_apply_json_and_manual_journal(self) -> None:
+        drive = self.create_mock_drive()
+        env = self._cli_env()
+
+        # Empty find -> "No stale paths: every folder the coding agents remember exists."
+        empty_proc = run_smart_drive_cli(["relink", "--find", "--root", str(drive)], env=env)
+        self.assertEqual(empty_proc.returncode, 0, empty_proc.stderr)
+        self.assertIn("No stale paths: every folder the coding agents remember exists.", empty_proc.stdout)
+
+        # --find with OLD/NEW -> exit 2
+        bad_proc = run_smart_drive_cli(["relink", "--find", "old", "new"], env=env)
+        self.assertEqual(bad_proc.returncode, 2)
+
+        # Setup sure (same-name and journal), renamed, ambiguous, not-found, unreadable
+        same_new = drive / "03_Development_Projects" / "sure_app"
+        same_new.mkdir(parents=True)
+        jrn_new = drive / "03_Development_Projects" / "jrn_app_moved"
+        jrn_new.mkdir(parents=True)
+        record_moves(str(drive), [(str(drive / "jrn_app"), str(jrn_new))], "organize")
+
+        ren_new = drive / "renamed_box"
+        (ren_new / "part1").mkdir(parents=True)
+        (ren_new / "part2").mkdir(parents=True)
+
+        amb1 = drive / "03_Development_Projects" / "amb_app"
+        amb2 = drive / "05_Dev_Toolbox" / "amb_app"
+        amb1.mkdir(parents=True)
+        amb2.mkdir(parents=True)
+
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(
+            json.dumps({
+                "projects": {
+                    str(drive / "sure_app"): {},
+                    str(drive / "jrn_app"): {},
+                    str(drive / "old_box" / "part1"): {},
+                    str(drive / "old_box" / "part2"): {},
+                    str(drive / "amb_app"): {},
+                    str(drive / "missing_app"): {},
+                },
+                "extra": ["D:BadRelPath"],
+            }, indent=2),
+            encoding="utf-8",
+        )
+
+        # CLI --find text output
+        find_proc = run_smart_drive_cli(["relink", "--find", "--root", str(drive)], env=env)
+        self.assertEqual(find_proc.returncode, 0, find_proc.stderr)
+        self.assertIn(f"✓ {drive / 'sure_app'} -> {same_new}  (same-name; Claude Code)", find_proc.stdout)
+        self.assertIn(f"✓ {drive / 'jrn_app'} -> {jrn_new}  (journal; Claude Code)", find_proc.stdout)
+        self.assertIn(
+            f'? {drive / "old_box"} -> {ren_new}  (renamed? check it, then run: smart-drive relink "{drive / "old_box"}" "{ren_new}")',
+            find_proc.stdout,
+        )
+        self.assertIn(f"? {drive / 'amb_app'}: several candidates:", find_proc.stdout)
+        self.assertIn(f"✗ {drive / 'missing_app'}: not found (Claude Code)", find_proc.stdout)
+        self.assertIn("✗ D:BadRelPath: not an absolute path (Claude Code)", find_proc.stdout)
+        self.assertIn("Run `smart-drive relink --find --apply` to relink the ✓ folders.", find_proc.stdout)
+
+        # CLI --find --json (without --apply)
+        json_proc = run_smart_drive_cli(["relink", "--find", "--root", str(drive), "--json"], env=env)
+        self.assertEqual(json_proc.returncode, 0, json_proc.stderr)
+        json_data = json.loads(json_proc.stdout)
+        self.assertIsNone(json_data["relink"])
+        self.assertEqual(len(json_data["entries"]), 6)
+
+        # CLI --find --apply --dry-run --json
+        dry_proc = run_smart_drive_cli(
+            ["relink", "--find", "--apply", "--dry-run", "--root", str(drive), "--json"],
+            env=env,
+        )
+        self.assertEqual(dry_proc.returncode, 0, dry_proc.stderr)
+        dry_data = json.loads(dry_proc.stdout)
+        self.assertIsNotNone(dry_data["relink"])
+        self.assertTrue(dry_data["relink"]["dry_run"])
+        self.assertEqual(dry_data["relink"]["agents"], {"Claude Code": 2})
+
+        # CLI --find --apply (real run): relinks only ✓ entries and journals them with tool "relink"
+        apply_proc = run_smart_drive_cli(["relink", "--find", "--apply", "--root", str(drive)], env=env)
+        self.assertEqual(apply_proc.returncode, 0, apply_proc.stderr)
+        self.assertIn("Claude Code: 2 path(s) updated", apply_proc.stdout)
+
+        after_projects = json.loads(claude_file.read_text(encoding="utf-8"))["projects"]
+        self.assertIn(str(same_new), after_projects)
+        self.assertIn(str(jrn_new), after_projects)
+        self.assertNotIn(str(drive / "sure_app"), after_projects)
+        self.assertNotIn(str(drive / "jrn_app"), after_projects)
+        # Non-✓ entries untouched
+        self.assertIn(str(drive / "old_box" / "part1"), after_projects)
+        self.assertIn(str(drive / "amb_app"), after_projects)
+        self.assertIn(str(drive / "missing_app"), after_projects)
+
+        latest = last_moves(str(drive))
+        self.assertIsNotNone(latest)
+        assert latest is not None
+        self.assertEqual(latest["tool"], "relink")
+        self.assertEqual(
+            set(latest["moves"]),
+            {(str(drive / "sure_app"), str(same_new)), (str(drive / "jrn_app"), str(jrn_new))},
+        )
+
+        # Manual `relink OLD NEW` is also journaled with tool "relink"
+        manual_run = run_smart_drive_cli(
+            ["relink", str(drive / "old_box"), str(ren_new), "--root", str(drive)],
+            env=env,
+        )
+        self.assertEqual(manual_run.returncode, 0, manual_run.stderr)
+        latest_manual = last_moves(str(drive))
+        self.assertIsNotNone(latest_manual)
+        assert latest_manual is not None
+        self.assertEqual(latest_manual["tool"], "relink")
+        self.assertEqual(latest_manual["moves"], [(str(drive / "old_box"), str(ren_new))])
 
 
 if __name__ == "__main__":

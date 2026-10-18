@@ -30,6 +30,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 Move = Tuple[str, str]
@@ -39,6 +40,8 @@ JOURNAL_NAME = "moves.jsonl"
 _CASE_INSENSITIVE = sys.platform in ("win32", "darwin")
 _TOML_QUOTED_RE = re.compile(r"'([^'\r\n]*)'|\"((?:[^\"\\\r\n]|\\.)*)\"")
 _CLAUDE_SLUG_RE = re.compile(r"[^A-Za-z0-9]")
+_UNREADABLE_DRIVE_RE = re.compile(r"^[A-Za-z]:[^\\/]")
+_REPARSE_POINT = 0x400
 
 
 def _safe_home_dir() -> Path:
@@ -1047,6 +1050,37 @@ def record_moves(root: str, moves: Sequence[Move], tool: str) -> None:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def _parse_batch_line(line: str) -> Optional[Dict[str, Any]]:
+    stripped = line.strip()
+    if not stripped:
+        return None
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    raw_moves = data.get("moves")
+    if not isinstance(raw_moves, list) or not raw_moves:
+        return None
+    parsed_moves: List[Move] = []
+    for item in raw_moves:
+        if (
+            isinstance(item, (list, tuple))
+            and len(item) == 2
+            and isinstance(item[0], str)
+            and isinstance(item[1], str)
+        ):
+            parsed_moves.append((item[0], item[1]))
+        else:
+            return None
+    if not parsed_moves:
+        return None
+    result = dict(data)
+    result["moves"] = parsed_moves
+    return result
+
+
 def last_moves(root: str) -> Optional[Dict[str, Any]]:
     """Returns the latest valid batch from moves.jsonl with moves as a list of tuples, or None."""
     path = journal_path(root)
@@ -1059,36 +1093,404 @@ def last_moves(root: str) -> Optional[Dict[str, Any]]:
         return None
 
     for line in reversed(lines):
-        stripped = line.strip()
-        if not stripped:
+        parsed = _parse_batch_line(line)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _all_move_batches(root: Optional[str]) -> List[List[Move]]:
+    """Returns all valid move batches from <root>/.smart_drive/moves.jsonl, newest first."""
+    if not root:
+        return []
+    path = journal_path(root)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return []
+
+    batches: List[List[Move]] = []
+    for line in reversed(lines):
+        parsed = _parse_batch_line(line)
+        if parsed is not None:
+            batches.append(list(parsed["moves"]))
+    return batches
+
+
+@dataclass
+class MovedFolder:
+    """One missing folder (or unreadable path value) remembered by coding agents."""
+
+    old: str
+    new: Optional[str] = None
+    kind: str = "not-found"
+    candidates: List[str] = field(default_factory=list)
+    agents: List[str] = field(default_factory=list)
+    paths: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+def _is_under(key: Tuple[str, ...], prefix: Tuple[str, ...]) -> bool:
+    return bool(prefix) and len(key) >= len(prefix) and key[: len(prefix)] == prefix
+
+
+def _join_split(anchor: str, names: Sequence[str]) -> str:
+    if anchor == "/":
+        return "/" if not names else "/" + "/".join(names)
+    return anchor + "\\" if not names else anchor + "\\" + "\\".join(names)
+
+
+def _is_link_entry(entry: os.DirEntry[str]) -> bool:
+    try:
+        if entry.is_symlink():
+            return True
+        return bool(getattr(entry.stat(follow_symlinks=False), "st_file_attributes", 0) & _REPARSE_POINT)
+    except OSError:
+        return True
+
+
+def _list_subdirs(directory: Path) -> List[Path]:
+    """Lists direct subdirectories of directory, skipping hidden/system entries and symlinks/junctions."""
+    out: List[Path] = []
+    try:
+        with os.scandir(directory) as it:
+            entries = list(it)
+    except OSError:
+        return out
+    for entry in entries:
+        name = entry.name
+        if not name or name.startswith((".", "$")) or name.casefold() == "system volume information":
+            continue
+        if _is_link_entry(entry):
             continue
         try:
-            data = json.loads(stripped)
-        except json.JSONDecodeError:
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+        except OSError:
             continue
-        if not isinstance(data, dict):
+        out.append(Path(entry.path))
+    out.sort(key=lambda p: p.name.casefold())
+    return out
+
+
+def _collect_json_strings(value: Any, agent: str, out: List[Tuple[str, str]]) -> None:
+    if isinstance(value, str):
+        out.append((value, agent))
+        return
+    if isinstance(value, list):
+        for item in value:
+            _collect_json_strings(item, agent, out)
+        return
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if isinstance(k, str) and _split(k) is None and "perm" in k.casefold():
+                continue
+            if isinstance(k, str):
+                out.append((k, agent))
+            _collect_json_strings(v, agent, out)
+
+
+def _collect_toml_strings(text: str, agent: str, out: List[Tuple[str, str]]) -> None:
+    for match in _TOML_QUOTED_RE.finditer(text):
+        single = match.group(1)
+        if single is not None:
+            out.append((single, agent))
             continue
-        raw_moves = data.get("moves")
-        if not isinstance(raw_moves, list) or not raw_moves:
+        double = match.group(2)
+        if double is not None:
+            out.append((re.sub(r"\\(.)", r"\1", double), agent))
+
+
+def _is_skipped_temp_path(
+    anchor: str,
+    names: Sequence[str],
+    path_key: Tuple[str, ...],
+    home_temp_key: Tuple[str, ...],
+    sys_temp_keys: Sequence[Tuple[str, List[str], Tuple[str, ...]]],
+    home_key: Tuple[str, ...],
+    root_key: Tuple[str, ...],
+) -> bool:
+    if _is_under(path_key, home_temp_key):
+        return True
+    for t_anchor, t_names, t_key in sys_temp_keys:
+        if not _is_under(path_key, t_key):
             continue
-        parsed_moves: List[Move] = []
-        valid = True
-        for item in raw_moves:
-            if (
-                isinstance(item, (list, tuple))
-                and len(item) == 2
-                and isinstance(item[0], str)
-                and isinstance(item[1], str)
-            ):
-                parsed_moves.append((item[0], item[1]))
+        # When tests run inside the system temp folder (fake_home or root is inside t_key),
+        # only treat paths as temp paths if their top-level folder under t_key does not exist
+        # or if they are inside a temp/tmp subfolder.
+        if _is_under(home_key, t_key) or (root_key and _is_under(root_key, t_key)):
+            rel_idx = len(t_names)
+            if len(names) <= rel_idx:
+                return True
+            top_child = Path(_join_split(t_anchor, list(t_names) + [names[rel_idx]]))
+            if not _exists(top_child):
+                return True
+            for sub_name in names[rel_idx + 1 :]:
+                if sub_name.casefold() in ("tmp", "temp"):
+                    return True
+            return False
+        return True
+    return False
+
+
+def find_moved(
+    root: Optional[str] = None,
+    home: Optional[Path] = None,
+    app_data: Optional[Path] = None,
+) -> List[MovedFolder]:
+    """Finds missing folders remembered by coding agents and locates where each folder went."""
+    resolved_home, resolved_app_data, _ = _resolve_locations(home, app_data)
+
+    home_parsed = _split(str(resolved_home))
+    home_key = _key(*home_parsed) if home_parsed else ()
+
+    root_parsed = _split(os.path.abspath(root)) if root else None
+    root_key = _key(*root_parsed) if root_parsed else ()
+
+    scratch_parsed = _split(str(resolved_app_data / "Claude" / "scratch-workspaces"))
+    scratch_key = _key(*scratch_parsed) if scratch_parsed else ()
+
+    home_temp_parsed = _split(str(resolved_home / "AppData" / "Local" / "Temp"))
+    home_temp_key = _key(*home_temp_parsed) if home_temp_parsed else ()
+
+    sys_temp_candidates = [tempfile.gettempdir()]
+    try:
+        sys_temp_candidates.append(os.path.realpath(tempfile.gettempdir()))
+    except OSError:
+        pass
+    if sys.platform != "win32":
+        sys_temp_candidates.extend(["/tmp", "/private/tmp", "/var/tmp"])
+
+    sys_temp_keys: List[Tuple[str, List[str], Tuple[str, ...]]] = []
+    seen_t_keys: Set[Tuple[str, ...]] = set()
+    for tc in sys_temp_candidates:
+        tp = _split(tc)
+        if tp and tp[1]:
+            tk = _key(*tp)
+            if tk not in seen_t_keys:
+                seen_t_keys.add(tk)
+                sys_temp_keys.append((tp[0], tp[1], tk))
+
+    raw_items: List[Tuple[str, str]] = []
+    for af in agent_files(root=root, home=home, app_data=app_data):
+        try:
+            raw_bytes = af.path.read_bytes()
+            text = raw_bytes.decode("utf-8-sig")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if af.kind == "json":
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            _collect_json_strings(data, af.agent, raw_items)
+        elif af.kind == "toml":
+            _collect_toml_strings(text, af.agent, raw_items)
+
+    expanded_items: List[Tuple[str, str]] = []
+    for raw_str, agent in raw_items:
+        if not raw_str:
+            continue
+        if _UNREADABLE_DRIVE_RE.match(raw_str):
+            expanded_items.append((raw_str, agent))
+            continue
+        if os.pathsep in raw_str and not raw_str.startswith(("file:", "http:", "https:", "-")):
+            pieces = _split_pathsep(raw_str)
+            if len(pieces) > 1 and all(_split(p) is not None for p in pieces if p):
+                for p in pieces:
+                    if p:
+                        expanded_items.append((p, agent))
+                continue
+        expanded_items.append((raw_str, agent))
+
+    unreadable_groups: Dict[str, Dict[str, Any]] = {}
+    moved_groups: Dict[Tuple[str, ...], Dict[str, Any]] = {}
+
+    for text, agent in expanded_items:
+        if _UNREADABLE_DRIVE_RE.match(text):
+            u_key = text.casefold() if _CASE_INSENSITIVE else text
+            ug = unreadable_groups.get(u_key)
+            if ug is None:
+                unreadable_groups[u_key] = {
+                    "old": text,
+                    "agents": {agent},
+                    "paths": 1,
+                }
             else:
-                valid = False
+                ug["agents"].add(agent)
+                ug["paths"] += 1
+            continue
+
+        parsed = _split(text)
+        if parsed is None:
+            continue
+        anchor, names = parsed
+        if not names:
+            continue
+
+        if sys.platform == "win32" and anchor == "/":
+            continue
+
+        last = names[-1]
+        if " -" in last:
+            last = last.split(" -", 1)[0].strip()
+        if ":" in last:
+            last = last.split(":", 1)[0].strip()
+        if last and last != names[-1]:
+            names = list(names[:-1]) + [last]
+
+        path_key = _key(anchor, names)
+
+        # Skip .claude/worktrees and <AppData>/Claude/scratch-workspaces
+        if any(
+            names[i].casefold() == ".claude" and names[i + 1].casefold() == "worktrees"
+            for i in range(len(names) - 1)
+        ):
+            continue
+        if _is_under(path_key, scratch_key) or any(
+            names[i].casefold() == "claude" and names[i + 1].casefold() == "scratch-workspaces"
+            for i in range(len(names) - 1)
+        ):
+            continue
+        if _is_skipped_temp_path(anchor, names, path_key, home_temp_key, sys_temp_keys, home_key, root_key):
+            continue
+
+        candidate_path = _join_split(anchor, names)
+        if _exists(Path(candidate_path)):
+            continue
+
+        if anchor == "/" and not _exists(Path("/" + names[0])):
+            continue
+
+        # Walk up while parent does not exist; A = first existing ancestor, M = A's child on that path.
+        k = len(names) - 1
+        while k > 0 and not _exists(Path(_join_split(anchor, names[:k]))):
+            k -= 1
+
+        m_names = names[: k + 1]
+        m_key = _key(anchor, m_names)
+        m_str = _join_split(anchor, m_names)
+        a_path = Path(_join_split(anchor, names[:k]))
+
+        mg = moved_groups.get(m_key)
+        if mg is None:
+            mg = {
+                "old": m_str,
+                "anchor": anchor,
+                "m_names": m_names,
+                "a_path": a_path,
+                "agents": {agent},
+                "paths": 1,
+                "direct_subs": set(),
+            }
+            moved_groups[m_key] = mg
+        else:
+            if mg["old"].islower() and not m_str.islower():
+                mg["old"] = m_str
+                mg["m_names"] = m_names
+            mg["agents"].add(agent)
+            mg["paths"] += 1
+
+        if len(names) > len(m_names):
+            mg["direct_subs"].add(names[len(m_names)].casefold())
+
+    batches = _all_move_batches(root)
+    results: List[MovedFolder] = []
+
+    for m_key, mg in moved_groups.items():
+        m_str = mg["old"]
+        m_names = mg["m_names"]
+        a_path = mg["a_path"]
+        agents_sorted = sorted(mg["agents"])
+        paths_count = mg["paths"]
+        direct_subs: Set[str] = mg["direct_subs"]
+
+        # 1. journal
+        resolved_new: Optional[str] = None
+        resolved_kind: Optional[str] = None
+        candidates: List[str] = []
+
+        for batch_moves in batches:
+            matched_old: Optional[Tuple[str, List[str]]] = None
+            for old_p, _ in batch_moves:
+                old_parsed = _split(old_p)
+                if old_parsed and old_parsed[1] and _is_under(m_key, _key(*old_parsed)):
+                    matched_old = old_parsed
+                    break
+            if matched_old is not None:
+                old_anchor, old_names = matched_old
+                m_for_map = _join_split(old_anchor, list(old_names) + list(m_names[len(old_names) :]))
+                mapped = PathMapper(batch_moves).map(m_for_map)
+                if mapped and _exists(Path(mapped)):
+                    resolved_new = mapped
+                    resolved_kind = "journal"
                 break
-        if valid and parsed_moves:
-            result = dict(data)
-            result["moves"] = parsed_moves
-            return result
-    return None
+
+        # 2. same-name (at A/*/<name> and A/*/*/<name>)
+        if resolved_kind is None:
+            target_cf = m_names[-1].casefold()
+            same_matches: List[str] = []
+            a_children = _list_subdirs(a_path) if _is_dir(a_path) else []
+            for c1 in a_children:
+                c1_children = _list_subdirs(c1)
+                for c2 in c1_children:
+                    if c2.name.casefold() == target_cf:
+                        same_matches.append(str(c2))
+                    else:
+                        for c3 in _list_subdirs(c2):
+                            if c3.name.casefold() == target_cf:
+                                same_matches.append(str(c3))
+
+            if len(same_matches) == 1:
+                resolved_new = same_matches[0]
+                resolved_kind = "same-name"
+            elif len(same_matches) > 1:
+                resolved_kind = "ambiguous"
+                candidates = same_matches
+            else:
+                # 3. renamed (only when no same-name candidate and >= 2 distinct direct subfolders)
+                if len(direct_subs) >= 2:
+                    renamed_matches: List[str] = []
+                    for c1 in a_children:
+                        c1_sub_names = {sub.name.casefold() for sub in _list_subdirs(c1)}
+                        if direct_subs.issubset(c1_sub_names):
+                            renamed_matches.append(str(c1))
+                    if len(renamed_matches) == 1:
+                        resolved_new = renamed_matches[0]
+                        resolved_kind = "renamed"
+
+        if resolved_kind is None:
+            resolved_kind = "not-found"
+
+        results.append(
+            MovedFolder(
+                old=m_str,
+                new=resolved_new,
+                kind=resolved_kind,
+                candidates=candidates,
+                agents=agents_sorted,
+                paths=paths_count,
+            )
+        )
+
+    for ug in unreadable_groups.values():
+        results.append(
+            MovedFolder(
+                old=ug["old"],
+                new=None,
+                kind="unreadable",
+                candidates=[],
+                agents=sorted(ug["agents"]),
+                paths=ug["paths"],
+            )
+        )
+
+    return results
 
 
 def after_moves(root: str, moves: Sequence[Move], tool: str) -> Optional[RelinkReport]:
@@ -1126,5 +1528,7 @@ __all__ = [
     "journal_path",
     "record_moves",
     "last_moves",
+    "MovedFolder",
+    "find_moved",
     "after_moves",
 ]

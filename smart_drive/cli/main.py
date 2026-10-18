@@ -521,6 +521,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_relink.add_argument("old", nargs="?", default=None, help="Old folder path (when relinking a manual move)")
     p_relink.add_argument("new", nargs="?", default=None, help="New folder path (when relinking a manual move)")
+    p_relink.add_argument("--find", action="store_true", help="Find where missing folders remembered by coding agents went")
+    p_relink.add_argument("--apply", action="store_true", help="Relink every sure match found by --find")
     p_relink.add_argument("--root", help="Root directory of the SSD")
     p_relink.add_argument("--dry-run", action="store_true", help="Preview path updates without modifying any files")
     p_relink.add_argument("--json", action="store_true", help="Output relink report in JSON format")
