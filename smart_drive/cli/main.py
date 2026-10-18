@@ -18,6 +18,7 @@ Provides subcommands:
 - snapshot: Point-in-time snapshot creation, listing, and SHA-256 verification.
 - backup: Safe incremental backup to target directory or drive.
 - repos: Duplicate git clones in one place, and sync state of portable-SSD mirrors (read-only).
+- relink: Rewrite project and MCP server paths remembered by coding agents after folders move.
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ from smart_drive.cli.cmd_mcp_config import cmd_mcp_config
 from smart_drive.cli.cmd_offload import cmd_offload
 from smart_drive.cli.cmd_organize import cmd_organize
 from smart_drive.cli.cmd_path_check import cmd_path_check
+from smart_drive.cli.cmd_relink import cmd_relink
 from smart_drive.cli.cmd_repos import cmd_repos
 from smart_drive.cli.cmd_search import cmd_search
 from smart_drive.cli.cmd_sentinel import cmd_sentinel
@@ -512,6 +514,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_setup.add_argument("--yes", "-y", action="store_true", help="Accepted for convenience; setup never prompts")
     p_setup.add_argument("--json", action="store_true", help="Output the report in JSON format")
 
+    # 21. relink
+    p_relink = subparsers.add_parser(
+        "relink",
+        help="Rewrite project and MCP server paths remembered by coding agents after folders move",
+    )
+    p_relink.add_argument("old", nargs="?", default=None, help="Old folder path (when relinking a manual move)")
+    p_relink.add_argument("new", nargs="?", default=None, help="New folder path (when relinking a manual move)")
+    p_relink.add_argument("--root", help="Root directory of the SSD")
+    p_relink.add_argument("--dry-run", action="store_true", help="Preview path updates without modifying any files")
+    p_relink.add_argument("--json", action="store_true", help="Output relink report in JSON format")
+
     # self-path-check subcommand
     p_path_check = subparsers.add_parser(
         "self-path-check",
@@ -554,6 +567,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "repos": cmd_repos,
         "gitignore": cmd_gitignore,
         "setup": cmd_setup,
+        "relink": cmd_relink,
         "self-path-check": cmd_path_check,
         "path-check": cmd_path_check,
         "self_path_check": cmd_path_check,

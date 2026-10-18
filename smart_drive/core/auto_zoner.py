@@ -46,6 +46,19 @@ def _is_relative_to(path: Path, base: Path) -> bool:
         return False
 
 
+def _move(src: str, dest: str) -> None:
+    """Moves src to dest with a single atomic os.rename when on the same device."""
+    same_dev = True
+    try:
+        same_dev = os.stat(src).st_dev == os.stat(os.path.dirname(dest)).st_dev
+    except OSError:
+        same_dev = True
+    if same_dev:
+        os.rename(src, dest)
+    else:
+        shutil.move(src, dest)
+
+
 @dataclasses.dataclass(frozen=True)
 class ZoningAction:
     """Represents a planned or executed file/directory relocation."""
@@ -367,7 +380,7 @@ class AutoZoner:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
 
             try:
-                shutil.move(action.src_path, dest)
+                _move(action.src_path, dest)
                 moved.append({
                     "src": action.src_path,
                     "dest": dest,
@@ -377,10 +390,10 @@ class AutoZoner:
                 })
                 total_nominal_moved += action.nominal_size
                 total_slack_rebalanced += action.slack_bytes
-            except Exception as e:
+            except Exception as err:
                 errors.append({
                     "src": action.src_path,
-                    "error": str(e),
+                    "error": f"{err} (close the editor, terminal or coding agent using it, then run organize again)",
                 })
 
         return {

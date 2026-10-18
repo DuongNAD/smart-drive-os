@@ -37,6 +37,7 @@ from smart_drive.core.duplicates import DuplicateDetector
 from smart_drive.core.exfat_compat import ExFatEngine
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine, SecurityGuard
+from smart_drive.core.relink import after_moves, relink
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
 from smart_drive.core.root import DriveRootNotFound, find_drive_root
@@ -342,7 +343,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "ssd_auto_organize",
-        "description": "Autonomous drive auto-zoning, anti-slack rebalancing, and organization. Classifies loose items into standard taxonomies, ensures shields, and syncs index.",
+        "description": "Autonomous drive auto-zoning, anti-slack rebalancing, and organization. Classifies loose items into standard taxonomies, ensures shields, and syncs index. Moved folders stay usable by coding agents: the project and MCP server paths they remember are rewritten to the new places.",
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": True,
@@ -1172,6 +1173,7 @@ class SmartDriveMCPServer:
         if apply_mode:
             created_shields = ensure_anti_indexing_markers(root)
             res = zoner.apply_plan(plan)
+            relinked = after_moves(root, [(m["src"], m["dest"]) for m in res["moved"]], "organize")
             db_path = self.get_db_path()
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
             db = DatabaseManager(db_path)
@@ -1185,10 +1187,17 @@ class SmartDriveMCPServer:
             return {
                 "status": "applied",
                 "result": res,
+                "relink": relinked.to_dict() if relinked else None,
                 "shields_created": created_shields,
                 "index_sync": dataclasses.asdict(inc_stats),
             }
-        return {"status": "dry_run", "plan_count": len(plan), "actions": [a.to_dict() for a in plan]}
+        preview = relink([(a.src_path, a.dest_path) for a in plan], root=root, dry_run=True) if plan else None
+        return {
+            "status": "dry_run",
+            "plan_count": len(plan),
+            "actions": [a.to_dict() for a in plan],
+            "relink_preview": preview.to_dict() if preview else None,
+        }
 
     def handle_ssd_gitignore(self, args: Dict[str, Any]) -> Dict[str, Any]:
         from smart_drive.core.gitignore import (
