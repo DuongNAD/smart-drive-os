@@ -47,6 +47,7 @@
    - [10. Cam kết 100% Zero External Pip Dependencies](#10-cam-kết-100-zero-external-pip-dependencies)
    - [11. Clone trùng lặp & Bản đối chiếu trên SSD di động (`smart-drive repos`)](#11-clone-trùng-lặp--bản-đối-chiếu-trên-ssd-di-động-smart-drive-repos)
    - [12. Quản lý .gitignore & Bảo vệ Dữ liệu Cá nhân (`smart-drive gitignore`)](#12-quản-lý-gitignore--bảo-vệ-dữ-liệu-cá-nhân-smart-drive-gitignore)
+   - [13. Dời Thư Mục Mà Coding Agent Vẫn Chạy Đúng (`smart-drive relink`)](#13-dời-thư-mục-mà-coding-agent-vẫn-chạy-đúng-smart-drive-relink)
 4. [Khởi Động Nhanh Trong 3 Bước](#4-khởi-động-nhanh-trong-3-bước)
 5. [5 Cấu Hình Mẫu Chuyên Biệt (Preset Profiles)](#5-5-cấu-hình-mẫu-chuyên-biệt-preset-profiles)
 6. [Hướng Dẫn Sử Dụng Bộ Khởi Chạy 1-Chạm (20 Launchers)](#6-hướng-dẫn-sử-dụng-bộ-khởi-chạy-1-chạm-20-launchers)
@@ -275,6 +276,22 @@ Thiết lập và quản trị chuẩn hóa tệp `.gitignore` trên toàn bộ 
 - **Bảo vệ chuẩn hợp đồng "Personal-Data" của Constellation**: Đối với các kho tài liệu học tập (Aurora slides, đề cương Polaris, bộ nhớ ôn tập Vega, nhật ký thực thi Sirius), tự động khóa chặt lịch sử học tập cá nhân: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/`, `.polaris/` (hồ sơ người học) và `.sirius/` (nhật ký thực thi).
 - **Phát hiện nguy cơ rò rỉ trên Repo công khai**: Kiểm tra URL remote (không gọi mạng) để cảnh báo tức thì khi dữ liệu học tập cá nhân bị theo dõi trong repo có remote công khai (GitHub, GitLab, Bitbucket) hoặc remote chưa xác định.
 - **Hủy theo dõi an toàn (`--untrack`)**: Chạy lệnh `git rm -r --cached` cho các tệp khớp mà không làm mất tệp làm việc thực tế trên đĩa và từ chối thực hiện nếu repo đang có thay đổi đã staged.
+
+### 13. Dời Thư Mục Mà Coding Agent Vẫn Chạy Đúng (`smart-drive relink`)
+Các coding agent nhớ từng dự án và từng máy chủ MCP bằng đường dẫn tuyệt đối, còn exFAT không thể để lại liên kết ở chỗ cũ. Vì vậy mỗi khi `organize` hoặc `classify` dời một thư mục, SmartDrive tự viết lại các đường dẫn đó:
+- **Cấu hình agent**: Claude Code (`~/.claude.json`), Claude desktop (cấu hình, session, worktree), Codex (`config.toml`), Gemini CLI, Antigravity, Cursor, Windsurf, manifest của Constellation và `.mcp.json` của ổ. Mỗi file giữ nguyên định dạng và được sao lưu thành `<file>.bak.smart-drive` trước khi sửa; cài đặt quyền không bao giờ bị đụng tới.
+- **Lịch sử và repository**: lịch sử và memory của Claude Code chuyển sang thư mục dự án mới, git worktree được sửa, và các gói cài kiểu editable trong `.venv` của dự án được trỏ sang chỗ mới.
+- **Nhật ký**: mỗi đợt dời được ghi vào `.smart_drive/moves.jsonl` để có thể áp dụng lại sau.
+
+Cách chạy:
+```bash
+smart-drive organize --dry-run                               # xem trước thư mục sẽ dời và agent nào được cập nhật
+smart-drive organize --apply                                 # dời thư mục rồi cập nhật đường dẫn cho agent
+smart-drive relink                                           # áp dụng lại đợt dời gần nhất (vd. sau khi tắt một agent)
+smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an" --dry-run    # thư mục bạn tự dời tay: xem trước
+smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an"              # ...rồi áp dụng
+```
+Tắt Claude desktop, Claude Code và Codex trước khi relink (agent đang mở có thể ghi lại cấu hình cũ), xong thì mở lại. Nếu một lệnh trong `.venv` của dự án đã dời vẫn trỏ về chỗ cũ, chạy `uv sync --reinstall` trong dự án đó.
 
 ---
 
