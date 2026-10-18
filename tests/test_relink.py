@@ -6,6 +6,8 @@ reads or writes real coding agent configuration files on the host machine.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -16,6 +18,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from smart_drive.cli.main import main as cli_main
 from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.relink import (
     BACKUP_SUFFIX,
@@ -27,6 +30,7 @@ from smart_drive.core.relink import (
     last_moves,
     record_moves,
     relink,
+    running_agents,
 )
 from tests.helpers import SmartDriveTestCase, run_smart_drive_cli
 
@@ -40,6 +44,13 @@ class TestRelink(SmartDriveTestCase):
         self.fake_appdata = self.fake_home / "AppData" / "Roaming"
         self.fake_home.mkdir(parents=True, exist_ok=True)
         self.fake_appdata.mkdir(parents=True, exist_ok=True)
+        self._proc_patcher = patch("smart_drive.core.relink._running_processes", return_value=set())
+        self._proc_patcher.start()
+
+    def tearDown(self) -> None:
+        if hasattr(self, "_proc_patcher"):
+            self._proc_patcher.stop()
+        super().tearDown()
 
     def _cli_env(self) -> dict[str, str]:
         return {
@@ -1063,6 +1074,115 @@ class TestRelink(SmartDriveTestCase):
         assert latest_manual is not None
         self.assertEqual(latest_manual["tool"], "relink")
         self.assertEqual(latest_manual["moves"], [(str(drive / "old_box"), str(ren_new))])
+
+    def test_24_running_agents_and_warning_without_wait(self) -> None:
+        with patch(
+            "smart_drive.core.relink._running_processes",
+            return_value={"Claude.exe", "/usr/bin/codex", "Cursor.exe"},
+        ):
+            self.assertEqual(
+                running_agents(),
+                {"Claude Code", "Claude desktop", "Codex", "Cursor"},
+            )
+
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(json.dumps({"projects": {"D:\\proj": {}}}), encoding="utf-8")
+
+        with patch("smart_drive.core.relink._running_processes", return_value={"claude.exe"}):
+            report = relink(
+                [("D:\\proj", "D:\\03_Development_Projects\\proj")],
+                home=self.fake_home,
+                app_data=self.fake_appdata,
+            )
+
+        self.assertTrue(report.changed)
+        expected_warn = (
+            "Claude Code is running: it may write its old settings back when it quits. "
+            "Quit it, then run `smart-drive relink --wait` (or `smart-drive relink` again)."
+        )
+        self.assertIn(expected_warn, report.warnings)
+
+    def test_25_wait_polls_until_closed_then_writes_and_timeout_exits_3(self) -> None:
+        drive = self.create_mock_drive()
+        new_dir = drive / "03_Development_Projects" / "wait_app"
+        new_dir.mkdir(parents=True, exist_ok=True)
+        old_dir = drive / "wait_app"
+
+        claude_file = self.fake_home / ".claude.json"
+        initial_json = json.dumps({"projects": {str(old_dir): {}}}, indent=2)
+        claude_file.write_text(initial_json, encoding="utf-8")
+
+        sleeps: list[float] = []
+        # 1st call (preview check): claude running; 2nd call (poll 1): claude running; 3rd call (poll 2): closed; 4th call (real relink): closed
+        proc_seq = [{"Claude.exe"}, {"Claude.exe"}, set(), set()]
+        clock = [0.0, 2.0, 4.0, 6.0]
+
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with (
+            patch.dict(os.environ, self._cli_env()),
+            patch("smart_drive.core.relink._running_processes", side_effect=proc_seq),
+            patch("smart_drive.cli.cmd_relink.time.sleep", side_effect=lambda s: sleeps.append(s)),
+            patch("smart_drive.cli.cmd_relink.time.monotonic", side_effect=clock),
+            contextlib.redirect_stdout(out_buf),
+            contextlib.redirect_stderr(err_buf),
+        ):
+            rc = cli_main(["relink", "--find", "--apply", "--wait", "--root", str(drive)])
+
+        self.assertEqual(rc, 0, err_buf.getvalue())
+        self.assertEqual(sleeps, [2, 2])
+        self.assertIn(
+            "Waiting for Claude Code to close. Quit them now (Ctrl+C cancels)...",
+            out_buf.getvalue(),
+        )
+        updated_projects = json.loads(claude_file.read_text(encoding="utf-8"))["projects"]
+        self.assertIn(str(new_dir), updated_projects)
+
+        # Now test timeout -> exit 3 and no file changed
+        claude_file.write_text(initial_json, encoding="utf-8")
+        out_timeout = io.StringIO()
+        err_timeout = io.StringIO()
+        with (
+            patch.dict(os.environ, self._cli_env()),
+            patch("smart_drive.core.relink._running_processes", return_value={"Claude.exe"}),
+            patch("smart_drive.cli.cmd_relink.time.sleep", side_effect=lambda s: None),
+            patch("smart_drive.cli.cmd_relink.time.monotonic", side_effect=[0.0, 10.0, 35.0]),
+            contextlib.redirect_stdout(out_timeout),
+            contextlib.redirect_stderr(err_timeout),
+        ):
+            rc_timeout = cli_main(["relink", str(old_dir), str(new_dir), "--wait", "0.5", "--root", str(drive)])
+
+        self.assertEqual(rc_timeout, 3)
+        self.assertIn("timed out", (out_timeout.getvalue() + err_timeout.getvalue()).lower())
+        self.assertEqual(claude_file.read_text(encoding="utf-8"), initial_json)
+
+    def test_26_organize_apply_adds_running_agent_warning(self) -> None:
+        drive = self.create_mock_drive()
+        app_dir = drive / "busy_app"
+        app_dir.mkdir()
+        (app_dir / "package.json").write_text('{"name": "busy_app"}\n', encoding="utf-8")
+
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(json.dumps({"projects": {str(app_dir): {}}}), encoding="utf-8")
+
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        with (
+            patch.dict(os.environ, self._cli_env()),
+            patch("smart_drive.core.relink._running_processes", return_value={"claude.exe"}),
+            contextlib.redirect_stdout(out_buf),
+            contextlib.redirect_stderr(err_buf),
+        ):
+            rc = cli_main(["organize", "--root", str(drive), "--apply", "--json"])
+
+        self.assertEqual(rc, 0, err_buf.getvalue())
+        payload = json.loads(out_buf.getvalue())
+        self.assertEqual(payload["zoning"]["moved_count"], 1)
+        warnings = payload["relink"]["warnings"]
+        self.assertTrue(
+            any("Claude Code is running: it may write its old settings back when it quits." in w for w in warnings),
+            f"Expected running-agent warning in {warnings!r}",
+        )
 
 
 if __name__ == "__main__":
