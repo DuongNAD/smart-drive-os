@@ -51,6 +51,7 @@ class TestInitializeInstructions(_Server):
         self.assertEqual(set(result["serverInfo"]), {"name", "version"})
         self.assertIn("ssd_search", result["instructions"])
         self.assertIn("atomic", result["instructions"])
+        self.assertIn("relink", result["instructions"])
         self.assertIn("ssd_gitignore", result["instructions"])
 
 

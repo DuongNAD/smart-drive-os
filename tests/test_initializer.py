@@ -115,6 +115,7 @@ class TestDriveInitialization(SmartDriveTestCase):
             text = (target / name).read_text(encoding="utf-8")
             self.assertIn("gitignore audit", text)
             self.assertIn("regression test", text)
+            self.assertIn("smart-drive relink", text)
             repo_text = (PROJECT_ROOT / name).read_text(encoding="utf-8")
             self.assertEqual(_without_setup(text), _without_setup(repo_text), name)
 
