@@ -34,6 +34,8 @@ import sys
 import tempfile
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
+from smart_drive.core.root import same_file
+
 Move = Tuple[str, str]
 BACKUP_SUFFIX = ".bak.smart-drive"
 JOURNAL_NAME = "moves.jsonl"
@@ -337,6 +339,46 @@ def _resolve_locations(
     return resolved_home, resolved_app_data, use_env
 
 
+def _resolve_local_app_data(resolved_home: Path, use_env: bool) -> Path:
+    """Resolves Windows LocalAppData (<home>\\AppData\\Local when home is passed, else %LOCALAPPDATA%)."""
+    if use_env:
+        local_env = os.environ.get("LOCALAPPDATA")
+        if local_env:
+            return Path(local_env)
+    return resolved_home / "AppData" / "Local"
+
+
+def _msix_claude_dirs(local_app_data: Path) -> List[Path]:
+    """Returns existing MSIX Claude desktop Roaming\\Claude directories under <LocalAppData>\\Packages\\Claude_*."""
+    packages_dir = local_app_data / "Packages"
+    if not _is_dir(packages_dir):
+        return []
+    try:
+        pkg_dirs = sorted(packages_dir.glob("Claude_*"))
+    except OSError:
+        return []
+    out: List[Path] = []
+    for pkg_dir in pkg_dirs:
+        claude_dir = pkg_dir / "LocalCache" / "Roaming" / "Claude"
+        if _is_dir(claude_dir):
+            out.append(claude_dir)
+    return out
+
+
+def _add_claude_desktop_files(claude_dir: Path, candidates: List[AgentFile]) -> None:
+    """Appends Claude desktop config, git-worktrees, and session files under claude_dir to candidates."""
+    candidates.append(AgentFile(claude_dir / "claude_desktop_config.json", "Claude desktop", "json", True))
+    candidates.append(AgentFile(claude_dir / "git-worktrees.json", "Claude desktop", "json", True))
+    sessions_dir = claude_dir / "claude-code-sessions"
+    if _is_dir(sessions_dir):
+        try:
+            for session_file in sorted(sessions_dir.rglob("*.json")):
+                if _is_file(session_file) and not session_file.name.endswith(BACKUP_SUFFIX):
+                    candidates.append(AgentFile(session_file, "Claude desktop", "json", False))
+        except OSError:
+            pass
+
+
 def agent_files(
     root: Optional[str] = None,
     home: Optional[Path] = None,
@@ -358,21 +400,14 @@ def agent_files(
         ag_mcp = resolved_home / ".gemini" / "antigravity" / "mcp_config.json"
         const_eco = resolved_home / ".constellation" / "ecosystem.json"
 
-    claude_dir = resolved_app_data / "Claude"
     candidates: List[AgentFile] = [
         AgentFile(resolved_home / ".claude.json", "Claude Code", "json", True),
-        AgentFile(claude_dir / "claude_desktop_config.json", "Claude desktop", "json", True),
-        AgentFile(claude_dir / "git-worktrees.json", "Claude desktop", "json", True),
     ]
-
-    sessions_dir = claude_dir / "claude-code-sessions"
-    if _is_dir(sessions_dir):
-        try:
-            for session_file in sorted(sessions_dir.rglob("*.json")):
-                if _is_file(session_file) and not session_file.name.endswith(BACKUP_SUFFIX):
-                    candidates.append(AgentFile(session_file, "Claude desktop", "json", False))
-        except OSError:
-            pass
+    _add_claude_desktop_files(resolved_app_data / "Claude", candidates)
+    if sys.platform == "win32":
+        local_app_data = _resolve_local_app_data(resolved_home, use_env)
+        for msix_claude in _msix_claude_dirs(local_app_data):
+            _add_claude_desktop_files(msix_claude, candidates)
 
     gemini_dir = resolved_home / ".gemini"
     candidates.extend([
@@ -389,7 +424,14 @@ def agent_files(
     if root:
         candidates.append(AgentFile(Path(root) / ".mcp.json", "SSD .mcp.json", "json", True))
 
-    return [af for af in candidates if _is_file(af.path)]
+    deduped: List[AgentFile] = []
+    for af in candidates:
+        if not _is_file(af.path):
+            continue
+        if any(same_file(af.path, kept.path) for kept in deduped):
+            continue
+        deduped.append(af)
+    return deduped
 
 
 @dataclass

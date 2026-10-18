@@ -57,6 +57,7 @@ class TestRelink(SmartDriveTestCase):
             "USERPROFILE": str(self.fake_home),
             "HOME": str(self.fake_home),
             "APPDATA": str(self.fake_appdata),
+            "LOCALAPPDATA": str(self.fake_home / "AppData" / "Local"),
             "XDG_CONFIG_HOME": str(self.fake_appdata),
             "CONSTELLATION_HOME": "",
             "ANTIGRAVITY_HOME": "",
@@ -1183,6 +1184,103 @@ class TestRelink(SmartDriveTestCase):
             any("Claude Code is running: it may write its old settings back when it quits." in w for w in warnings),
             f"Expected running-agent warning in {warnings!r}",
         )
+
+    def test_27_msix_claude_desktop_files_relinked_and_deduplicated(self) -> None:
+        roaming_claude = self.fake_appdata / "Claude"
+        msix_claude = (
+            self.fake_home
+            / "AppData"
+            / "Local"
+            / "Packages"
+            / "Claude_pzs8sxrjxfjjc"
+            / "LocalCache"
+            / "Roaming"
+            / "Claude"
+        )
+        roaming_claude.mkdir(parents=True, exist_ok=True)
+        msix_claude.mkdir(parents=True, exist_ok=True)
+
+        roaming_cfg = roaming_claude / "claude_desktop_config.json"
+        msix_cfg = msix_claude / "claude_desktop_config.json"
+        msix_wt = msix_claude / "git-worktrees.json"
+        msix_sess = msix_claude / "claude-code-sessions" / "acc" / "org" / "local_1.json"
+        msix_sess.parent.mkdir(parents=True, exist_ok=True)
+
+        roaming_cfg.write_text(
+            json.dumps({"mcpServers": {"a": {"args": ["D:\\proj\\roaming.js"]}}}),
+            encoding="utf-8",
+        )
+        msix_cfg.write_text(
+            json.dumps({"mcpServers": {"b": {"args": ["D:\\proj\\msix.js"]}}}),
+            encoding="utf-8",
+        )
+        msix_wt.write_text(
+            json.dumps({"worktrees": [{"path": "D:\\proj\\wt"}]}),
+            encoding="utf-8",
+        )
+        msix_sess.write_text(
+            json.dumps({"cwd": "D:\\proj\\sess"}),
+            encoding="utf-8",
+        )
+
+        # Ignore external LOCALAPPDATA when home is passed
+        env_local = self.test_dir / "env_local_appdata"
+        env_msix = env_local / "Packages" / "Claude_other" / "LocalCache" / "Roaming" / "Claude"
+        env_msix.mkdir(parents=True, exist_ok=True)
+        (env_msix / "claude_desktop_config.json").write_text(
+            json.dumps({"mcpServers": {"x": {"args": ["D:\\proj\\ignored.js"]}}}),
+            encoding="utf-8",
+        )
+
+        with patch.object(sys, "platform", "win32"), patch.dict(os.environ, {"LOCALAPPDATA": str(env_local)}):
+            report = relink(
+                [("D:\\proj", "D:\\03_Development_Projects\\proj")],
+                home=self.fake_home,
+                app_data=self.fake_appdata,
+            )
+
+        self.assertEqual(report.agents, {"Claude desktop": 4})
+        self.assertEqual(
+            json.loads(roaming_cfg.read_text(encoding="utf-8"))["mcpServers"]["a"]["args"],
+            ["D:\\03_Development_Projects\\proj\\roaming.js"],
+        )
+        self.assertEqual(
+            json.loads(msix_cfg.read_text(encoding="utf-8"))["mcpServers"]["b"]["args"],
+            ["D:\\03_Development_Projects\\proj\\msix.js"],
+        )
+        self.assertEqual(
+            json.loads(msix_wt.read_text(encoding="utf-8"))["worktrees"][0]["path"],
+            "D:\\03_Development_Projects\\proj\\wt",
+        )
+        self.assertEqual(
+            json.loads(msix_sess.read_text(encoding="utf-8"))["cwd"],
+            "D:\\03_Development_Projects\\proj\\sess",
+        )
+        self.assertTrue(Path(str(msix_cfg) + BACKUP_SUFFIX).is_file())
+        self.assertFalse(Path(str(msix_sess) + BACKUP_SUFFIX).exists())
+
+        # Same physical file reachable through both <AppData>\Claude and MSIX -> kept once (first wins) and processed once
+        msix_wt.unlink()
+        msix_sess.unlink()
+        msix_cfg.unlink()
+        roaming_cfg.write_text(
+            json.dumps({"mcpServers": {"shared": {"args": ["D:\\proj2\\shared.js"]}}}),
+            encoding="utf-8",
+        )
+        os.link(roaming_cfg, msix_cfg)
+
+        with patch.object(sys, "platform", "win32"):
+            files = agent_files(home=self.fake_home, app_data=self.fake_appdata)
+            self.assertEqual([af.path for af in files], [roaming_cfg])
+            r_shared = relink(
+                [("D:\\proj2", "D:\\03_Development_Projects\\proj2")],
+                home=self.fake_home,
+                app_data=self.fake_appdata,
+            )
+
+        self.assertEqual(len(r_shared.updated), 1)
+        self.assertEqual(r_shared.updated[0]["file"], str(roaming_cfg))
+        self.assertEqual(r_shared.agents, {"Claude desktop": 1})
 
 
 if __name__ == "__main__":
