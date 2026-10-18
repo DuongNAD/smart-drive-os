@@ -47,6 +47,7 @@
    - [10. 100% Zero Pip Dependencies (`dependencies = []`)](#10-100-zero-pip-dependencies-dependencies--)
    - [11. Duplicate Clones & Portable-SSD Mirrors (`smart-drive repos`)](#11-duplicate-clones--portable-ssd-mirrors-smart-drive-repos)
    - [12. Gitignore Governance & Personal Data Protection (`smart-drive gitignore`)](#12-gitignore-governance--personal-data-protection-smart-drive-gitignore)
+   - [13. Folder Moves That Keep Coding Agents Working (`smart-drive relink`)](#13-folder-moves-that-keep-coding-agents-working-smart-drive-relink)
 4. [3-Step Quickstart](#3-step-quickstart)
 5. [The 5 Preset Profiles](#the-5-preset-profiles)
 6. [Cross-Platform Portable Launchers Guide](#cross-platform-portable-launchers-guide)
@@ -275,6 +276,22 @@ Ensures clean, robust `.gitignore` rules across every git repository on the driv
 - **Constellation "Personal-Data" Contract Protection**: For learning repositories (Aurora slides, Polaris briefs, Vega memory collections, Sirius execution journals), automatically locks down personal learning history: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/`, `.polaris/` (learner profile), and `.sirius/` (execution journal).
 - **Public Repository Leak Detection**: Zero-network remote URL inspection flags when personal learning data is tracked in repositories with public remotes (GitHub, GitLab, Bitbucket) or unconfigured remotes.
 - **Safe Untracking (`--untrack`)**: Runs `git rm -r --cached` on matching tracked files without touching files in the working tree and refusing when staged changes exist.
+
+### 13. Folder Moves That Keep Coding Agents Working (`smart-drive relink`)
+Coding agents remember every project and MCP server by absolute path, and exFAT cannot keep a link at the old place. Whenever `organize` or `classify` moves a folder, SmartDrive rewrites those paths for you:
+- **Agent settings**: Claude Code (`~/.claude.json`), Claude desktop (config, sessions, worktree records), Codex (`config.toml`), Gemini CLI, Antigravity, Cursor, Windsurf, the Constellation manifest and the drive's `.mcp.json`. Each file keeps its own format and is first copied to `<file>.bak.smart-drive`; permission settings are never touched.
+- **History and repositories**: Claude Code history and memory move to the new project's folder, git worktrees are repaired, and editable installs inside a moved `.venv` point at the new place.
+- **Journal**: every batch of moves is logged in `.smart_drive/moves.jsonl`, so it can be applied again later.
+
+How to run it:
+```bash
+smart-drive organize --dry-run                             # preview the moves and which agents will follow
+smart-drive organize --apply                               # move, then relink the agents
+smart-drive relink                                         # apply the latest batch again (e.g. after closing an agent)
+smart-drive relink "E:\Old\proj" "E:\New\proj" --dry-run   # a folder moved by hand: preview
+smart-drive relink "E:\Old\proj" "E:\New\proj"             # ...then apply
+```
+Close Claude desktop, Claude Code and Codex before relinking (an open agent can write its old settings back), then reopen them. If a command inside a moved `.venv` still points at the old place, run `uv sync --reinstall` in that project.
 
 ---
 
