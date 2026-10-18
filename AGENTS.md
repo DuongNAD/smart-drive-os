@@ -33,3 +33,9 @@ Every AI agent working in this workspace must commit in small, verified steps:
 - **Explain why, not just what**: State the root cause or invariant protected in the commit body.
 - **Lock every fix with a regression test**: Add or update a deterministic test in the same commit as the code change, and run the test suite before committing so every commit passes on its own.
 - **Audit before staging**: Run `smart-drive gitignore audit` and check `git status` / `git diff --staged` before committing so secrets, personal learning state (`.vega/`, `.polaris/`, `.sirius/`), and build/OS junk are never tracked.
+
+## 5. Moving Folders Without Breaking Coding Agents
+Coding agents remember projects and MCP servers by absolute path, and exFAT cannot leave a link at the old place:
+- Move folders with `smart-drive organize --apply` (or `classify --apply`): it relinks the coding agents to the new places. Preview with `--dry-run`.
+- After moving or renaming a folder by hand, run `smart-drive relink "<old path>" "<new path>"` (`--dry-run` previews). With no arguments it re-applies the latest organize/classify batch.
+- Close Claude desktop, Claude Code and Codex before relinking (or relink again after closing them), then restart the agents so they load the new paths.

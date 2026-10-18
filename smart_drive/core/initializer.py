@@ -155,6 +155,12 @@ Every AI agent working in this workspace must commit in small, verified steps:
 - **Explain why, not just what**: State the root cause or invariant protected in the commit body.
 - **Lock every fix with a regression test**: Add or update a deterministic test in the same commit as the code change, and run the test suite before committing so every commit passes on its own.
 - **Audit before staging**: Run `smart-drive gitignore audit` and check `git status` / `git diff --staged` before committing so secrets, personal learning state (`.vega/`, `.polaris/`, `.sirius/`), and build/OS junk are never tracked.
+
+## 5. Moving Folders Without Breaking Coding Agents
+Coding agents remember projects and MCP servers by absolute path, and exFAT cannot leave a link at the old place:
+- Move folders with `smart-drive organize --apply` (or `classify --apply`): it relinks the coding agents to the new places. Preview with `--dry-run`.
+- After moving or renaming a folder by hand, run `smart-drive relink "<old path>" "<new path>"` (`--dry-run` previews). With no arguments it re-applies the latest organize/classify batch.
+- Close Claude desktop, Claude Code and Codex before relinking (or relink again after closing them), then restart the agents so they load the new paths.
 """
 
 GEMINI_MD_TEMPLATE = """# GEMINI.md - SSD Workspace Guidelines & Directives
@@ -167,6 +173,7 @@ Allocation Unit: 524,288 bytes (512 KB).
 - Search lessons and research with `smart-drive search --kind slide|fact|capture "<query>"` (MCP ssd_search kind/content).
 - Use `smart-drive clean` (Tier 1 safe by default, `--apply` required for purge).
 - Use `smart-drive organize` for auto-zoning and anti-slack rebalancing.
+- After moving a folder by hand, run `smart-drive relink "<old>" "<new>"` so coding agents follow; `organize --apply` does this itself (`--dry-run` previews).
 - Run `smart-drive gitignore audit` before committing.
 
 ## MCP Ecosystem Setup
@@ -185,6 +192,7 @@ CLAUDE_MD_TEMPLATE = """# CLAUDE.md - AI Coding Instructions for SSD Workspace
 - Search files using `smart-drive search "<query>"`.
 - Search lessons and research with `smart-drive search --kind slide|fact|capture "<query>"` (MCP ssd_search kind/content).
 - Verify SSD health using `smart-drive sentinel`.
+- Move folders with `smart-drive organize --apply`; after moving one by hand, run `smart-drive relink "<old>" "<new>"` so coding agents follow (`--dry-run` previews).
 - Run `smart-drive gitignore audit` before committing.
 - Commit in small, atomic steps: one logical fix or feature per commit (`fix(scope): ...`, `feat(scope): ...`), paired with a regression test in the same commit, and run the test suite before committing.
 - First time on a machine: run `smart-drive setup` to fetch and register the MCP ecosystem (`--dry-run` previews).

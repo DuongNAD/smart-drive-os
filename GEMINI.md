@@ -8,6 +8,7 @@ Allocation Unit: 524,288 bytes (512 KB).
 - Search lessons and research with `smart-drive search --kind slide|fact|capture "<query>"` (MCP ssd_search kind/content).
 - Use `smart-drive clean` (Tier 1 safe by default, `--apply` required for purge).
 - Use `smart-drive organize` for auto-zoning and anti-slack rebalancing.
+- After moving a folder by hand, run `smart-drive relink "<old>" "<new>"` so coding agents follow; `organize --apply` does this itself (`--dry-run` previews).
 - Run `smart-drive gitignore audit` before committing.
 
 ## MCP Ecosystem Setup
