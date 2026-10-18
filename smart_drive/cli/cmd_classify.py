@@ -12,7 +12,9 @@ import os
 import sys
 from pathlib import Path
 
+from smart_drive.cli.cmd_relink import print_relink
 from smart_drive.core.classifier import ClassifierEngine, ClassificationReport
+from smart_drive.core.relink import after_moves
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 
 
@@ -57,6 +59,8 @@ def cmd_classify(args: argparse.Namespace) -> int:
     # 1. APPLY MODE
     if apply_mode:
         actions = engine.execute_relocation(results, dry_run=False)
+        moves = [(str(a.source_path), str(a.destination_path)) for a in actions if a.status == "MOVED"]
+        relinked = after_moves(root, moves, "classify")
         report = ClassificationReport(
             root=root,
             total_scanned=len(results),
@@ -69,7 +73,9 @@ def cmd_classify(args: argparse.Namespace) -> int:
         )
 
         if as_json:
-            print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
+            data = report.to_dict()
+            data["relink"] = relinked.to_dict() if relinked else None
+            print(json.dumps(data, indent=2, ensure_ascii=False))
             return 0
 
         moved = [a for a in actions if a.status == "MOVED"]
@@ -93,6 +99,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             f"Applied: {len(moved)} moved, {len(skipped)} already in place, "
             f"{len(unsafe)} left alone because of symlinks, {len(errors)} error(s).\n"
         )
+        print_relink(relinked)
         return 0 if not errors else 1
 
     # 2. DRY-RUN SIMULATION MODE
