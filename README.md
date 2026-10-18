@@ -290,8 +290,10 @@ smart-drive organize --apply                               # move, then relink t
 smart-drive relink                                         # apply the latest batch again (e.g. after closing an agent)
 smart-drive relink "E:\Old\proj" "E:\New\proj" --dry-run   # a folder moved by hand: preview
 smart-drive relink "E:\Old\proj" "E:\New\proj"             # ...then apply
+smart-drive relink --find                                  # list stale agent paths and where each folder went
+smart-drive relink --find --apply --wait                   # relink the sure matches, waiting for open agents to close
 ```
-Close Claude desktop, Claude Code and Codex before relinking (an open agent can write its old settings back), then reopen them. If a command inside a moved `.venv` still points at the old place, run `uv sync --reinstall` in that project.
+Menu option `[8]` of the `SmartDrive` launchers does the same in a few key presses. Close Claude desktop, Claude Code and Codex before relinking (an open agent can write its old settings back), then reopen them. If a command inside a moved `.venv` still points at the old place, run `uv sync --reinstall` in that project.
 
 ---
 
