@@ -6,16 +6,19 @@ import argparse
 import json
 import os
 import sys
-from typing import List, Optional, Tuple
+import time
+from typing import List, Optional, Sequence, Tuple
 
 from smart_drive.core.relink import (
     BACKUP_SUFFIX,
+    Move,
     MovedFolder,
     RelinkReport,
     find_moved,
     last_moves,
     record_moves,
     relink,
+    running_agents,
 )
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 
@@ -78,6 +81,26 @@ def print_found(entries: List[MovedFolder], show_apply_footer: bool = True) -> N
         print("Run `smart-drive relink --find --apply` to relink the ✓ folders.")
 
 
+def _wait_for_busy_agents(moves: Sequence[Move], root: Optional[str], wait_minutes: float) -> bool:
+    """Previews relink and waits for any busy coding agents to close. Returns False on timeout."""
+    preview = relink(moves, root=root, dry_run=True)
+    if not preview.agents:
+        return True
+    busy = sorted(set(preview.agents) & running_agents())
+    if not busy:
+        return True
+
+    print(f"Waiting for {', '.join(busy)} to close. Quit them now (Ctrl+C cancels)...", flush=True)
+    deadline = time.monotonic() + max(0.0, float(wait_minutes)) * 60.0
+    while busy:
+        if time.monotonic() >= deadline:
+            sys.stderr.write(f"relink: timed out waiting for {', '.join(busy)} to close; no files were modified.\n")
+            return False
+        time.sleep(2)
+        busy = sorted(set(preview.agents) & running_agents())
+    return True
+
+
 def cmd_relink(args: argparse.Namespace) -> int:
     """Handles the `relink` subcommand."""
     old_arg: Optional[str] = getattr(args, "old", None)
@@ -87,10 +110,14 @@ def cmd_relink(args: argparse.Namespace) -> int:
     as_json: bool = bool(getattr(args, "json", False))
     find_mode: bool = bool(getattr(args, "find", False))
     apply_mode: bool = bool(getattr(args, "apply", False))
+    wait_minutes: Optional[float] = getattr(args, "wait", None)
 
     if find_mode:
         if old_arg is not None or new_arg is not None:
             sys.stderr.write("relink: --find cannot be used together with OLD/NEW paths.\n")
+            return 2
+        if wait_minutes is not None and not apply_mode:
+            sys.stderr.write("relink: --wait with --find requires --apply.\n")
             return 2
 
         try:
@@ -104,12 +131,18 @@ def cmd_relink(args: argparse.Namespace) -> int:
         entries = find_moved(root=root)
         report: Optional[RelinkReport] = None
 
+        if not as_json:
+            print_found(entries, show_apply_footer=not apply_mode)
+
         if apply_mode:
             sure_moves = [
                 (e.old, e.new)
                 for e in entries
                 if e.kind in ("journal", "same-name") and e.new is not None
             ]
+            if wait_minutes is not None and not dry_run and sure_moves:
+                if not _wait_for_busy_agents(sure_moves, root, wait_minutes):
+                    return 3
             report = relink(sure_moves, root=root, dry_run=dry_run)
             if sure_moves and root is not None and not dry_run:
                 try:
@@ -123,10 +156,8 @@ def cmd_relink(args: argparse.Namespace) -> int:
                 "relink": report.to_dict() if report is not None else None,
             }
             print(json.dumps(payload, indent=2, ensure_ascii=False))
-        else:
-            print_found(entries, show_apply_footer=not apply_mode)
-            if report is not None:
-                print_relink(report)
+        elif report is not None:
+            print_relink(report)
 
         return 1 if (report is not None and report.errors) else 0
 
@@ -169,6 +200,10 @@ def cmd_relink(args: argparse.Namespace) -> int:
                 print("Nothing to relink yet: organize and classify have not moved any folder.")
             return 0
         moves = list(batch["moves"])
+
+    if wait_minutes is not None and not dry_run:
+        if not _wait_for_busy_agents(moves, root, wait_minutes):
+            return 3
 
     report = relink(moves, root=root, dry_run=dry_run)
     if is_manual and root is not None and not dry_run:

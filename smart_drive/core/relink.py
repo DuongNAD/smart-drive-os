@@ -20,6 +20,7 @@ Safety invariants:
 
 from __future__ import annotations
 
+import csv
 import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -42,6 +43,63 @@ _TOML_QUOTED_RE = re.compile(r"'([^'\r\n]*)'|\"((?:[^\"\\\r\n]|\\.)*)\"")
 _CLAUDE_SLUG_RE = re.compile(r"[^A-Za-z0-9]")
 _UNREADABLE_DRIVE_RE = re.compile(r"^[A-Za-z]:[^\\/]")
 _REPARSE_POINT = 0x400
+
+AGENT_PROCESSES: Dict[str, Set[str]] = {
+    "claude": {"Claude desktop", "Claude Code"},
+    "codex": {"Codex"},
+    "antigravity": {"Antigravity"},
+    "cursor": {"Cursor"},
+    "windsurf": {"Windsurf"},
+}
+
+
+def _running_processes() -> Set[str]:
+    """Returns running process names from `tasklist` (Windows) or `ps` (POSIX)."""
+    cmd = ["tasklist", "/FO", "CSV", "/NH"] if sys.platform == "win32" else ["ps", "-A", "-o", "comm="]
+    try:
+        done = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            stdin=subprocess.DEVNULL,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if done.returncode != 0 or not done.stdout:
+        return set()
+
+    names: Set[str] = set()
+    if sys.platform == "win32":
+        for row in csv.reader(done.stdout.splitlines()):
+            if row and row[0].strip():
+                names.add(row[0].strip())
+    else:
+        for line in done.stdout.splitlines():
+            stripped = line.strip()
+            if stripped:
+                names.add(stripped)
+    return names
+
+
+def running_agents() -> Set[str]:
+    """Returns the set of coding agent labels whose application is currently running."""
+    try:
+        raw_names = _running_processes()
+    except Exception:
+        return set()
+    active: Set[str] = set()
+    for raw in raw_names:
+        base = os.path.basename(str(raw).strip().replace("\\", "/")).casefold()
+        if base.endswith(".exe"):
+            base = base[:-4]
+        labels = AGENT_PROCESSES.get(base)
+        if labels:
+            active.update(labels)
+    return active
 
 
 def _safe_home_dir() -> Path:
@@ -1026,6 +1084,14 @@ def relink(
                 worktree_candidates.append(mapped_cand)
         _repair_worktrees(worktree_candidates, mapper, report)
         _relink_virtualenvs(moves, mapper, report)
+        if report.agents:
+            busy = sorted(set(report.agents) & running_agents())
+            if busy:
+                apps = ", ".join(busy)
+                report.warnings.append(
+                    f"{apps} is running: it may write its old settings back when it quits. "
+                    "Quit it, then run `smart-drive relink --wait` (or `smart-drive relink` again)."
+                )
 
     return report
 
@@ -1519,6 +1585,8 @@ __all__ = [
     "Move",
     "BACKUP_SUFFIX",
     "JOURNAL_NAME",
+    "AGENT_PROCESSES",
+    "running_agents",
     "PathMapper",
     "claude_slug",
     "AgentFile",
