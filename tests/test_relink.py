@@ -1282,6 +1282,55 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(r_shared.updated[0]["file"], str(roaming_cfg))
         self.assertEqual(r_shared.agents, {"Claude desktop": 1})
 
+    def test_28_path_branch_nul_keys_and_values_rewritten(self) -> None:
+        mapper = PathMapper([("D:\\teamwork_projects\\smart_drive_os", "D:\\03_Development_Projects\\smart_drive_os")])
+        self.assertEqual(
+            mapper.map_value("D:\\teamwork_projects\\smart_drive_os\x00feat/relink-agent-paths"),
+            "D:\\03_Development_Projects\\smart_drive_os\x00feat/relink-agent-paths",
+        )
+        self.assertIsNone(
+            mapper.map_value("D:\\unrelated\\repo\x00feat/relink-agent-paths")
+        )
+
+        sess_file = (
+            self.fake_appdata
+            / "Claude"
+            / "claude-code-sessions"
+            / "acc"
+            / "org"
+            / "local_session.json"
+        )
+        sess_file.parent.mkdir(parents=True, exist_ok=True)
+        sess_file.write_text(
+            json.dumps({
+                "branches": {
+                    "D:\\teamwork_projects\\smart_drive_os\x00feat/relink-agent-paths": {
+                        "active": "D:\\teamwork_projects\\smart_drive_os\x00main",
+                        "untouched": "D:\\other_repo\x00dev",
+                    },
+                    "D:\\other_repo\x00main": "D:\\other_repo\x00main",
+                }
+            }),
+            encoding="utf-8",
+        )
+
+        report = relink(
+            [("D:\\teamwork_projects\\smart_drive_os", "D:\\03_Development_Projects\\smart_drive_os")],
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+        )
+        self.assertEqual(report.agents, {"Claude desktop": 2})
+
+        after = json.loads(sess_file.read_text(encoding="utf-8"))["branches"]
+        new_key = "D:\\03_Development_Projects\\smart_drive_os\x00feat/relink-agent-paths"
+        self.assertIn(new_key, after)
+        self.assertEqual(
+            after[new_key]["active"],
+            "D:\\03_Development_Projects\\smart_drive_os\x00main",
+        )
+        self.assertEqual(after[new_key]["untouched"], "D:\\other_repo\x00dev")
+        self.assertEqual(after["D:\\other_repo\x00main"], "D:\\other_repo\x00main")
+
 
 if __name__ == "__main__":
     unittest.main()

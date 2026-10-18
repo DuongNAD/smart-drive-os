@@ -263,6 +263,12 @@ class PathMapper:
         return mapped
 
     def _map_value_with_originals(self, text: str) -> Tuple[Optional[str], List[str]]:
+        if "\x00" in text:
+            head, tail = text.split("\x00", 1)
+            mapped_head = self.map(head)
+            if mapped_head is not None:
+                return f"{mapped_head}\x00{tail}", [head]
+            return None, []
         if os.pathsep in text and not text.startswith(("file:", "http:", "https:", "-")):
             pieces = _split_pathsep(text)
             if len(pieces) > 1:
@@ -503,7 +509,7 @@ def _rewrite_json_value(
 
         for k, v in value.items():
             # Permission settings are never rewritten (e.g. epitaxy-folder-permission-mode / epitaxy-perm-mode-acks).
-            if isinstance(k, str) and _split(k) is None and "perm" in k.casefold():
+            if isinstance(k, str) and "\x00" not in k and _split(k) is None and "perm" in k.casefold():
                 if k not in out_dict:
                     out_dict[k] = v
                     is_primary_key[k] = True
