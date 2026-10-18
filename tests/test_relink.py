@@ -42,12 +42,18 @@ class TestRelink(SmartDriveTestCase):
         super().setUp()
         self.fake_home = self.test_dir / "fake_home"
         self.fake_appdata = self.fake_home / "AppData" / "Roaming"
+        self.fake_temp = self.test_dir / "sys_temp"
         self.fake_home.mkdir(parents=True, exist_ok=True)
         self.fake_appdata.mkdir(parents=True, exist_ok=True)
+        self.fake_temp.mkdir(parents=True, exist_ok=True)
         self._proc_patcher = patch("smart_drive.core.relink._running_processes", return_value=set())
         self._proc_patcher.start()
+        self._temp_patcher = patch("smart_drive.core.relink.tempfile.gettempdir", return_value=str(self.fake_temp))
+        self._temp_patcher.start()
 
     def tearDown(self) -> None:
+        if hasattr(self, "_temp_patcher"):
+            self._temp_patcher.stop()
         if hasattr(self, "_proc_patcher"):
             self._proc_patcher.stop()
         super().tearDown()
@@ -59,6 +65,9 @@ class TestRelink(SmartDriveTestCase):
             "APPDATA": str(self.fake_appdata),
             "LOCALAPPDATA": str(self.fake_home / "AppData" / "Local"),
             "XDG_CONFIG_HOME": str(self.fake_appdata),
+            "TMP": str(self.fake_temp),
+            "TEMP": str(self.fake_temp),
+            "TMPDIR": str(self.fake_temp),
             "CONSTELLATION_HOME": "",
             "ANTIGRAVITY_HOME": "",
             "GEMINI_HOME": "",
@@ -829,13 +838,14 @@ class TestRelink(SmartDriveTestCase):
         drive = self.test_dir / "drive"
         drive.mkdir()
 
-        # 1) same-name one level down (A/*/<name>)
+        # 1) same-name one level down (A/*/<name>) containing remembered direct subfolders (src, docs)
         one_down_new = drive / "03_Development_Projects" / "proj_one"
-        one_down_new.mkdir(parents=True)
+        (one_down_new / "src").mkdir(parents=True)
+        (one_down_new / "docs").mkdir(parents=True)
 
-        # 2) same-name two levels down (A/*/*/<name>)
+        # 2) same-name two levels down (A/*/*/<name>) containing remembered direct subfolder (dist)
         two_down_new = drive / "03_Development_Projects" / "ai_agents" / "proj_two"
-        two_down_new.mkdir(parents=True)
+        (two_down_new / "dist").mkdir(parents=True)
 
         # 3) ambiguous (two candidates)
         amb_c1 = drive / "zone_a" / "proj_amb"
@@ -882,7 +892,7 @@ class TestRelink(SmartDriveTestCase):
         codex_file = self.fake_home / ".codex" / "config.toml"
         codex_file.parent.mkdir(parents=True, exist_ok=True)
         codex_file.write_text(
-            f"[projects.'{str(grouped_old / 'README.md')}']\ntrust_level = \"trusted\"\n",
+            f"[projects.'{str(grouped_old / 'docs')}']\ntrust_level = \"trusted\"\n",
             encoding="utf-8",
         )
 
@@ -937,7 +947,7 @@ class TestRelink(SmartDriveTestCase):
 
         cfg_file = self.fake_appdata / "Claude" / "claude_desktop_config.json"
         cfg_file.parent.mkdir(parents=True, exist_ok=True)
-        sys_temp_gone = Path(tempfile.gettempdir()) / "sd_nonexistent_temp_folder_999" / "work"
+        sys_temp_gone = self.fake_temp / "sd_nonexistent_temp_folder_999" / "work"
         home_temp_gone = self.fake_home / "AppData" / "Local" / "Temp" / "gone_temp"
         scratch_gone = self.fake_appdata / "Claude" / "scratch-workspaces" / "ws1" / "scratch-1"
         worktree_gone = existing_repo / ".claude" / "worktrees" / "wt-removed"
@@ -1330,6 +1340,132 @@ class TestRelink(SmartDriveTestCase):
         )
         self.assertEqual(after[new_key]["untouched"], "D:\\other_repo\x00dev")
         self.assertEqual(after["D:\\other_repo\x00main"], "D:\\other_repo\x00main")
+
+    def test_29_stricter_find_matches_and_less_noise(self) -> None:
+        drive = self.create_mock_drive()
+
+        # 1) E:\test -> E:\Sandbox case:
+        # Remembered: <drive>/test/SWE and <drive>/test/test.
+        # <drive>/Sandbox holds both SWE and test; <drive>/Sandbox/test is a same-name candidate without SWE.
+        # Must report kind="renamed" -> <drive>/Sandbox, NOT kind="same-name" -> <drive>/Sandbox/test.
+        sandbox = drive / "Sandbox"
+        (sandbox / "SWE").mkdir(parents=True)
+        (sandbox / "test").mkdir(parents=True)
+
+        # 2) Same-name candidate holding all of S stays ✓ ("same-name")
+        full_match_new = drive / "03_Development_Projects" / "full_app"
+        (full_match_new / "api").mkdir(parents=True)
+        (full_match_new / "web").mkdir(parents=True)
+
+        # 3) Same-name candidate failing S check with no renamed match -> "ambiguous" with candidates
+        partial_same = drive / "05_Dev_Toolbox" / "partial_app"
+        partial_same.mkdir(parents=True)  # does NOT contain "core"
+
+        # 4) Folder name containing " - " is not cut
+        dash_new = drive / "02_Learning_Materials" / "Resource 16 - PE 18"
+        dash_new.mkdir(parents=True)
+
+        # 5) Custom skip_dirs target
+        custom_skip = drive / "custom_ignored_zone"
+
+        # Pick an unmounted drive letter on Windows (or patch _unmounted_root on POSIX)
+        unmounted_drive = "Z:"
+        for letter in "ZYXWVUTSRQPONMLKJIHGF":
+            if not os.path.exists(f"{letter}:\\"):
+                unmounted_drive = f"{letter}:"
+                break
+
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(
+            json.dumps({
+                "projects": {
+                    str(drive / "test" / "SWE"): {},
+                    str(drive / "test" / "test"): {},
+                    str(drive / "full_app" / "api"): {},
+                    str(drive / "full_app" / "web"): {},
+                    str(drive / "partial_app" / "core"): {},
+                    str(drive / "Resource 16 - PE 18"): {},
+                    str(custom_skip / "gone_sub"): {},
+                    # NUL-joined and control-char strings must be ignored by find_moved
+                    f"{drive / 'vanished_nul'}\x00feat/relink-agent-paths": {},
+                    f"{drive / 'vanished_ctrl'}\x07bell": {},
+                    # Windows invalid characters in components must be ignored
+                    "D:\\bad_colon\\foo:bar": {},
+                    "D:\\bad_star\\foo*bar": {},
+                    "D:\\bad_qmark\\foo?bar": {},
+                    'D:\\bad_quote\\foo"bar': {},
+                    "D:\\bad_lt\\foo<bar": {},
+                    "D:\\bad_gt\\foo>bar": {},
+                    "D:\\bad_pipe\\foo|bar": {},
+                    "E:bad*unreadable": {},
+                    # Unmounted drive paths
+                    f"{unmounted_drive}\\portable_repo_1": {},
+                    f"{unmounted_drive}\\portable_repo_2\\sub": {},
+                }
+            }),
+            encoding="utf-8",
+        )
+
+        entries = find_moved(
+            root=str(drive),
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            skip_dirs=[str(custom_skip)],
+        )
+        by_old = {e.old: e for e in entries}
+
+        # 1) E:\test -> E:\Sandbox is "renamed", not "same-name"
+        e_test = by_old[str(drive / "test")]
+        self.assertEqual(e_test.kind, "renamed")
+        self.assertEqual(e_test.new, str(sandbox))
+
+        # 2) Same-name candidate holding all of S stays "same-name" (✓)
+        e_full = by_old[str(drive / "full_app")]
+        self.assertEqual(e_full.kind, "same-name")
+        self.assertEqual(e_full.new, str(full_match_new))
+
+        # 3) Same-name candidate failing S check without renamed match -> "ambiguous"
+        e_part = by_old[str(drive / "partial_app")]
+        self.assertEqual(e_part.kind, "ambiguous")
+        self.assertIsNone(e_part.new)
+        self.assertEqual(e_part.candidates, [str(partial_same)])
+
+        # 4) Name with " - " is preserved and matched as "same-name"
+        e_dash = by_old[str(drive / "Resource 16 - PE 18")]
+        self.assertEqual(e_dash.kind, "same-name")
+        self.assertEqual(e_dash.new, str(dash_new))
+
+        # 5) skip_dirs honoured
+        self.assertNotIn(str(custom_skip), by_old)
+        self.assertNotIn(str(custom_skip / "gone_sub"), by_old)
+
+        # 6) NUL-joined, control-char, and invalid-character strings ignored
+        for noisy in (
+            str(drive / "vanished_nul"),
+            f"{drive / 'vanished_nul'}\x00feat/relink-agent-paths",
+            str(drive / "vanished_ctrl"),
+            "E:bad*unreadable",
+        ):
+            self.assertNotIn(noisy, by_old)
+        for bad_fragment in ("bad_colon", "bad_star", "bad_qmark", "bad_quote", "bad_lt", "bad_gt", "bad_pipe"):
+            self.assertFalse(any(bad_fragment in k for k in by_old), f"Should ignore {bad_fragment}")
+
+        # 7) Unmounted drive skipped and counted in skipped_unmounted, CLI text, and --json
+        if sys.platform == "win32":
+            self.assertEqual(entries.skipped_unmounted, {unmounted_drive: 2})
+
+            env = self._cli_env()
+            txt_proc = run_smart_drive_cli(["relink", "--find", "--root", str(drive)], env=env)
+            self.assertEqual(txt_proc.returncode, 0, txt_proc.stderr)
+            self.assertIn(
+                f"Skipped 2 path(s) on drives that are not connected: {unmounted_drive}",
+                txt_proc.stdout,
+            )
+
+            js_proc = run_smart_drive_cli(["relink", "--find", "--root", str(drive), "--json"], env=env)
+            self.assertEqual(js_proc.returncode, 0, js_proc.stderr)
+            js_payload = json.loads(js_proc.stdout)
+            self.assertEqual(js_payload["skipped_unmounted"], {unmounted_drive: 2})
 
 
 if __name__ == "__main__":

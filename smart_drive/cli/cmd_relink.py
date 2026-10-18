@@ -55,30 +55,41 @@ def print_relink(report: Optional[RelinkReport]) -> None:
         print("  If one of them was open during the move, run `smart-drive relink` again after closing it.")
 
 
-def print_found(entries: List[MovedFolder], show_apply_footer: bool = True) -> None:
+def print_found(
+    entries: List[MovedFolder],
+    show_apply_footer: bool = True,
+    skipped_unmounted: Optional[ dict[str, int] ] = None,
+) -> None:
     """Prints human-readable lines and footer for `smart-drive relink --find`."""
+    if skipped_unmounted is None:
+        skipped_unmounted = getattr(entries, "skipped_unmounted", None)
+
     if not entries:
         print("No stale paths: every folder the coding agents remember exists.")
-        return
+    else:
+        has_sure = False
+        for entry in entries:
+            agents_str = ", ".join(entry.agents)
+            if entry.kind in ("journal", "same-name"):
+                has_sure = True
+                print(f"  ✓ {entry.old} -> {entry.new}  ({entry.kind}; {agents_str})")
+            elif entry.kind == "renamed":
+                print(f'  ? {entry.old} -> {entry.new}  (renamed? check it, then run: smart-drive relink "{entry.old}" "{entry.new}")')
+            elif entry.kind == "ambiguous":
+                cands = ", ".join(entry.candidates)
+                print(f"  ? {entry.old}: several candidates: {cands}")
+            elif entry.kind == "unreadable":
+                print(f"  ✗ {entry.old}: not an absolute path ({agents_str})")
+            else:
+                print(f"  ✗ {entry.old}: not found ({agents_str})")
 
-    has_sure = False
-    for entry in entries:
-        agents_str = ", ".join(entry.agents)
-        if entry.kind in ("journal", "same-name"):
-            has_sure = True
-            print(f"  ✓ {entry.old} -> {entry.new}  ({entry.kind}; {agents_str})")
-        elif entry.kind == "renamed":
-            print(f'  ? {entry.old} -> {entry.new}  (renamed? check it, then run: smart-drive relink "{entry.old}" "{entry.new}")')
-        elif entry.kind == "ambiguous":
-            cands = ", ".join(entry.candidates)
-            print(f"  ? {entry.old}: several candidates: {cands}")
-        elif entry.kind == "unreadable":
-            print(f"  ✗ {entry.old}: not an absolute path ({agents_str})")
-        else:
-            print(f"  ✗ {entry.old}: not found ({agents_str})")
+        if has_sure and show_apply_footer:
+            print("Run `smart-drive relink --find --apply` to relink the ✓ folders.")
 
-    if has_sure and show_apply_footer:
-        print("Run `smart-drive relink --find --apply` to relink the ✓ folders.")
+    if skipped_unmounted:
+        total_skipped = sum(skipped_unmounted.values())
+        drives_str = ", ".join(skipped_unmounted.keys())
+        print(f"Skipped {total_skipped} path(s) on drives that are not connected: {drives_str}")
 
 
 def _wait_for_busy_agents(moves: Sequence[Move], root: Optional[str], wait_minutes: float) -> bool:
@@ -154,6 +165,7 @@ def cmd_relink(args: argparse.Namespace) -> int:
             payload = {
                 "entries": [e.to_dict() for e in entries],
                 "relink": report.to_dict() if report is not None else None,
+                "skipped_unmounted": dict(getattr(entries, "skipped_unmounted", {})),
             }
             print(json.dumps(payload, indent=2, ensure_ascii=False))
         elif report is not None:

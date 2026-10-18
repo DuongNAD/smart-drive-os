@@ -44,6 +44,8 @@ _CASE_INSENSITIVE = sys.platform in ("win32", "darwin")
 _TOML_QUOTED_RE = re.compile(r"'([^'\r\n]*)'|\"((?:[^\"\\\r\n]|\\.)*)\"")
 _CLAUDE_SLUG_RE = re.compile(r"[^A-Za-z0-9]")
 _UNREADABLE_DRIVE_RE = re.compile(r"^[A-Za-z]:[^\\/]")
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f]")
+_WIN_INVALID_COMP_RE = re.compile(r'[:*?"<>|]')
 _REPARSE_POINT = 0x400
 
 AGENT_PROCESSES: Dict[str, Set[str]] = {
@@ -139,7 +141,7 @@ def _exists(path: Path) -> bool:
 
 def _split(text: str) -> Optional[Tuple[str, List[str]]]:
     """Splits an absolute path string into (anchor, components), or None if not a path."""
-    if not isinstance(text, str) or not text:
+    if not isinstance(text, str) or not text or _CONTROL_CHAR_RE.search(text):
         return None
     if len(text) >= 2 and text[0].isalpha() and text[1] == ":" and (len(text) == 2 or text[2] in "\\/"):
         anchor = text[:2]
@@ -150,6 +152,8 @@ def _split(text: str) -> Optional[Tuple[str, List[str]]]:
     else:
         return None
     names = [part for part in re.split(r"[\\/]+", rest) if part]
+    if anchor != "/" and any(_WIN_INVALID_COMP_RE.search(part) for part in names):
+        return None
     return anchor, names
 
 
@@ -1249,6 +1253,18 @@ class MovedFolder:
         return dataclasses.asdict(self)
 
 
+class MovedList(List[MovedFolder]):
+    """List of MovedFolder entries returned by find_moved(), with skipped_unmounted counts."""
+
+    def __init__(
+        self,
+        iterable: Iterable[MovedFolder] = (),
+        skipped_unmounted: Optional[Dict[str, int]] = None,
+    ) -> None:
+        super().__init__(iterable)
+        self.skipped_unmounted: Dict[str, int] = dict(skipped_unmounted or {})
+
+
 def _is_under(key: Tuple[str, ...], prefix: Tuple[str, ...]) -> bool:
     return bool(prefix) and len(key) >= len(prefix) and key[: len(prefix)] == prefix
 
@@ -1292,6 +1308,49 @@ def _list_subdirs(directory: Path) -> List[Path]:
     return out
 
 
+def _has_all_subs(folder: Path, subs: Set[str]) -> bool:
+    """Returns True if folder contains every directory name in subs (case-insensitive)."""
+    if not subs:
+        return True
+    present = {sub.name.casefold() for sub in _list_subdirs(folder)}
+    return subs.issubset(present)
+
+
+def _is_unreadable_drive_path(text: str) -> bool:
+    if not isinstance(text, str) or not text or _CONTROL_CHAR_RE.search(text):
+        return False
+    if not _UNREADABLE_DRIVE_RE.match(text):
+        return False
+    if any(_WIN_INVALID_COMP_RE.search(part) for part in re.split(r"[\\/]+", text[2:]) if part):
+        return False
+    return True
+
+
+def _unmounted_root(anchor: str, names: Sequence[str]) -> Optional[str]:
+    """Returns the drive or volume root string if that drive/volume is not connected, else None."""
+    if anchor != "/":
+        if not _exists(Path(anchor + "\\")):
+            return anchor.upper()
+        return None
+    if len(names) >= 2 and names[0] == "Volumes" and _exists(Path("/Volumes")):
+        vol = Path("/Volumes") / names[1]
+        if not _exists(vol):
+            return str(vol)
+    elif len(names) >= 2 and names[0] == "mnt" and _exists(Path("/mnt")):
+        vol = Path("/mnt") / names[1]
+        if not _exists(vol):
+            return str(vol)
+    elif len(names) >= 3 and names[0] == "media" and _exists(Path("/media") / names[1]):
+        vol = Path("/media") / names[1] / names[2]
+        if not _exists(vol):
+            return str(vol)
+    elif len(names) >= 4 and list(names[:2]) == ["run", "media"] and _exists(Path("/run/media") / names[2]):
+        vol = Path("/run/media") / names[2] / names[3]
+        if not _exists(vol):
+            return str(vol)
+    return None
+
+
 def _collect_json_strings(value: Any, agent: str, out: List[Tuple[str, str]]) -> None:
     if isinstance(value, str):
         out.append((value, agent))
@@ -1302,7 +1361,7 @@ def _collect_json_strings(value: Any, agent: str, out: List[Tuple[str, str]]) ->
         return
     if isinstance(value, dict):
         for k, v in value.items():
-            if isinstance(k, str) and _split(k) is None and "perm" in k.casefold():
+            if isinstance(k, str) and "\x00" not in k and _split(k) is None and "perm" in k.casefold():
                 continue
             if isinstance(k, str):
                 out.append((k, agent))
@@ -1320,75 +1379,42 @@ def _collect_toml_strings(text: str, agent: str, out: List[Tuple[str, str]]) -> 
             out.append((re.sub(r"\\(.)", r"\1", double), agent))
 
 
-def _is_skipped_temp_path(
-    anchor: str,
-    names: Sequence[str],
-    path_key: Tuple[str, ...],
-    home_temp_key: Tuple[str, ...],
-    sys_temp_keys: Sequence[Tuple[str, List[str], Tuple[str, ...]]],
-    home_key: Tuple[str, ...],
-    root_key: Tuple[str, ...],
-) -> bool:
-    if _is_under(path_key, home_temp_key):
-        return True
-    for t_anchor, t_names, t_key in sys_temp_keys:
-        if not _is_under(path_key, t_key):
-            continue
-        # When tests run inside the system temp folder (fake_home or root is inside t_key),
-        # only treat paths as temp paths if their top-level folder under t_key does not exist
-        # or if they are inside a temp/tmp subfolder.
-        if _is_under(home_key, t_key) or (root_key and _is_under(root_key, t_key)):
-            rel_idx = len(t_names)
-            if len(names) <= rel_idx:
-                return True
-            top_child = Path(_join_split(t_anchor, list(t_names) + [names[rel_idx]]))
-            if not _exists(top_child):
-                return True
-            for sub_name in names[rel_idx + 1 :]:
-                if sub_name.casefold() in ("tmp", "temp"):
-                    return True
-            return False
-        return True
-    return False
-
-
 def find_moved(
     root: Optional[str] = None,
     home: Optional[Path] = None,
     app_data: Optional[Path] = None,
-) -> List[MovedFolder]:
+    skip_dirs: Optional[Sequence[str]] = None,
+) -> MovedList:
     """Finds missing folders remembered by coding agents and locates where each folder went."""
-    resolved_home, resolved_app_data, _ = _resolve_locations(home, app_data)
+    resolved_home, resolved_app_data, use_env = _resolve_locations(home, app_data)
 
-    home_parsed = _split(str(resolved_home))
-    home_key = _key(*home_parsed) if home_parsed else ()
+    if skip_dirs is None:
+        default_skips: List[str] = [
+            tempfile.gettempdir(),
+            str(resolved_app_data / "Claude" / "scratch-workspaces"),
+        ]
+        try:
+            default_skips.append(os.path.realpath(tempfile.gettempdir()))
+        except OSError:
+            pass
+        if sys.platform == "win32":
+            default_skips.append(str(resolved_home / "AppData" / "Local" / "Temp"))
+            local_app_data = _resolve_local_app_data(resolved_home, use_env)
+            for msix_claude in _msix_claude_dirs(local_app_data):
+                default_skips.append(str(msix_claude / "scratch-workspaces"))
+        else:
+            default_skips.extend(["/tmp", "/private/tmp", "/var/tmp"])
+        effective_skip_dirs: Sequence[str] = default_skips
+    else:
+        effective_skip_dirs = skip_dirs
 
-    root_parsed = _split(os.path.abspath(root)) if root else None
-    root_key = _key(*root_parsed) if root_parsed else ()
-
-    scratch_parsed = _split(str(resolved_app_data / "Claude" / "scratch-workspaces"))
-    scratch_key = _key(*scratch_parsed) if scratch_parsed else ()
-
-    home_temp_parsed = _split(str(resolved_home / "AppData" / "Local" / "Temp"))
-    home_temp_key = _key(*home_temp_parsed) if home_temp_parsed else ()
-
-    sys_temp_candidates = [tempfile.gettempdir()]
-    try:
-        sys_temp_candidates.append(os.path.realpath(tempfile.gettempdir()))
-    except OSError:
-        pass
-    if sys.platform != "win32":
-        sys_temp_candidates.extend(["/tmp", "/private/tmp", "/var/tmp"])
-
-    sys_temp_keys: List[Tuple[str, List[str], Tuple[str, ...]]] = []
-    seen_t_keys: Set[Tuple[str, ...]] = set()
-    for tc in sys_temp_candidates:
-        tp = _split(tc)
-        if tp and tp[1]:
-            tk = _key(*tp)
-            if tk not in seen_t_keys:
-                seen_t_keys.add(tk)
-                sys_temp_keys.append((tp[0], tp[1], tk))
+    skip_keys: List[Tuple[str, ...]] = []
+    for sd in effective_skip_dirs:
+        sp = _split(str(sd))
+        if sp and sp[1]:
+            sk = _key(*sp)
+            if sk not in skip_keys:
+                skip_keys.append(sk)
 
     raw_items: List[Tuple[str, str]] = []
     for af in agent_files(root=root, home=home, app_data=app_data):
@@ -1410,7 +1436,7 @@ def find_moved(
     for raw_str, agent in raw_items:
         if not raw_str:
             continue
-        if _UNREADABLE_DRIVE_RE.match(raw_str):
+        if _is_unreadable_drive_path(raw_str):
             expanded_items.append((raw_str, agent))
             continue
         if os.pathsep in raw_str and not raw_str.startswith(("file:", "http:", "https:", "-")):
@@ -1424,9 +1450,10 @@ def find_moved(
 
     unreadable_groups: Dict[str, Dict[str, Any]] = {}
     moved_groups: Dict[Tuple[str, ...], Dict[str, Any]] = {}
+    skipped_unmounted: Dict[str, int] = {}
 
     for text, agent in expanded_items:
-        if _UNREADABLE_DRIVE_RE.match(text):
+        if _is_unreadable_drive_path(text):
             u_key = text.casefold() if _CASE_INSENSITIVE else text
             ug = unreadable_groups.get(u_key)
             if ug is None:
@@ -1450,28 +1477,25 @@ def find_moved(
         if sys.platform == "win32" and anchor == "/":
             continue
 
-        last = names[-1]
-        if " -" in last:
-            last = last.split(" -", 1)[0].strip()
-        if ":" in last:
-            last = last.split(":", 1)[0].strip()
-        if last and last != names[-1]:
-            names = list(names[:-1]) + [last]
-
         path_key = _key(anchor, names)
 
-        # Skip .claude/worktrees and <AppData>/Claude/scratch-workspaces
+        # Skip .claude/worktrees and skip_dirs
         if any(
             names[i].casefold() == ".claude" and names[i + 1].casefold() == "worktrees"
             for i in range(len(names) - 1)
         ):
             continue
-        if _is_under(path_key, scratch_key) or any(
+        if any(_is_under(path_key, sk) for sk in skip_keys):
+            continue
+        if skip_dirs is None and any(
             names[i].casefold() == "claude" and names[i + 1].casefold() == "scratch-workspaces"
             for i in range(len(names) - 1)
         ):
             continue
-        if _is_skipped_temp_path(anchor, names, path_key, home_temp_key, sys_temp_keys, home_key, root_key):
+
+        unmounted = _unmounted_root(anchor, names)
+        if unmounted is not None:
+            skipped_unmounted[unmounted] = skipped_unmounted.get(unmounted, 0) + 1
             continue
 
         candidate_path = _join_split(anchor, names)
@@ -1545,38 +1569,34 @@ def find_moved(
                     resolved_kind = "journal"
                 break
 
-        # 2. same-name (at A/*/<name> and A/*/*/<name>)
+        # 2. same-name (at A/*/<name> and A/*/*/<name>, verified against direct_subs) and 3. renamed
         if resolved_kind is None:
             target_cf = m_names[-1].casefold()
-            same_matches: List[str] = []
+            same_all: List[Path] = []
             a_children = _list_subdirs(a_path) if _is_dir(a_path) else []
             for c1 in a_children:
                 c1_children = _list_subdirs(c1)
                 for c2 in c1_children:
                     if c2.name.casefold() == target_cf:
-                        same_matches.append(str(c2))
+                        same_all.append(c2)
                     else:
                         for c3 in _list_subdirs(c2):
                             if c3.name.casefold() == target_cf:
-                                same_matches.append(str(c3))
+                                same_all.append(c3)
 
-            if len(same_matches) == 1:
-                resolved_new = same_matches[0]
+            same_passing = [str(c) for c in same_all if _has_all_subs(c, direct_subs)]
+            if len(same_all) == 1 and len(same_passing) == 1:
+                resolved_new = same_passing[0]
                 resolved_kind = "same-name"
-            elif len(same_matches) > 1:
-                resolved_kind = "ambiguous"
-                candidates = same_matches
             else:
-                # 3. renamed (only when no same-name candidate and >= 2 distinct direct subfolders)
                 if len(direct_subs) >= 2:
-                    renamed_matches: List[str] = []
-                    for c1 in a_children:
-                        c1_sub_names = {sub.name.casefold() for sub in _list_subdirs(c1)}
-                        if direct_subs.issubset(c1_sub_names):
-                            renamed_matches.append(str(c1))
+                    renamed_matches = [str(c1) for c1 in a_children if _has_all_subs(c1, direct_subs)]
                     if len(renamed_matches) == 1:
                         resolved_new = renamed_matches[0]
                         resolved_kind = "renamed"
+                if resolved_kind is None and same_all:
+                    resolved_kind = "ambiguous"
+                    candidates = [str(c) for c in same_all]
 
         if resolved_kind is None:
             resolved_kind = "not-found"
@@ -1604,7 +1624,8 @@ def find_moved(
             )
         )
 
-    return results
+    sorted_unmounted = {k: skipped_unmounted[k] for k in sorted(skipped_unmounted)}
+    return MovedList(results, skipped_unmounted=sorted_unmounted)
 
 
 def after_moves(root: str, moves: Sequence[Move], tool: str) -> Optional[RelinkReport]:
@@ -1645,6 +1666,7 @@ __all__ = [
     "record_moves",
     "last_moves",
     "MovedFolder",
+    "MovedList",
     "find_moved",
     "after_moves",
 ]
