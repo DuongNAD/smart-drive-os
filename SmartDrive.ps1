@@ -83,9 +83,10 @@ while ($true) {
     Write-Host "  [5] Safe Junk Cleaner (smart-drive clean)"
     Write-Host "  [6] Auto-Zoning & Anti-Slack Rebalancer (smart-drive organize)"
     Write-Host "  [7] Register AI Coding Agents MCP (smart-drive mcp register)"
+    Write-Host "  [8] Relink Coding Agents After Moving Folders (smart-drive relink --find)"
     Write-Host "  [0] Exit"
     Write-Host ""
-    $Opt = Read-Host "Select an option [0-7]"
+    $Opt = Read-Host "Select an option [0-8]"
 
     switch ($Opt) {
         "1" {
@@ -159,6 +160,18 @@ while ($true) {
                 Run-SmartDrive @("mcp", "register")
             } catch {
                 Run-SmartDrive @("mcp-config")
+            }
+            Write-Host ""
+            Read-Host "Press Enter to return to menu..."
+        }
+        "8" {
+            Write-Host ""
+            Run-SmartDrive @("relink", "--find")
+            Write-Host ""
+            $Confirm = Read-Host "Apply the ✓ relinks now? Open coding agents will be waited for. [y/N]"
+            if ($Confirm -eq "y" -or $Confirm -eq "Y") {
+                Write-Host ""
+                Run-SmartDrive @("relink", "--find", "--apply", "--wait")
             }
             Write-Host ""
             Read-Host "Press Enter to return to menu..."

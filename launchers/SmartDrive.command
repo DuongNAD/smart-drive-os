@@ -61,9 +61,10 @@ while true; do
     echo "  [5] Safe Junk Cleaner (smart-drive clean)"
     echo "  [6] Auto-Zoning & Anti-Slack Rebalancer (smart-drive organize)"
     echo "  [7] Register AI Coding Agents MCP (smart-drive mcp register)"
+    echo "  [8] Relink Coding Agents After Moving Folders (smart-drive relink --find)"
     echo "  [0] Exit"
     echo ""
-    read -r -p "Select an option [0-7]: " OPT
+    read -r -p "Select an option [0-8]: " OPT
 
     case "$OPT" in
         1)
@@ -137,6 +138,18 @@ while true; do
         7)
             echo ""
             "$PYTHON_CMD" -m smart_drive mcp register 2>/dev/null || "$PYTHON_CMD" -m smart_drive mcp-config
+            echo ""
+            read -r -p "Press Enter to return to menu..."
+            ;;
+        8)
+            echo ""
+            "$PYTHON_CMD" -m smart_drive relink --find
+            echo ""
+            read -r -p "Apply the ✓ relinks now? Open coding agents will be waited for. [y/N]: " CONF_REL
+            if [ "$CONF_REL" = "y" ] || [ "$CONF_REL" = "Y" ]; then
+                echo ""
+                "$PYTHON_CMD" -m smart_drive relink --find --apply --wait
+            fi
             echo ""
             read -r -p "Press Enter to return to menu..."
             ;;
