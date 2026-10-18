@@ -290,8 +290,10 @@ smart-drive organize --apply                                 # dời thư mục 
 smart-drive relink                                           # áp dụng lại đợt dời gần nhất (vd. sau khi tắt một agent)
 smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an" --dry-run    # thư mục bạn tự dời tay: xem trước
 smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an"              # ...rồi áp dụng
+smart-drive relink --find                                    # liệt kê đường dẫn cũ của agent và nơi thư mục đã chuyển tới
+smart-drive relink --find --apply --wait                     # cập nhật các mục chắc chắn, chờ các agent đang mở đóng lại
 ```
-Tắt Claude desktop, Claude Code và Codex trước khi relink (agent đang mở có thể ghi lại cấu hình cũ), xong thì mở lại. Nếu một lệnh trong `.venv` của dự án đã dời vẫn trỏ về chỗ cũ, chạy `uv sync --reinstall` trong dự án đó.
+Mục `[8]` trong menu của bộ khởi chạy `SmartDrive` cũng thực hiện việc này chỉ với vài thao tác phím. Tắt Claude desktop, Claude Code và Codex trước khi relink (agent đang mở có thể ghi lại cấu hình cũ), xong thì mở lại. Nếu một lệnh trong `.venv` của dự án đã dời vẫn trỏ về chỗ cũ, chạy `uv sync --reinstall` trong dự án đó.
 
 ---
 
