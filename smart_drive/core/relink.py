@@ -1824,10 +1824,18 @@ def _relink_shortcuts(
         report.warnings.append("PowerShell was not found on PATH; could not update Windows shortcuts.")
         return
 
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = resolved_home / ".smart-drive" / "backups" / "shortcuts" / timestamp
+
     for lnk_path, new_target, old_prefix, new_prefix in matched_shortcuts:
-        backup_path = Path(str(lnk_path) + BACKUP_SUFFIX)
+        backup_path = backup_dir / lnk_path.name
+        collision_idx = 1
+        while backup_path.exists():
+            backup_path = backup_dir / f"{lnk_path.stem}_{collision_idx}{lnk_path.suffix}"
+            collision_idx += 1
         try:
             if _is_file(lnk_path):
+                backup_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(str(lnk_path), str(backup_path))
         except OSError as err:
             report.warnings.append(f"Could not back up shortcut {lnk_path}: {err}")
