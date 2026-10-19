@@ -88,9 +88,10 @@ while ($true) {
     Write-Host "  [7] Register AI Coding Agents MCP (smart-drive mcp register)"
     Write-Host "  [8] Relink Coding Agents After Moving Folders (smart-drive relink --find)"
     Write-Host "  [9] Drive Health Checkup & Score (smart-drive checkup)"
+    Write-Host "  [10] Safe Guided Organizer (Smart_Organize)"
     Write-Host "  [0] Exit"
     Write-Host ""
-    $Opt = Read-Host "Select an option [0-9]"
+    $Opt = Read-Host "Select an option [0-10]"
 
     switch ($Opt) {
         "1" {
@@ -185,6 +186,21 @@ while ($true) {
             Run-SmartDrive @("checkup")
             Write-Host ""
             Read-Host "Press Enter to return to menu..."
+        }
+        "10" {
+            Write-Host ""
+            $SoPath = Join-Path $ScriptDir "Smart_Organize.ps1"
+            if (Test-Path $SoPath) {
+                & $SoPath
+            } elseif ($PythonCmd -eq "py -3") {
+                & py -3 -m smart_drive.cli.smart_organize_runner
+                Write-Host ""
+                Read-Host "Press Enter to return to menu..."
+            } else {
+                & $PythonCmd -m smart_drive.cli.smart_organize_runner
+                Write-Host ""
+                Read-Host "Press Enter to return to menu..."
+            }
         }
         "0" {
             Write-Host ""

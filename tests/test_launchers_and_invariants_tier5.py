@@ -66,22 +66,24 @@ EXPECTED_LAUNCHER_BASES = [
     "Quick_Search",
     "Setup_SSD",
     "SmartDrive",
+    "Smart_Organize",
 ]
 
 EXPECTED_EXTENSIONS = [".bat", ".command", ".ps1", ".sh"]
 
-ALL_20_LAUNCHER_NAMES = [
+ALL_24_LAUNCHER_NAMES = [
     f"{base}{ext}" for base in EXPECTED_LAUNCHER_BASES for ext in EXPECTED_EXTENSIONS
 ]
+ALL_20_LAUNCHER_NAMES = ALL_24_LAUNCHER_NAMES
 
 
 class TestLauncherInventoryAndSynchronization(unittest.TestCase):
-    """Verifies that all 20 launchers exist in both launchers/ and repository root and are synchronized."""
+    """Verifies that all 24 launchers exist in both launchers/ and repository root and are synchronized."""
 
     def test_launcher_inventory_count_and_presence(self):
-        """All 20 launcher scripts must exist in launchers/ and root with non-zero size."""
-        self.assertEqual(len(ALL_20_LAUNCHER_NAMES), 20)
-        for name in ALL_20_LAUNCHER_NAMES:
+        """All 24 launcher scripts must exist in launchers/ and root with non-zero size."""
+        self.assertEqual(len(ALL_24_LAUNCHER_NAMES), 24)
+        for name in ALL_24_LAUNCHER_NAMES:
             launcher_path = LAUNCHERS_DIR / name
             root_path = REPO_ROOT / name
             self.assertTrue(launcher_path.is_file(), f"Missing launcher script: {launcher_path}")
@@ -855,5 +857,179 @@ class TestWhitelistImmutabilityAgentsAndGemini(unittest.TestCase):
                 guard.validate_deletion(str(tax_path))
 
 
+class TestSmartOrganizeLauncher(unittest.TestCase):
+    """T20: Tests for Smart_Organize launchers, i18n strings, SD_SELFTEST=1, and guided workflow."""
+
+    def test_i18n_string_tables_and_language_detection(self) -> None:
+        """All i18n keys and format placeholders match between EN and VI, and locale detection follows spec."""
+        from smart_drive.cli.smart_organize_runner import I18N_STRINGS, detect_language, t
+
+        en_keys = set(I18N_STRINGS["en"].keys())
+        vi_keys = set(I18N_STRINGS["vi"].keys())
+        self.assertEqual(en_keys, vi_keys, "EN and VI i18n dictionaries must have identical keys")
+
+        placeholder_re = re.compile(r"\{([a-zA-Z0-9_]+)\}")
+        for key in en_keys:
+            en_ph = set(placeholder_re.findall(I18N_STRINGS["en"][key]))
+            vi_ph = set(placeholder_re.findall(I18N_STRINGS["vi"][key]))
+            self.assertEqual(en_ph, vi_ph, f"Placeholder mismatch for i18n key '{key}'")
+
+        # Default is English; Vietnamese when SMARTDRIVE_LANG=vi or system locale is vi-*
+        self.assertEqual(detect_language(env={"LANG": "en_US.UTF-8"}, system_locale="en-US"), "en")
+        self.assertEqual(detect_language(env={"SMARTDRIVE_LANG": "vi"}, system_locale="en-US"), "vi")
+        self.assertEqual(detect_language(env={"SMARTDRIVE_LANG": "en"}, system_locale="vi-VN"), "en")
+        self.assertEqual(detect_language(env={}, system_locale="vi-VN"), "vi")
+        self.assertEqual(detect_language(env={"LANG": "vi_VN.UTF-8"}), "vi")
+
+        self.assertIn("Smart Organize", t("banner_title", "en"))
+        self.assertIn("Dời thư mục an toàn", t("banner_title", "vi"))
+
+    def test_smart_drive_menu_includes_smart_organize_entry(self) -> None:
+        """All 4 SmartDrive.* master menu scripts must include an option invoking Smart_Organize."""
+        for ext in EXPECTED_EXTENSIONS:
+            menu_path = LAUNCHERS_DIR / f"SmartDrive{ext}"
+            content = menu_path.read_text(encoding="utf-8")
+            self.assertIn("Smart_Organize", content, f"{menu_path} must reference Smart_Organize in its menu")
+
+    def test_sd_selftest_mode_is_readonly_and_writes_log(self) -> None:
+        """Running Smart_Organize with SD_SELFTEST=1 performs a read-only dry-run and logs to .smart_drive/smart-organize.log."""
+        temp_drive = Path(tempfile.mkdtemp(prefix="test_smart_org_selftest_"))
+        try:
+            # Create an unorganized repo that would be moved in --apply mode
+            repo_dir = temp_drive / "sample_repo"
+            (repo_dir / ".git").mkdir(parents=True)
+            (repo_dir / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+            (repo_dir / "main.py").write_text("print('hi')\n", encoding="utf-8")
+
+            env = dict(os.environ)
+            env["SMART_DRIVE_ROOT"] = str(temp_drive)
+            env["SD_SELFTEST"] = "1"
+            env["SMARTDRIVE_LANG"] = "vi"
+            py_dir = str(Path(sys.executable).resolve().parent)
+            env["PATH"] = py_dir + os.pathsep + env.get("PATH", "")
+
+            if sys.platform == "win32":
+                cmd = ["cmd.exe", "/c", str(LAUNCHERS_DIR / "Smart_Organize.bat")]
+            else:
+                cmd = ["/bin/bash", str(LAUNCHERS_DIR / "Smart_Organize.sh")]
+
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                cwd=str(REPO_ROOT),
+                timeout=20,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, f"Smart_Organize selftest failed: {proc.stdout}\n{proc.stderr}")
+            self.assertIn("[SELFTEST OK]", proc.stdout)
+            self.assertIn("sample_repo", proc.stdout)
+
+            # Verify read-only: sample_repo was NOT moved
+            self.assertTrue(repo_dir.is_dir(), "SD_SELFTEST=1 must never move folders")
+            self.assertFalse((temp_drive / "03_Development_Projects" / "sample_repo").exists())
+
+            # Verify log file written
+            log_file = temp_drive / ".smart_drive" / "smart-organize.log"
+            self.assertTrue(log_file.is_file(), "smart-organize.log must be created")
+            log_text = log_file.read_text(encoding="utf-8")
+            self.assertIn("SELFTEST_OK", log_text)
+        finally:
+            shutil.rmtree(temp_drive, ignore_errors=True)
+
+    def test_guided_flow_busy_apps_confirm_apply_verify_and_undo(self) -> None:
+        """Full guided flow: dry-run -> wait busy_apps -> YES -> apply -> verify -> R retry -> U undo."""
+        import io
+        from unittest import mock
+        from smart_drive.cli.smart_organize_runner import run_smart_organize
+        from smart_drive.core.system_refs import SystemRef, SystemRefIndex
+
+        temp_drive = Path(tempfile.mkdtemp(prefix="test_smart_org_flow_"))
+        try:
+            fake_home = temp_drive / "_fake_home"
+            fake_appdata = fake_home / "AppData" / "Roaming"
+            fake_home.mkdir(parents=True)
+            fake_appdata.mkdir(parents=True)
+
+            # 1. Create a movable repo with .git and .venv
+            repo_dir = temp_drive / "my_service"
+            (repo_dir / ".git").mkdir(parents=True)
+            (repo_dir / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+            (repo_dir / "pyproject.toml").write_text("[project]\nname='my_service'\n", encoding="utf-8")
+            venv_dir = repo_dir / ".venv"
+            (venv_dir / "Scripts").mkdir(parents=True)
+            (venv_dir / "pyvenv.cfg").write_text("home = C:\\Python311\n", encoding="utf-8")
+            (venv_dir / "Scripts" / "activate").write_text("VIRTUAL_ENV=ok\n", encoding="utf-8")
+
+            # 2. Create a system-protected folder (e.g. referenced by PATH) to verify "cannot move" reporting
+            prot_dir = temp_drive / "GitTool"
+            prot_dir.mkdir()
+            (prot_dir / "git.exe").write_bytes(b"MZ")
+
+            fake_ref_idx = SystemRefIndex([
+                SystemRef(kind="path", source="PATH (User)", target=str(prot_dir / "git.exe")),
+            ])
+
+            # Simulate busy_apps on first check, then clear on second check
+            busy_calls = {"n": 0}
+
+            def fake_preview_after_moves(root_p, pairs, tool_name, dry_run=False):
+                busy_calls["n"] += 1
+                if dry_run and busy_calls["n"] == 1:
+                    return {"busy_apps": ["Cursor"], "changed": []}
+                return {"busy_apps": [], "changed": []}
+
+            def fake_relink(pairs, dry_run=True, **kwargs):
+                return {"busy_apps": [], "changed": []}
+
+            # User inputs:
+            # 1) "" (Enter to re-check busy_apps after closing Cursor)
+            # 2) "YES" (confirm organize --apply)
+            # 3) "R" (retry verification once)
+            # 4) "U" (undo the move batch)
+            inputs = iter(["", "YES", "R", "U"])
+            out_buf = io.StringIO()
+
+            with mock.patch("smart_drive.core.system_refs.SystemRefIndex.collect", return_value=fake_ref_idx), \
+                 mock.patch("smart_drive.core.relink._resolve_locations", return_value=(fake_home, fake_appdata, False)), \
+                 mock.patch("smart_drive.core.relink._running_processes", return_value=set()):
+                rc = run_smart_organize(
+                    str(temp_drive),
+                    lang="vi",
+                    selftest=False,
+                    input_fn=lambda _prompt: next(inputs),
+                    output_stream=out_buf,
+                    relink_fn=fake_relink,
+                    after_moves_fn=fake_preview_after_moves,
+                )
+
+            self.assertEqual(rc, 0)
+            output = out_buf.getvalue()
+            # Protected item and reason shown
+            self.assertIn("GitTool", output)
+            self.assertIn("PATH", output)
+            # Busy app warning shown
+            self.assertIn("Cursor", output)
+            # Verification checks shown
+            self.assertIn("relink --dry-run", output)
+            self.assertIn("Git / worktree", output)
+            self.assertIn(".venv", output)
+            # Undo restored my_service back to root
+            self.assertTrue((temp_drive / "my_service").is_dir())
+            self.assertFalse((temp_drive / "03_Development_Projects" / "my_service").exists())
+
+            log_text = (temp_drive / ".smart_drive" / "smart-organize.log").read_text(encoding="utf-8")
+            self.assertIn("DRY_RUN", log_text)
+            self.assertIn("APPLY", log_text)
+            self.assertIn("RETRY", log_text)
+            self.assertIn("UNDO", log_text)
+        finally:
+            shutil.rmtree(temp_drive, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()
+
