@@ -1892,6 +1892,44 @@ class TestRelink(SmartDriveTestCase):
         # Every missing folder searches the same drive: list it once per run, not once per missing folder
         self.assertEqual(scandir_calls(6), scandir_calls(1))
 
+    def test_47_find_moved_link_checks_folders_only(self) -> None:
+        drive = self.test_dir / "drive_files"
+        (drive / "zone" / "proj").mkdir(parents=True)
+        for folder in (drive, drive / "zone", drive / "zone" / "proj"):
+            (folder / "notes.md").write_text("# notes\n", encoding="utf-8")
+        (self.fake_home / ".claude.json").write_text(
+            json.dumps({"projects": {str(drive / "gone"): {}}}), encoding="utf-8"
+        )
+
+        with patch("smart_drive.core.relink._is_link_entry", wraps=relink_core._is_link_entry) as link_check:
+            entries = find_moved(root=str(drive), home=self.fake_home, skip_dirs=[])
+
+        self.assertEqual([e.kind for e in entries], ["not-found"])
+        # The link check costs a stat per entry on macOS and Linux; a file is never searched, so it skips the check
+        self.assertEqual(sorted(call.args[0].name for call in link_check.call_args_list), ["proj", "zone"])
+
+    def test_48_find_moved_never_searches_hidden_system_or_linked_folders(self) -> None:
+        drive = self.test_dir / "drive_skips"
+        elsewhere = self.test_dir / "elsewhere"
+        (elsewhere / "proj").mkdir(parents=True)
+        # A same-name folder behind every folder the search must not enter
+        for skipped in (".cache", "$RECYCLE.BIN", "System Volume Information"):
+            (drive / skipped / "proj").mkdir(parents=True)
+        (drive / "zone").mkdir()
+        for link, target in ((drive / "zone" / "linked", elsewhere), (drive / "zone" / "proj", elsewhere / "proj")):
+            if sys.platform == "win32":
+                proc = subprocess.run(f'cmd /c mklink /J "{link}" "{target}"', capture_output=True, text=True, shell=True)
+                self.assertEqual(proc.returncode, 0, f"mklink /J failed: {proc.stderr} {proc.stdout}")
+            else:
+                os.symlink(target, link)
+        (self.fake_home / ".claude.json").write_text(
+            json.dumps({"projects": {str(drive / "proj"): {}}}), encoding="utf-8"
+        )
+
+        entries = find_moved(root=str(drive), home=self.fake_home, skip_dirs=[])
+
+        self.assertEqual([(e.old, e.kind, e.candidates) for e in entries], [(str(drive / "proj"), "not-found", [])])
+
 
 if __name__ == "__main__":
     unittest.main()
