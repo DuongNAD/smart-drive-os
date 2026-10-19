@@ -85,6 +85,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
         if getattr(args, "json", False):
             print(json.dumps({
                 "status": "applied",
+                "cluster_size": zoner.cluster_size,
                 "clean": clean_summary,
                 "zoning": apply_res,
                 "relink": relinked.to_dict() if relinked else None,
@@ -113,6 +114,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
     if getattr(args, "json", False):
         print(json.dumps({
             "status": "dry_run",
+            "cluster_size": zoner.cluster_size,
             "clean_preview": clean_summary,
             "planned_actions": [a.to_dict() for a in plan],
             "relink_preview": preview.to_dict() if preview else None,

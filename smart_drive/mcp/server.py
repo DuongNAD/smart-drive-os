@@ -1187,6 +1187,7 @@ class SmartDriveMCPServer:
 
             return {
                 "status": "applied",
+                "cluster_size": zoner.cluster_size,
                 "result": res,
                 "relink": relinked.to_dict() if relinked else None,
                 "shields_created": created_shields,
@@ -1195,6 +1196,7 @@ class SmartDriveMCPServer:
         preview = relink([(a.src_path, a.dest_path) for a in plan], root=root, dry_run=True) if plan else None
         return {
             "status": "dry_run",
+            "cluster_size": zoner.cluster_size,
             "plan_count": len(plan),
             "actions": [a.to_dict() for a in plan],
             "relink_preview": preview.to_dict() if preview else None,

@@ -28,6 +28,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.academic_classifier import AcademicClassifier
 from smart_drive.core.exfat_compat import ExFatEngine
+from smart_drive.core.fsinfo import detect_filesystem
 from smart_drive.core.learning_units import find_unit_root
 
 # Inviolable execution root self-defense anchors
@@ -115,9 +116,14 @@ class AutoZoner:
         ".git", "package.json", "pyproject.toml", "cargo.toml", "go.mod", "pom.xml", "cmakelists.txt"
     })
 
-    def __init__(self, root: str) -> None:
+    def __init__(self, root: str, cluster_size: Optional[int] = None) -> None:
         self.root = os.path.abspath(root)
         self.compat = ExFatEngine()
+        if cluster_size is None:
+            info = detect_filesystem(self.root)
+            self.cluster_size = info.block_size if info.block_size > 0 else CLUSTER_SIZE_BYTES
+        else:
+            self.cluster_size = cluster_size
 
         # Inviolable execution root self-defense anchors
         self._self_ancestors: Set[Path] = set(_CURRENT_FILE.parents)
@@ -267,7 +273,7 @@ class AutoZoner:
         if os.path.isfile(path) or os.path.islink(path):
             try:
                 nom = os.path.getsize(path)
-                slack = calculate_slack_bytes(nom)
+                slack = calculate_slack_bytes(nom, self.cluster_size)
                 return nom, slack
             except OSError:
                 return 0, 0
@@ -281,7 +287,7 @@ class AutoZoner:
                     try:
                         sz = os.path.getsize(fp)
                         total_nom += sz
-                        total_slack += calculate_slack_bytes(sz)
+                        total_slack += calculate_slack_bytes(sz, self.cluster_size)
                     except OSError:
                         pass
         except OSError:
