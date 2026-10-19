@@ -1609,10 +1609,9 @@ def _list_subdirs(directory: Path, listings: Optional[Dict[str, List[Path]]] = N
         name = entry.name
         if not name or name.startswith((".", "$")) or name.casefold() == "system volume information":
             continue
-        if _is_link_entry(entry):
-            continue
+        # The listing usually tells folders from files; only folders pay for the link check (a stat on macOS and Linux)
         try:
-            if not entry.is_dir(follow_symlinks=False):
+            if not entry.is_dir(follow_symlinks=False) or _is_link_entry(entry):
                 continue
         except OSError:
             continue
