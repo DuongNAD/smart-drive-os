@@ -1955,17 +1955,28 @@ def journal_path(root: str) -> str:
     return os.path.join(os.path.abspath(root), ".smart_drive", JOURNAL_NAME)
 
 
-def record_moves(root: str, moves: Sequence[Move], tool: str) -> None:
+def record_moves(
+    root: str,
+    moves: Sequence[Move],
+    tool: str,
+    undoes: Optional[str] = None,
+) -> None:
     """Appends one batch of moves to <root>/.smart_drive/moves.jsonl."""
     if not moves:
         return
+    if tool == "undo" and undoes is None:
+        target = last_undoable_moves(root)
+        if target is not None and isinstance(target.get("time"), str):
+            undoes = target["time"]
     path = journal_path(root)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    record = {
+    record: Dict[str, Any] = {
         "time": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         "tool": tool,
-        "moves": [[old, new] for old, new in moves],
     }
+    if undoes is not None:
+        record["undoes"] = undoes
+    record["moves"] = [[old, new] for old, new in moves]
     line = json.dumps(record, ensure_ascii=False)
     try:
         line.encode("utf-8")
@@ -2022,6 +2033,35 @@ def last_moves(root: str) -> Optional[Dict[str, Any]]:
         parsed = _parse_batch_line(line)
         if parsed is not None:
             return parsed
+    return None
+
+
+def last_undoable_moves(root: str) -> Optional[Dict[str, Any]]:
+    """Returns the most recent move batch from moves.jsonl that has not yet been undone."""
+    path = journal_path(root)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+
+    undone_counts: Dict[str, int] = {}
+    for line in reversed(lines):
+        parsed = _parse_batch_line(line)
+        if parsed is None:
+            continue
+        if parsed.get("tool") == "undo" or "undoes" in parsed:
+            target_time = parsed.get("undoes")
+            if isinstance(target_time, str) and target_time:
+                undone_counts[target_time] = undone_counts.get(target_time, 0) + 1
+            continue
+        batch_time = parsed.get("time")
+        if isinstance(batch_time, str) and undone_counts.get(batch_time, 0) > 0:
+            undone_counts[batch_time] -= 1
+            continue
+        return parsed
     return None
 
 
@@ -2511,13 +2551,18 @@ def find_moved(
     return MovedList(results, skipped_unmounted=sorted_unmounted)
 
 
-def after_moves(root: str, moves: Sequence[Move], tool: str) -> Optional[RelinkReport]:
+def after_moves(
+    root: str,
+    moves: Sequence[Move],
+    tool: str,
+    undoes: Optional[str] = None,
+) -> Optional[RelinkReport]:
     """Journals a completed batch of moves and runs relink. Never raises."""
     if not moves:
         return None
     journal_warning: Optional[str] = None
     try:
-        record_moves(root, moves, tool)
+        record_moves(root, moves, tool, undoes=undoes)
     except Exception as err:
         journal_warning = f"Could not write move journal: {err}"
 
@@ -2550,6 +2595,7 @@ __all__ = [
     "journal_path",
     "record_moves",
     "last_moves",
+    "last_undoable_moves",
     "MovedFolder",
     "MovedList",
     "find_moved",
