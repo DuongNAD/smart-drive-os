@@ -393,12 +393,18 @@ class TestCleanQuarantineCLI(unittest.TestCase):
         manifest = json.loads((batch_dir / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual({m["original"] for m in manifest}, {"scratch.tmp", "x.tmp"})
 
-        # --list-quarantine
+        # --list-quarantine (JSON + text)
         code_l, out_l, _ = self.run_cmd("--list-quarantine", "--json")
         self.assertEqual(code_l, 0)
         list_rep = json.loads(out_l)
         self.assertEqual(list_rep["total_batches"], 1)
         self.assertEqual(list_rep["batches"][0]["batch_id"], batch_id)
+        self.assertTrue(list_rep["batches"][0].get("local_time"))
+
+        code_lt, out_lt, _ = self.run_cmd("--list-quarantine")
+        self.assertEqual(code_lt, 0)
+        self.assertIn(batch_id, out_lt)
+        self.assertIn(list_rep["batches"][0]["local_time"], out_lt)
 
         # Recreate scratch.tmp at original path to verify --restore never overwrites
         (self.root / "scratch.tmp").write_text("NEW_USER_CONTENT", encoding="utf-8")

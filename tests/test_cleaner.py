@@ -408,8 +408,14 @@ class TestQuarantineEngine(SmartDriveTestCase):
         eng_new = PurgeEngine(str(root), dry_run=False, quarantine=True, batch_id="20260110-000000")
         eng_new.delete_file(str(new_junk))
 
-        import calendar, time as _time
-        injected_now = float(calendar.timegm(_time.strptime("20260111-000000", "%Y%m%d-%H%M%S")))
+        import time as _time
+        # 2026-01-11 00:00:00 local time: exactly 1.0 day after 20260110-000000 and 10.0 days after 20260101-000000
+        injected_now = float(_time.mktime(_time.strptime("20260111-000000", "%Y%m%d-%H%M%S")))
+
+        # Tight boundary check: at injected_now - 60s (less than 1 day after 20260110-000000), older_than=1 matches only 20260101-000000
+        preview_tight = purge_quarantine_batches(str(root), older_than_days=1, dry_run=True, now=injected_now - 60.0)
+        self.assertEqual(preview_tight["matched_count"], 1)
+        self.assertEqual(preview_tight["kept_count"], 1)
 
         # Dry-run with older_than=5 days matches only 20260101-000000 and leaves both on disk
         preview = purge_quarantine_batches(str(root), older_than_days=5, dry_run=True, now=injected_now)
@@ -426,6 +432,26 @@ class TestQuarantineEngine(SmartDriveTestCase):
         self.assertEqual(applied["kept_count"], 1)
         self.assertFalse((root / ".smart_drive" / "quarantine" / "20260101-000000").exists())
         self.assertTrue((root / ".smart_drive" / "quarantine" / "20260110-000000").is_dir())
+
+    def test_quarantine_batch_uses_local_time(self) -> None:
+        import time as _time
+        from unittest.mock import patch
+        from smart_drive.core.purge_engine import list_quarantine_batches
+
+        root = self.test_dir
+        junk = root / "local.tmp"
+        junk.write_bytes(b"local")
+
+        fixed_local = _time.strptime("20260515-143025", "%Y%m%d-%H%M%S")
+        with patch("smart_drive.core.purge_engine.time.localtime", return_value=fixed_local):
+            eng = PurgeEngine(str(root), dry_run=False, quarantine=True)
+            eng.delete_file(str(junk))
+
+        self.assertEqual(eng.batch_id, "20260515-143025")
+        batches = list_quarantine_batches(str(root))
+        self.assertEqual(len(batches), 1)
+        self.assertEqual(batches[0]["batch_id"], "20260515-143025")
+        self.assertIn("2026-05-15 14:30:25", batches[0]["local_time"])
 
 
 if __name__ == "__main__":
