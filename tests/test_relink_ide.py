@@ -306,6 +306,22 @@ class TestRelinkIDE(SmartDriveTestCase):
         self.assertIn(f'<entry key="{jb_new_bslash}" value="true" />', trusted_after)
         self.assertIn(f'<entry key="{jb_untouched}" value="true" />', trusted_after)
 
+        # JetBrains XML with XML-escaped folder name (R&amp;D) and no $USER_HOME$ macro passes pre-check
+        pycharm_opts = self.fake_appdata / "JetBrains" / "PyCharm2026.1" / "options"
+        pycharm_opts.mkdir(parents=True, exist_ok=True)
+        rd_xml = pycharm_opts / "trusted-paths.xml"
+        rd_old = "E:/R&D" if sys.platform == "win32" else "/Users/alice/R&D"
+        rd_new = "E:/03_Development_Projects/R&D" if sys.platform == "win32" else "/Users/alice/03_Development_Projects/R&D"
+        rd_old_escaped = rd_old.replace("&", "&amp;")
+        rd_new_escaped = rd_new.replace("&", "&amp;")
+        rd_xml.write_text(
+            f'<application><component name="Trusted.Paths"><entry key="{rd_old_escaped}/core" value="true" /></component></application>\n',
+            encoding="utf-8",
+        )
+        rd_rep = relink([(rd_old, rd_new)], dry_run=False, home=self.fake_home, app_data=self.fake_appdata)
+        self.assertEqual(rd_rep.agents, {"JetBrains": 1})
+        self.assertIn(f'key="{rd_new_escaped}/core"', rd_xml.read_text(encoding="utf-8"))
+
     def test_03_locked_vscdb_emits_warning_not_error(self) -> None:
         cursor_gs = self.fake_appdata / "Cursor" / "User" / "globalStorage"
         cursor_gs.mkdir(parents=True, exist_ok=True)
