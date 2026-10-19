@@ -33,6 +33,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 try:
@@ -163,11 +164,16 @@ def _split(text: str) -> Optional[Tuple[str, List[str]]]:
     return anchor, names
 
 
+def _nfc(names: Sequence[str]) -> List[str]:
+    """names in composed Unicode form: macOS lists exFAT names decomposed, agents store them composed."""
+    return [unicodedata.normalize("NFC", n) for n in names]
+
+
 def _key(anchor: str, names: Sequence[str]) -> Tuple[str, ...]:
-    """Normalized comparison key for (anchor, names); case-insensitive on Windows and macOS."""
+    """Normalized comparison key for (anchor, names); Unicode NFC, case-insensitive on Windows and macOS."""
     if _CASE_INSENSITIVE:
-        return (anchor.casefold(), *(n.casefold() for n in names))
-    return (anchor, *names)
+        return (anchor.casefold(), *(n.casefold() for n in _nfc(names)))
+    return (anchor, *_nfc(names))
 
 
 def _split_pathsep(text: str) -> List[str]:
@@ -266,8 +272,12 @@ class PathMapper:
             if text[-1] in "\\/" and len(text) > len(anchor) + 1:
                 mapped += sep
             # Lowercase only when the agent lowercased a path that originally had capitals (e.g. Codex/Gemini).
-            lowered = text.islower() and (anchor, names[:len(old_names)]) != (old_anchor, old_names)
+            lowered = text.islower() and (anchor, _nfc(names[:len(old_names)])) != (old_anchor, _nfc(old_names))
             result = mapped.lower() if lowered else mapped
+            if not result.isascii():
+                # Write the Unicode form the agent used: decomposed only if its own string was.
+                decomposed = unicodedata.is_normalized("NFD", text) and not unicodedata.is_normalized("NFC", text)
+                result = unicodedata.normalize("NFD" if decomposed else "NFC", result)
             return None if result == text else result
         return None
 

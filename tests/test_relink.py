@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import unittest
 from unittest.mock import patch
 
@@ -1626,6 +1627,26 @@ class TestRelink(SmartDriveTestCase):
             with patch.dict(os.environ, self._cli_env()), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(cli_main(argv), 0)
         self.assertEqual(list(json.loads(claude_json.read_text(encoding="utf-8"))["projects"]), [str(new / "proj1")])
+
+    def test_36_composed_and_decomposed_names_are_one_folder(self) -> None:
+        name = unicodedata.normalize("NFC", "Dự án web")
+        old = str(self.test_dir / name)
+        new = str(self.test_dir / "03_Development_Projects" / name)
+        # Claude Code stores paths composed (NFC), while macOS lists exFAT names decomposed (NFD)
+        claude_json = self.fake_home / ".claude.json"
+        claude_json.write_text(json.dumps({"projects": {old: {}}}, ensure_ascii=False), encoding="utf-8")
+        history = self.fake_home / ".claude" / "projects"
+        (history / claude_slug(old)).mkdir(parents=True)
+
+        report = relink(
+            [(unicodedata.normalize("NFD", old), unicodedata.normalize("NFD", new))],
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+        )
+
+        self.assertEqual(report.agents, {"Claude Code": 1})
+        self.assertEqual(list(json.loads(claude_json.read_text(encoding="utf-8"))["projects"]), [new])
+        self.assertTrue((history / claude_slug(new)).is_dir())
 
 
 if __name__ == "__main__":
