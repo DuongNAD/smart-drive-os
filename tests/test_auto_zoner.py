@@ -443,6 +443,43 @@ class TestAutoZonerPlanningAndExecution(_IsolatedAutoZonerTestCase):
         self.assertEqual(plan[0].dest_path, str(root / "03_Development_Projects" / "project"))
         self.assertEqual(plan[0].reason, "Folder of 2 development projects")
 
+    def test_folder_keyword_whole_word_and_camelcase_matching(self) -> None:
+        """Substring false positives (Notepad++, Facebook, DumpStack) return None; whole words and camelCase match."""
+        from smart_drive.core.system_refs import SystemRefIndex
+
+        root = self.test_dir
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
+
+        for non_match in ("Notepad++", "Facebook", "DumpStack", "remodeler", "bookmarklet", "scriptoria"):
+            folder = root / non_match
+            folder.mkdir()
+            self.assertIsNone(
+                zoner.classify_item(str(folder)),
+                f"Expected {non_match!r} not to match any folder keyword",
+            )
+
+        expected = {
+            "ai_models": "01_AI_Models",
+            "loraCheckpoints": "01_AI_Models",
+            "llamaWeights": "01_AI_Models",
+            "my_notes": "02_Learning_Knowledge",
+            "StudyNotes": "02_Learning_Knowledge",
+            "python_tutorials": "02_Learning_Knowledge",
+            "devTools": "05_Dev_Toolbox",
+            "my_utilities": "05_Dev_Toolbox",
+            "helper_scripts": "05_Dev_Toolbox",
+            "old_backups": "06_Archives_Storage",
+            "db_dumps": "06_Archives_Storage",
+            "oldProject": "06_Archives_Storage",
+        }
+        for folder_name, target_taxonomy in expected.items():
+            folder = root / folder_name
+            folder.mkdir()
+            res = zoner.classify_item(str(folder))
+            self.assertIsNotNone(res, f"Expected {folder_name!r} to classify into {target_taxonomy}")
+            assert res is not None
+            self.assertEqual(res[0], target_taxonomy)
+
 
 if __name__ == "__main__":
     unittest.main()
