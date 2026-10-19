@@ -1394,8 +1394,14 @@ def record_moves(root: str, moves: Sequence[Move], tool: str) -> None:
         "tool": tool,
         "moves": [[old, new] for old, new in moves],
     }
+    line = json.dumps(record, ensure_ascii=False)
+    try:
+        line.encode("utf-8")
+    except UnicodeEncodeError:
+        # A name that is not valid Unicode (a lone surrogate) cannot be UTF-8: keep JSON escapes instead.
+        line = json.dumps(record)
     with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        f.write(line + "\n")
 
 
 def _parse_batch_line(line: str) -> Optional[Dict[str, Any]]:
@@ -1877,7 +1883,7 @@ def after_moves(root: str, moves: Sequence[Move], tool: str) -> Optional[RelinkR
     journal_warning: Optional[str] = None
     try:
         record_moves(root, moves, tool)
-    except OSError as err:
+    except Exception as err:
         journal_warning = f"Could not write move journal: {err}"
 
     try:

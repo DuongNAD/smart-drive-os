@@ -24,6 +24,7 @@ from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.relink import (
     BACKUP_SUFFIX,
     PathMapper,
+    after_moves,
     agent_files,
     claude_slug,
     find_moved,
@@ -1806,6 +1807,19 @@ class TestRelink(SmartDriveTestCase):
         entries = find_moved(root=str(drive), home=self.fake_home, skip_dirs=[])
 
         self.assertEqual([(e.old, e.new, e.kind) for e in entries], [(old_dir, str(new_dir), "same-name")])
+
+    def test_43_after_moves_journals_names_that_are_not_valid_unicode(self) -> None:
+        drive = self.test_dir / "drive_surrogate"
+        drive.mkdir()
+        # An undecodable byte in a POSIX name, or an unpaired surrogate in a Windows one
+        moves = [(str(drive / "proj\udcff"), str(drive / "03_Development_Projects" / "proj\udcff"))]
+
+        with patch.dict(os.environ, self._cli_env()):
+            report = after_moves(str(drive), moves, "organize")
+
+        self.assertIsNotNone(report)
+        self.assertFalse(any("journal" in w for w in report.warnings), report.warnings)
+        self.assertEqual([tuple(m) for m in last_moves(str(drive))["moves"]], moves)
 
 
 if __name__ == "__main__":
