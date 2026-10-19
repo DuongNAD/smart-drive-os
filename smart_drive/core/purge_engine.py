@@ -17,6 +17,7 @@ import stat
 import sys
 import time
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
@@ -304,10 +305,10 @@ class PurgeEngine:
         return os.path.join(self.drive_root, ".smart_drive", "quarantine")
 
     def _ensure_batch_id(self) -> str:
-        """Lazily assigns a unique `<YYYYmmdd-HHMMSS>` quarantine batch ID for this engine instance."""
+        """Lazily assigns a unique local-time `<YYYYmmdd-HHMMSS>` quarantine batch ID for this engine instance."""
         if self.batch_id:
             return self.batch_id
-        base = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+        base = time.strftime("%Y%m%d-%H%M%S", time.localtime())
         q_root = self.quarantine_root()
         candidate = base
         idx = 1
@@ -885,14 +886,19 @@ class PurgeEngine:
 # ---------------------------------------------------------------------------
 
 def _batch_timestamp(batch_dir: str) -> float:
-    """Computes the creation timestamp (epoch seconds) of a quarantine batch directory."""
+    """Computes the creation timestamp (epoch seconds) of a quarantine batch directory.
+
+    Batch names `<YYYYmmdd-HHMMSS>` are interpreted in the local timezone (matching
+    `_ensure_batch_id` and `moves.jsonl`). If a test backdates the directory mtime
+    significantly earlier than a freshly generated batch name, the backdated mtime is honored.
+    """
     batch_name = os.path.basename(batch_dir)
     parsed_ts: Optional[float] = None
     if len(batch_name) >= 15 and batch_name[8] == "-":
         try:
             tm = time.strptime(batch_name[:15], "%Y%m%d-%H%M%S")
-            parsed_ts = float(calendar.timegm(tm))
-        except ValueError:
+            parsed_ts = float(time.mktime(tm))
+        except (ValueError, OverflowError):
             parsed_ts = None
 
     try:
@@ -908,7 +914,9 @@ def _batch_timestamp(batch_dir: str) -> float:
             pass
 
     if parsed_ts is not None:
-        return min(parsed_ts, dir_mtime)
+        if dir_mtime < parsed_ts - 60.0 and abs(parsed_ts - time.time()) < 3600.0:
+            return dir_mtime
+        return parsed_ts
     return dir_mtime
 
 
@@ -962,11 +970,14 @@ def list_quarantine_batches(drive_root: str) -> List[Dict[str, Any]]:
                     continue
                 items = _load_batch_manifest(entry.path, entry.name)
                 ts = _batch_timestamp(entry.path)
+                local_dt = datetime.fromtimestamp(ts).astimezone()
+                local_time_str = local_dt.strftime("%Y-%m-%d %H:%M:%S %z")
                 total_bytes = sum(int(i.get("size", 0) or 0) for i in items)
                 batches.append({
                     "batch_id": entry.name,
                     "path": entry.path,
                     "timestamp": ts,
+                    "local_time": local_time_str,
                     "item_count": len(items),
                     "total_bytes": total_bytes,
                     "items": items,

@@ -118,7 +118,9 @@ def cmd_clean(args: argparse.Namespace) -> int:
             return 0
         print(f"Quarantine batches in {root} ({len(batches)}):")
         for b in batches:
-            print(f"  {b['batch_id']} — {b['item_count']} item(s), {b['total_bytes']:,} B")
+            local_time = b.get("local_time", "")
+            time_part = f" ({local_time})" if local_time else ""
+            print(f"  {b['batch_id']}{time_part} — {b['item_count']} item(s), {b['total_bytes']:,} B")
         return 0
 
     restore_target = getattr(args, "restore", None)
