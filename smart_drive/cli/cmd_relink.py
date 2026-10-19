@@ -32,22 +32,30 @@ def print_relink(report: Optional[RelinkReport]) -> None:
     verb = "would be updated" if report.dry_run else "updated"
     for agent, count in report.agents.items():
         print(f"  ✓ {agent}: {count} path(s) {verb}")
-        if agent == "Windows Shortcuts":
+        if agent in ("Windows Shortcuts", "Python editable", "Python venv"):
             for entry in report.updated:
-                if entry.get("agent") == "Windows Shortcuts":
+                if entry.get("agent") == agent:
                     print(f"    - {entry['file']}")
 
     for item in report.history:
         print(f"  ✓ Claude Code history: {item['from']} -> {item['to']}")
 
+    wt_verb = "would be repaired" if report.dry_run else "repaired"
     for wt in report.worktrees:
-        print(f"  ✓ git worktrees repaired: {wt}")
+        print(f"  ✓ git worktrees {wt_verb}: {wt}")
+
+    venv_verb = "would be updated" if report.dry_run else "updated"
+    for venv in report.venvs:
+        print(f"  ✓ Python venv {venv_verb}: {venv}")
 
     if not report.changed and not report.warnings and not report.errors:
         print("  ✓ Nothing left to change: all coding agent paths are up to date.")
 
     for warning in report.warnings:
         print(f"  ! {warning}")
+
+    if report.dry_run and report.busy_apps:
+        print(f"  ! Close these before --apply: {', '.join(report.busy_apps)}")
 
     for err in report.errors:
         print(f"  ✗ {err['file']}: {err['error']}")
@@ -149,7 +157,7 @@ def _wait_for_busy_agents(moves: Sequence[Move], root: Optional[str], wait_minut
         )
         affected -= set(own)
     # An unreadable process list is no proof that the agents closed, so it counts as still running.
-    busy = agents_still_running(affected)
+    busy = sorted(affected) if getattr(preview, '_unreadable_processes', False) else sorted(affected & set(preview.busy_apps))
     if not busy:
         return True
 

@@ -664,12 +664,14 @@ def agent_files(
 
 @dataclass
 class RelinkReport:
-    """Summary of path updates, history migrations, worktree repairs, warnings, and errors."""
+    """Summary of path updates, history migrations, worktree repairs, venvs, busy apps, warnings, and errors."""
 
     dry_run: bool = False
     updated: List[Dict[str, Any]] = field(default_factory=list)
     history: List[Dict[str, str]] = field(default_factory=list)
     worktrees: List[str] = field(default_factory=list)
+    venvs: List[str] = field(default_factory=list)
+    busy_apps: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     errors: List[Dict[str, str]] = field(default_factory=list)
 
@@ -683,7 +685,7 @@ class RelinkReport:
 
     @property
     def changed(self) -> bool:
-        return bool(self.updated or self.history or self.worktrees)
+        return bool(self.updated or self.history or self.worktrees or self.venvs)
 
     def to_dict(self) -> Dict[str, Any]:
         data = dataclasses.asdict(self)
@@ -1628,11 +1630,12 @@ def _repair_worktrees(
     new_candidates: Sequence[str],
     mapper: PathMapper,
     report: RelinkReport,
+    dry_run: bool = False,
 ) -> None:
     """Repairs git worktrees for moved repositories and linked worktrees (including nested repos up to depth 2)."""
     unique_dirs = _collect_worktree_candidate_dirs(new_candidates)
 
-    main_repos: List[Tuple[Path, List[str]]] = []
+    main_repos: List[Tuple[Path, List[str], List[str]]] = []
     linked_worktrees: List[Path] = []
 
     for d in unique_dirs:
@@ -1641,6 +1644,9 @@ def _repair_worktrees(
             wt_root = dot_git / "worktrees"
             if _is_dir(wt_root):
                 wt_dirs: List[str] = []
+                wt_names: List[str] = []
+                repo_moving = mapper.map(str(d)) is not None
+                needs_repair = False
                 try:
                     gitdir_files = sorted(wt_root.glob("*/gitdir"))
                 except OSError:
@@ -1654,18 +1660,60 @@ def _repair_worktrees(
                         continue
                     if not recorded:
                         continue
+                    wt_names.append(gf.parent.name)
                     mapped_rec = mapper.map(recorded) or recorded
                     parent_dir = Path(mapped_rec).parent
+                    orig_parent = Path(recorded).parent
                     if _is_dir(parent_dir):
                         p_str = str(parent_dir)
                         if p_str not in wt_dirs:
                             wt_dirs.append(p_str)
-                if wt_dirs:
-                    main_repos.append((d, wt_dirs))
+                    elif dry_run and _is_dir(orig_parent):
+                        p_str = str(parent_dir)
+                        if p_str not in wt_dirs:
+                            wt_dirs.append(p_str)
+
+                    if repo_moving or mapper.map(recorded) is not None or not dry_run:
+                        needs_repair = True
+                    else:
+                        wt_git_file = (parent_dir if _is_dir(parent_dir) else orig_parent) / ".git"
+                        if _is_file(wt_git_file):
+                            try:
+                                wt_txt = wt_git_file.read_text(encoding="utf-8", errors="replace").strip()
+                                if wt_txt.startswith("gitdir:") and mapper.map(wt_txt[len("gitdir:") :].strip()):
+                                    needs_repair = True
+                            except OSError:
+                                pass
+
+                if (wt_dirs or (dry_run and wt_names)) and needs_repair:
+                    main_repos.append((d, wt_dirs, wt_names))
         elif _is_file(dot_git):
-            linked_worktrees.append(d)
+            if not dry_run or mapper.map(str(d)) is not None:
+                linked_worktrees.append(d)
+            else:
+                try:
+                    wt_txt = dot_git.read_text(encoding="utf-8", errors="replace").strip()
+                    if wt_txt.startswith("gitdir:") and mapper.map(wt_txt[len("gitdir:") :].strip()):
+                        linked_worktrees.append(d)
+                except OSError:
+                    pass
 
     if not main_repos and not linked_worktrees:
+        return
+
+    if dry_run:
+        for repo_dir, _wt_dirs, wt_names in main_repos:
+            repo_str = mapper.map(str(repo_dir)) or str(repo_dir)
+            if repo_str not in report.worktrees:
+                report.worktrees.append(repo_str)
+            for extra_name in wt_names[1:]:
+                extra_entry = f"{repo_str} [{extra_name}]"
+                if extra_entry not in report.worktrees:
+                    report.worktrees.append(extra_entry)
+        for wt_dir in linked_worktrees:
+            wt_str = mapper.map(str(wt_dir)) or str(wt_dir)
+            if wt_str not in report.worktrees:
+                report.worktrees.append(wt_str)
         return
 
     git_bin = shutil.which("git")
@@ -1674,8 +1722,8 @@ def _repair_worktrees(
         return
 
     repaired_wt_paths: Set[str] = set()
-    for repo_dir, wt_dirs in main_repos:
-        if _run_git_repair(git_bin, repo_dir, wt_dirs, report):
+    for repo_dir, wt_dirs, _wt_names in main_repos:
+        if wt_dirs and _run_git_repair(git_bin, repo_dir, wt_dirs, report):
             for w in wt_dirs:
                 repaired_wt_paths.add(w.casefold() if _CASE_INSENSITIVE else w)
 
@@ -1731,15 +1779,23 @@ def _relink_virtualenvs(
     moves: Sequence[Move],
     mapper: PathMapper,
     report: RelinkReport,
+    dry_run: bool = False,
 ) -> None:
     """Updates .pth and .egg-link files inside moved Python virtualenvs and warns about console scripts."""
     seen_venvs: Set[str] = set()
-    for _, new_path in moves:
-        base = Path(new_path)
-        if not _is_dir(base):
+    for old_path, new_path in moves:
+        new_p = Path(new_path)
+        old_p = Path(old_path)
+        if _is_dir(new_p):
+            base = new_p
+        elif dry_run and _is_dir(old_p):
+            base = old_p
+        else:
             continue
+        base_is_old = base == old_p and mapper.map(str(base)) is not None
         for venv_dir in _candidate_venv_dirs(base):
-            key = str(venv_dir).casefold() if _CASE_INSENSITIVE else str(venv_dir)
+            reported_venv = mapper.map(str(venv_dir)) or str(venv_dir)
+            key = reported_venv.casefold() if _CASE_INSENSITIVE else reported_venv
             if key in seen_venvs:
                 continue
             if not _is_file(venv_dir / "pyvenv.cfg"):
@@ -1759,6 +1815,7 @@ def _relink_virtualenvs(
                 except OSError:
                     pass
 
+            pth_updated = False
             for sp in site_packages:
                 try:
                     files = (
@@ -1777,15 +1834,22 @@ def _relink_virtualenvs(
                         process = _process_finder_file if finder else _process_lines_file
                         new_bytes, count = process(af, mapper, report)
                         if new_bytes is not None and count > 0:
-                            if _write_agent_file(af, new_bytes, report):
+                            pth_updated = True
+                            if dry_run:
+                                mapped_file = mapper.map(str(af.path)) or str(af.path)
+                                report.updated.append({"file": mapped_file, "agent": af.agent, "paths": count})
+                            elif _write_agent_file(af, new_bytes, report):
                                 report.updated.append({"file": str(af.path), "agent": af.agent, "paths": count})
                     except Exception as err:
                         report.errors.append({"file": str(af.path), "error": str(err)})
 
-            report.warnings.append(
-                f"Python venv {venv_dir}: console scripts of that venv may still start the old path; "
-                "fix with `uv sync --reinstall` or a fresh venv."
-            )
+            if not dry_run or base_is_old or pth_updated:
+                if reported_venv not in report.venvs:
+                    report.venvs.append(reported_venv)
+                report.warnings.append(
+                    f"Python venv {reported_venv}: console scripts of that venv may still start the old path; "
+                    "fix with `uv sync --reinstall` or a fresh venv."
+                )
 
 
 _PY_QUOTED_STR_RE = re.compile(r"'((?:[^'\\\r\n]|\\.)*)'|\"((?:[^\"\\\r\n]|\\.)*)\"")
@@ -2200,22 +2264,40 @@ def relink(
         site_packages=site_packages,
     )
 
-    if not dry_run:
-        worktree_candidates = [new for _, new in moves]
-        for cand in history_candidates:
-            mapped_cand = mapper.map(cand)
-            if mapped_cand:
+    worktree_candidates: List[str] = []
+    for old_p, new_p in moves:
+        if _is_dir(Path(new_p)):
+            worktree_candidates.append(new_p)
+        elif dry_run and _is_dir(Path(old_p)):
+            worktree_candidates.append(old_p)
+        else:
+            worktree_candidates.append(new_p)
+    for cand in history_candidates:
+        mapped_cand = mapper.map(cand)
+        if mapped_cand:
+            if _is_dir(Path(mapped_cand)):
                 worktree_candidates.append(mapped_cand)
-        _repair_worktrees(worktree_candidates, mapper, report)
-        _relink_virtualenvs(moves, mapper, report)
-        if report.agents:
-            busy = sorted(set(report.agents) & running_agents())
-            if busy:
-                apps = ", ".join(busy)
-                report.warnings.append(
-                    f"{apps} is running: it may write its old settings back when it quits. "
-                    "Quit it, then run `smart-drive relink --wait` (or `smart-drive relink` again)."
-                )
+            elif dry_run and _is_dir(Path(cand)):
+                worktree_candidates.append(cand)
+            else:
+                worktree_candidates.append(mapped_cand)
+
+    _repair_worktrees(worktree_candidates, mapper, report, dry_run=dry_run)
+    _relink_virtualenvs(moves, mapper, report, dry_run=dry_run)
+
+    running_labels = _running_agent_labels()
+    active_agents = running_labels or set()
+    report._unreadable_processes = running_labels is None
+    report.busy_apps = sorted(active_agents)
+
+    if not dry_run and report.agents:
+        busy = sorted(set(report.agents) & active_agents)
+        if busy:
+            apps = ", ".join(busy)
+            report.warnings.append(
+                f"{apps} is running: it may write its old settings back when it quits. "
+                "Quit it, then run `smart-drive relink --wait` (or `smart-drive relink` again)."
+            )
 
     return report
 
