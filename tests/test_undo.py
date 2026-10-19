@@ -234,6 +234,28 @@ class TestUndo(SmartDriveTestCase):
         self.assertIsNotNone(payload["index_update"])
         self.assertTrue(loose.is_file())
 
+    def test_04_undo_exits_nonzero_when_move_raises_oserror(self) -> None:
+        drive = self.create_mock_drive()
+        old_file = drive / "locked.txt"
+        new_file = drive / "02_Learning_Knowledge" / "Notes" / "locked.txt"
+        new_file.parent.mkdir(parents=True, exist_ok=True)
+        new_file.write_text("locked content", encoding="utf-8")
+        record_moves(str(drive), [(str(old_file), str(new_file))], "classify")
+
+        with patch("smart_drive.cli.cmd_undo._move", side_effect=OSError("Permission denied")):
+            code_j, out_j, _ = self._run_cli(["undo", "--root", str(drive), "--apply", "--json"])
+            self.assertEqual(code_j, 1)
+            data = json.loads(out_j)
+            self.assertEqual(data["restored_count"], 0)
+            self.assertEqual(data["failed_count"], 1)
+            self.assertIn("Permission denied", data["errors"][0]["error"])
+
+            # Text mode also returns 1 and writes error to stderr
+            code_t, _, err_t = self._run_cli(["undo", "--root", str(drive), "--apply"])
+            self.assertEqual(code_t, 1)
+            self.assertIn("Failed to restore", err_t)
+            self.assertIn("Permission denied", err_t)
+
 
 if __name__ == "__main__":
     unittest.main()
