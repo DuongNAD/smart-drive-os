@@ -63,8 +63,8 @@ AGENT_PROCESSES: Dict[str, Set[str]] = {
 }
 
 
-def _running_processes() -> Set[str]:
-    """Returns running process names from `tasklist` (Windows) or `ps` (POSIX)."""
+def _running_processes() -> Optional[Set[str]]:
+    """Returns running process names from `tasklist` (Windows) or `ps` (POSIX), or None if unreadable."""
     cmd = ["tasklist", "/FO", "CSV", "/NH"] if sys.platform == "win32" else ["ps", "-A", "-o", "comm="]
     try:
         done = subprocess.run(
@@ -78,9 +78,9 @@ def _running_processes() -> Set[str]:
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
-        return set()
+        return None
     if done.returncode != 0 or not done.stdout:
-        return set()
+        return None
 
     names: Set[str] = set()
     if sys.platform == "win32":
@@ -95,12 +95,14 @@ def _running_processes() -> Set[str]:
     return names
 
 
-def running_agents() -> Set[str]:
-    """Returns the set of coding agent labels whose application is currently running."""
+def _running_agent_labels() -> Optional[Set[str]]:
+    """Labels of the coding agents whose application is running, or None if the process list is unreadable."""
     try:
         raw_names = _running_processes()
     except Exception:
-        return set()
+        return None
+    if raw_names is None:
+        return None
     active: Set[str] = set()
     for raw in raw_names:
         base = os.path.basename(str(raw).strip().replace("\\", "/")).casefold()
@@ -110,6 +112,18 @@ def running_agents() -> Set[str]:
         if labels:
             active.update(labels)
     return active
+
+
+def running_agents() -> Set[str]:
+    """Returns the set of coding agent labels whose application is currently running."""
+    return _running_agent_labels() or set()
+
+
+def agents_still_running(agents: Iterable[str]) -> List[str]:
+    """Those of `agents` whose application is running; all of them while the process list is unreadable."""
+    wanted = set(agents)
+    running = _running_agent_labels()
+    return sorted(wanted if running is None else wanted & running)
 
 
 def _safe_home_dir() -> Path:
@@ -1826,6 +1840,7 @@ __all__ = [
     "JOURNAL_NAME",
     "AGENT_PROCESSES",
     "running_agents",
+    "agents_still_running",
     "PathMapper",
     "claude_slug",
     "AgentFile",

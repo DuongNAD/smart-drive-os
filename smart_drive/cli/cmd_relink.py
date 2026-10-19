@@ -14,11 +14,11 @@ from smart_drive.core.relink import (
     Move,
     MovedFolder,
     RelinkReport,
+    agents_still_running,
     find_moved,
     last_moves,
     record_moves,
     relink,
-    running_agents,
 )
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 
@@ -97,7 +97,8 @@ def _wait_for_busy_agents(moves: Sequence[Move], root: Optional[str], wait_minut
     preview = relink(moves, root=root, dry_run=True)
     if not preview.agents:
         return True
-    busy = sorted(set(preview.agents) & running_agents())
+    # An unreadable process list is no proof that the agents closed, so it counts as still running.
+    busy = agents_still_running(preview.agents)
     if not busy:
         return True
 
@@ -109,7 +110,7 @@ def _wait_for_busy_agents(moves: Sequence[Move], root: Optional[str], wait_minut
             sys.stderr.write(f"relink: timed out waiting for {', '.join(busy)} to close; no files were modified.\n")
             return False
         time.sleep(2)
-        busy = sorted(set(preview.agents) & running_agents())
+        busy = agents_still_running(preview.agents)
     return True
 
 
