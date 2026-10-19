@@ -329,13 +329,28 @@ class TestRelinkIDE(SmartDriveTestCase):
         self.assertTrue(mock_conn.call_args[1].get("uri"), mock_conn.call_args)
 
     def test_04_running_agents_detects_vscode_and_jetbrains_processes(self) -> None:
+        # 1) Code.exe only marks VS Code busy, not Code - Insiders or VSCodium
+        with patch("smart_drive.core.relink._running_processes", return_value={"Code.exe"}):
+            active = running_agents()
+        self.assertEqual(active, {"VS Code"})
+        self.assertNotIn("Code - Insiders", active)
+        self.assertNotIn("VSCodium", active)
+
+        # 2) Code - Insiders and VSCodium/codium have their own process entries
         with patch(
             "smart_drive.core.relink._running_processes",
-            return_value={"Code.exe", "pycharm64.exe", "idea64.exe"},
+            return_value={"Code - Insiders.exe", "codium"},
         ):
-            active = running_agents()
-        self.assertIn("VS Code", active)
-        self.assertIn("JetBrains", active)
+            active_variants = running_agents()
+        self.assertEqual(active_variants, {"Code - Insiders", "VSCodium"})
+
+        with patch("smart_drive.core.relink._running_processes", return_value={"VSCodium.exe"}):
+            self.assertEqual(running_agents(), {"VSCodium"})
+
+        # 3) JetBrains binaries on Windows (*64.exe) and macOS/Linux (idea, pycharm, webstorm, etc.)
+        for jb_proc in ("idea64.exe", "pycharm64.exe", "idea", "pycharm", "webstorm", "clion", "goland", "rustrover"):
+            with patch("smart_drive.core.relink._running_processes", return_value={jb_proc}):
+                self.assertEqual(running_agents(), {"JetBrains"}, jb_proc)
 
     def test_05_find_moved_discovers_vscode_and_jetbrains_stale_paths(self) -> None:
         drive = self.test_dir / "drive"
