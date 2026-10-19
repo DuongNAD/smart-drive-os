@@ -65,9 +65,10 @@ while true; do
     echo "  [7] Register AI Coding Agents MCP (smart-drive mcp register)"
     echo "  [8] Relink Coding Agents After Moving Folders (smart-drive relink --find)"
     echo "  [9] Drive Health Checkup & Score (smart-drive checkup)"
+    echo "  [10] Safe Guided Organizer (Smart_Organize)"
     echo "  [0] Exit"
     echo ""
-    read -r -p "Select an option [0-9]: " OPT
+    read -r -p "Select an option [0-10]: " OPT
 
     case "$OPT" in
         1)
@@ -161,6 +162,16 @@ while true; do
             "$PYTHON_CMD" -m smart_drive checkup
             echo ""
             read -r -p "Press Enter to return to menu..."
+            ;;
+        10)
+            echo ""
+            if [ -f "$DIR/Smart_Organize.command" ]; then
+                /bin/bash "$DIR/Smart_Organize.command"
+            else
+                "$PYTHON_CMD" -m smart_drive.cli.smart_organize_runner
+                echo ""
+                read -r -p "Press Enter to return to menu..."
+            fi
             ;;
         0)
             echo ""
