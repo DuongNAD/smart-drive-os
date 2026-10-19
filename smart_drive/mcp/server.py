@@ -1189,6 +1189,7 @@ class SmartDriveMCPServer:
                 "status": "applied",
                 "cluster_size": zoner.cluster_size,
                 "result": res,
+                "protected_by_system": zoner.protected_by_system,
                 "relink": relinked.to_dict() if relinked else None,
                 "shields_created": created_shields,
                 "index_sync": dataclasses.asdict(inc_stats),
@@ -1199,6 +1200,7 @@ class SmartDriveMCPServer:
             "cluster_size": zoner.cluster_size,
             "plan_count": len(plan),
             "actions": [a.to_dict() for a in plan],
+            "protected_by_system": zoner.protected_by_system,
             "relink_preview": preview.to_dict() if preview else None,
         }
 

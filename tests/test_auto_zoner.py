@@ -205,6 +205,128 @@ class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
             zoner_fallback = AutoZoner(str(root))
             self.assertEqual(zoner_fallback.cluster_size, 524288)
 
+    def test_system_referenced_and_uninstaller_folders_never_planned_or_moved(self) -> None:
+        """Folders referenced by PATH/services or containing unins000.exe are excluded from generate_plan and apply_plan."""
+        from smart_drive.core.system_refs import SystemRef, SystemRefIndex
+
+        root = self.test_dir
+        git_dir = root / "Git"
+        git_dir.mkdir()
+        (git_dir / "cmd").mkdir()
+
+        sql_dir = root / "SQL"
+        sql_dir.mkdir()
+        (sql_dir / "Binn").mkdir()
+
+        tool_dir = root / "tool"
+        tool_dir.mkdir()
+        (tool_dir / "unins000.exe").write_bytes(b"MZ")
+
+        safe_tool = root / "my_utility"
+        safe_tool.mkdir()
+        (safe_tool / "helper.txt").write_text("ok", encoding="utf-8")
+
+        fake_index = SystemRefIndex([
+            SystemRef(kind="path", source="PATH (System)", target=str(git_dir / "cmd")),
+            SystemRef(kind="service", source="service MSSQLSERVER", target=str(sql_dir / "Binn" / "sqlservr.exe")),
+        ])
+
+        zoner = AutoZoner(str(root), system_refs=fake_index)
+        plan = zoner.generate_plan()
+
+        planned_names = {os.path.basename(a.src_path) for a in plan}
+        self.assertEqual(planned_names, {"my_utility"})
+
+        by_name = {os.path.basename(item["path"]): item["refs"] for item in zoner.protected_by_system}
+        self.assertIn("Git", by_name)
+        self.assertIn("SQL", by_name)
+        self.assertIn("tool", by_name)
+        self.assertEqual(by_name["Git"][0], {"kind": "path", "source": "PATH (System)"})
+        self.assertEqual(by_name["SQL"][0], {"kind": "service", "source": "service MSSQLSERVER"})
+        self.assertEqual(by_name["tool"][0], {"kind": "uninstaller", "source": "unins000.exe"})
+
+        # Even if a stale plan containing Git, SQL, and tool is passed to apply_plan, none of them may be moved
+        stale_plan = [
+            ZoningAction(
+                src_path=str(git_dir),
+                dest_path=str(root / "02_Learning_Knowledge" / "Git"),
+                target_taxonomy="02_Learning_Knowledge",
+                reason="stale",
+                is_dir=True,
+                nominal_size=0,
+                slack_bytes=0,
+            ),
+            ZoningAction(
+                src_path=str(sql_dir),
+                dest_path=str(root / "02_Learning_Knowledge" / "SQL"),
+                target_taxonomy="02_Learning_Knowledge",
+                reason="stale",
+                is_dir=True,
+                nominal_size=0,
+                slack_bytes=0,
+            ),
+            ZoningAction(
+                src_path=str(tool_dir),
+                dest_path=str(root / "05_Dev_Toolbox" / "tool"),
+                target_taxonomy="05_Dev_Toolbox",
+                reason="stale",
+                is_dir=True,
+                nominal_size=0,
+                slack_bytes=0,
+            ),
+        ]
+        res = zoner.apply_plan(stale_plan)
+        self.assertEqual(res["moved_count"], 0)
+        self.assertTrue(git_dir.exists())
+        self.assertTrue(sql_dir.exists())
+        self.assertTrue(tool_dir.exists())
+
+    def test_cmd_organize_reports_protected_by_system_in_json_and_text(self) -> None:
+        """cmd_organize outputs protected_by_system in JSON and prints Skipped lines in text mode."""
+        import argparse
+        import io
+        import json
+        from unittest.mock import patch
+        from smart_drive.cli.cmd_organize import cmd_organize
+        from smart_drive.core.system_refs import SystemRef, SystemRefIndex
+
+        root = self.test_dir
+        git_dir = root / "Git"
+        git_dir.mkdir()
+        (git_dir / "cmd").mkdir()
+
+        fake_index = SystemRefIndex([
+            SystemRef(kind="path", source="PATH (User)", target=str(git_dir / "cmd")),
+            SystemRef(kind="installed_app", source='installed app "Git"', target=str(git_dir)),
+            SystemRef(kind="shortcut", source=r"C:\Users\X\Desktop\Git Bash.lnk", target=str(git_dir / "git-bash.exe")),
+        ])
+
+        with patch.object(SystemRefIndex, "collect", return_value=fake_index):
+            # JSON mode
+            buf = io.StringIO()
+            old_stdout = sys.stdout
+            sys.stdout = buf
+            try:
+                rc = cmd_organize(argparse.Namespace(root=str(root), apply=False, clean=False, json=True))
+            finally:
+                sys.stdout = old_stdout
+            self.assertEqual(rc, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertEqual(payload["planned_actions"], [])
+            self.assertEqual(len(payload["protected_by_system"]), 1)
+            self.assertEqual(payload["protected_by_system"][0]["path"], str(git_dir))
+
+            # Text mode
+            buf_txt = io.StringIO()
+            sys.stdout = buf_txt
+            try:
+                rc_txt = cmd_organize(argparse.Namespace(root=str(root), apply=False, clean=False, json=False))
+            finally:
+                sys.stdout = old_stdout
+            self.assertEqual(rc_txt, 0)
+            txt = buf_txt.getvalue()
+            self.assertIn(f"Skipped {git_dir} — used by PATH, installed app \"Git\", 1 shortcut", txt)
+
 
 if __name__ == "__main__":
     unittest.main()

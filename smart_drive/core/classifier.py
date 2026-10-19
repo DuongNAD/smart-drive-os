@@ -33,6 +33,11 @@ from smart_drive.core.exfat_compat import detect_drive_root
 from smart_drive.core.junction import is_directory_junction
 from smart_drive.core.learning_units import find_unit_root, unit_kind
 from smart_drive.core.root import same_file
+from smart_drive.core.system_refs import (
+    SystemRefIndex,
+    format_protected_by_system_entry,
+    summarize_system_refs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +140,7 @@ class ClassificationReport:
     dry_run: bool
     results: List[ClassificationResult] = field(default_factory=list)
     actions: List[RelocationAction] = field(default_factory=list)
+    protected_by_system: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -146,6 +152,7 @@ class ClassificationReport:
             "dry_run": self.dry_run,
             "results": [r.to_dict() for r in self.results],
             "actions": [a.to_dict() for a in self.actions],
+            "protected_by_system": self.protected_by_system,
         }
 
 
@@ -158,12 +165,48 @@ class ClassifierEngine:
 
     HEADER_BUFFER_SIZE: int = 65_536  # 64 KB header read buffer
 
-    def __init__(self, root_path: Union[str, Path]) -> None:
+    def __init__(
+        self,
+        root_path: Union[str, Path],
+        system_refs: Optional[SystemRefIndex] = None,
+    ) -> None:
         self.root = Path(root_path).resolve()
+        self._system_refs: Optional[SystemRefIndex] = system_refs
+        self.protected_by_system: List[Dict[str, Any]] = []
+        self._protected_by_system_keys: Set[str] = set()
+        self._protected_summaries: Dict[str, str] = {}
         self.skipped_links: List[Path] = []  # symlinks/junctions left alone by the last scan
         # "Is this folder under the root" answers, kept only while one scan runs (files in the same folder share
         # them). Never used to decide a move: execute_relocation re-checks everything right before it.
         self._under_root_cache: Optional[Dict[str, bool]] = None
+
+    @property
+    def system_refs(self) -> SystemRefIndex:
+        """Lazily collects OS/application references once per ClassifierEngine instance."""
+        if self._system_refs is None:
+            self._system_refs = SystemRefIndex.collect()
+        return self._system_refs
+
+    def _is_protected_by_system(self, dirpath: Union[str, Path]) -> bool:
+        """Checks if a directory is referenced by Windows/system or contains an uninstaller."""
+        p_str = str(dirpath)
+        refs = self.system_refs.check_folder(p_str)
+        if not refs:
+            return False
+        norm_key = os.path.normcase(os.path.abspath(p_str))
+        if norm_key not in self._protected_by_system_keys:
+            self._protected_by_system_keys.add(norm_key)
+            self.protected_by_system.append(format_protected_by_system_entry(p_str, refs))
+            self._protected_summaries[norm_key] = summarize_system_refs(refs)
+        return True
+
+    def describe_protected_by_system(self, dirpath: Union[str, Path]) -> str:
+        """Returns the human-readable summary of why `dirpath` is protected by the system."""
+        norm_key = os.path.normcase(os.path.abspath(str(dirpath)))
+        if norm_key in self._protected_summaries:
+            return self._protected_summaries[norm_key]
+        refs = self.system_refs.check_folder(dirpath)
+        return summarize_system_refs(refs)
 
     # --------------------------------------------------------------------------
     # Link safety: nothing may be read, moved or written through a symlink or junction
@@ -595,8 +638,10 @@ class ClassifierEngine:
         if not dirpath.is_dir():
             return None
 
-        # Exclude protected root folders
+        # Exclude protected root folders and folders referenced by OS/system
         if is_protected_root_dir(dirpath.name):
+            return None
+        if self._is_protected_by_system(dirpath):
             return None
 
         # 1. Git Repository
@@ -672,6 +717,8 @@ class ClassifierEngine:
 
         # Check protected files/dirs against inviolable safeguards
         if is_protected_root_file(p.name) or is_protected_root_dir(p.name):
+            return None
+        if p.is_dir() and self._is_protected_by_system(p):
             return None
 
         # Check learning units (Aurora & Polaris)
@@ -763,6 +810,9 @@ class ClassifierEngine:
     def _scan_and_classify(self, target_dir: Optional[Union[str, Path]], recursive: bool) -> List[ClassificationResult]:
         results: List[ClassificationResult] = []
         self.skipped_links = []
+        self.protected_by_system = []
+        self._protected_by_system_keys = set()
+        self._protected_summaries = {}
 
         scan_arg = self.root if target_dir is None else Path(os.path.abspath(str(target_dir)))
         try:
@@ -785,6 +835,9 @@ class ClassifierEngine:
             res = self.inspect_path(scan_root)
             return [res] if res else []
 
+        if scan_root != self.root and self._is_protected_by_system(scan_root):
+            return results
+
         # Directory traversal
         for root, dirs, files in os.walk(scan_root):
             curr_dir = Path(root)
@@ -804,6 +857,11 @@ class ClassifierEngine:
             if linked_dirs:
                 self.skipped_links.extend(curr_dir / d for d in linked_dirs)
                 dirs[:] = [d for d in dirs if d not in linked_dirs]
+
+            # Never descend into or classify folders referenced by OS services, PATH, installed apps, or shortcuts
+            sys_protected_dirs = [d for d in dirs if self._is_protected_by_system(curr_dir / d)]
+            if sys_protected_dirs:
+                dirs[:] = [d for d in dirs if d not in sys_protected_dirs]
 
             # Check if curr_dir itself is a learning unit or project repo
             if curr_dir != scan_root:
@@ -936,6 +994,13 @@ class ClassifierEngine:
         allocated: Set[Path] = set()
 
         for item in results:
+            if (item.is_dir or item.source_path.is_dir()) and self._is_protected_by_system(item.source_path):
+                continue
+            rel_parts = self._rel_to_root(item.source_path)
+            if rel_parts and len(rel_parts) > 1 and not is_protected_root_dir(rel_parts[0]):
+                if self._is_protected_by_system(self.root / rel_parts[0]):
+                    continue
+
             dest_path, collision = self.resolve_destination(item, allocated)
             try:
                 rel_target = str(dest_path.relative_to(self.root)).replace("\\", "/")
@@ -1011,4 +1076,5 @@ class ClassifierEngine:
             dry_run=dry_run,
             results=results,
             actions=actions,
+            protected_by_system=list(self.protected_by_system),
         )

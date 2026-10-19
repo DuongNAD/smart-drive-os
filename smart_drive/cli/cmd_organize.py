@@ -88,6 +88,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
                 "cluster_size": zoner.cluster_size,
                 "clean": clean_summary,
                 "zoning": apply_res,
+                "protected_by_system": zoner.protected_by_system,
                 "relink": relinked.to_dict() if relinked else None,
                 "index_update": inc_res,
                 "anti_indexing_shields": shields,
@@ -102,6 +103,9 @@ def cmd_organize(args: argparse.Namespace) -> int:
             print(f"  - Safe Tier 1 cleaned: {clean_summary['purged_count']} files")
         if inc_res:
             print(f"  - Index updated: +{inc_res['added']} ~{inc_res['modified']} -{inc_res['deleted']}")
+        for item in zoner.protected_by_system:
+            p = item["path"]
+            print(f"  Skipped {p} — used by {zoner.describe_protected_by_system(p)}")
         for err_entry in apply_res.get("errors", []):
             print(f"  ✗ Could not move {os.path.basename(err_entry['src'])}: {err_entry['error']}")
         if relinked and (relinked.changed or relinked.warnings or relinked.errors):
@@ -117,6 +121,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
             "cluster_size": zoner.cluster_size,
             "clean_preview": clean_summary,
             "planned_actions": [a.to_dict() for a in plan],
+            "protected_by_system": zoner.protected_by_system,
             "relink_preview": preview.to_dict() if preview else None,
             "anti_indexing_shields": shields,
             "note": "Use --apply to execute relocation."
@@ -125,6 +130,9 @@ def cmd_organize(args: argparse.Namespace) -> int:
 
     print("=== Auto-Zoning Plan (Dry-Run Preview) ===")
     print(f"Root: {root}")
+    for item in zoner.protected_by_system:
+        p = item["path"]
+        print(f"  Skipped {p} — used by {zoner.describe_protected_by_system(p)}")
     if plan:
         for action in plan:
             item_type = "[DIR]" if action.is_dir else "[FILE]"
