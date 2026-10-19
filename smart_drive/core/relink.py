@@ -84,6 +84,7 @@ AGENT_PROCESSES: Dict[str, Set[str]] = {
     "phpstorm64": {"JetBrains"},
     "datagrip64": {"JetBrains"},
     "rustrover64": {"JetBrains"},
+    "obsidian": {"Obsidian"},
 }
 
 
@@ -643,6 +644,8 @@ def agent_files(
             opts_dir = prod_dir / "options"
             candidates.append(AgentFile(opts_dir / "recentProjects.xml", "JetBrains", "jetbrains_xml", True))
             candidates.append(AgentFile(opts_dir / "trusted-paths.xml", "JetBrains", "jetbrains_xml", True))
+
+    candidates.append(AgentFile(resolved_app_data / "obsidian" / "obsidian.json", "Obsidian", "json", True))
 
     if root:
         candidates.append(AgentFile(Path(root) / ".mcp.json", "SSD .mcp.json", "json", True))

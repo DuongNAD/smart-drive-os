@@ -367,6 +367,42 @@ class TestRelinkIDE(SmartDriveTestCase):
         self.assertEqual(found.new, str(new_loc))
         self.assertEqual(found.agents, ["Antigravity", "JetBrains"])
 
+    def test_06_obsidian_vault_relinked_and_process_detected(self) -> None:
+        obs_dir = self.fake_appdata / "obsidian"
+        obs_dir.mkdir(parents=True, exist_ok=True)
+        obs_file = obs_dir / "obsidian.json"
+
+        old_vault = "E:\\Obsidian" if sys.platform == "win32" else "/mnt/ssd/Obsidian"
+        new_vault = (
+            "E:\\02_Learning_Materials\\Obsidian"
+            if sys.platform == "win32"
+            else "/mnt/ssd/02_Learning_Materials/Obsidian"
+        )
+        keep_vault = "E:\\KeepNotes" if sys.platform == "win32" else "/mnt/ssd/KeepNotes"
+
+        payload = {
+            "vaults": {
+                "a1b2c3d4": {"path": old_vault, "ts": 1700000000, "open": True},
+                "e5f6g7h8": {"path": keep_vault, "ts": 1700000001},
+            }
+        }
+        obs_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+        dry = relink([(old_vault, new_vault)], dry_run=True, home=self.fake_home, app_data=self.fake_appdata)
+        self.assertEqual(dry.agents, {"Obsidian": 1})
+        self.assertFalse(Path(str(obs_file) + BACKUP_SUFFIX).exists())
+
+        real = relink([(old_vault, new_vault)], dry_run=False, home=self.fake_home, app_data=self.fake_appdata)
+        self.assertEqual(real.agents, {"Obsidian": 1})
+        self.assertTrue(Path(str(obs_file) + BACKUP_SUFFIX).is_file())
+
+        after = json.loads(obs_file.read_text(encoding="utf-8"))
+        self.assertEqual(after["vaults"]["a1b2c3d4"]["path"], new_vault)
+        self.assertEqual(after["vaults"]["e5f6g7h8"]["path"], keep_vault)
+
+        with patch("smart_drive.core.relink._running_processes", return_value={"Obsidian.exe"}):
+            self.assertIn("Obsidian", running_agents())
+
 
 if __name__ == "__main__":
     unittest.main()
