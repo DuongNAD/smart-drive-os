@@ -175,5 +175,127 @@ class TestAuditReportFormatting(SmartDriveTestCase):
             self.assertGreater(len(table), 50)
 
 
+class TestAuditHtmlTreemap(SmartDriveTestCase):
+    """T17: Self-contained HTML treemap report (smart-drive audit --html [file])."""
+
+    def test_html_report_escapes_filenames_and_has_no_external_urls(self) -> None:
+        """HTML report escapes special characters in file/folder names and uses zero external URLs."""
+        import html as html_mod
+        from smart_drive.core.scanner import ScanEntry
+
+        root = self.test_dir / "html_escape_drive"
+        root.mkdir()
+        (root / "safe_folder & notes'1").mkdir()
+        (root / "safe_folder & notes'1" / "doc & report'2.txt").write_bytes(b"hello" * 100)
+
+        auditor = StorageAuditor(str(root), cluster_size=4096)
+        result = auditor.run_audit()
+
+        # Also inject an adversarial <script> filename into top_largest_files & tree to test full HTML escaping
+        adversarial_name = '<script>alert("xss")</script>&bad\'name.bin'
+        result["top_largest_files"].insert(
+            0,
+            {
+                "name": adversarial_name,
+                "rel_path": f"01_AI_Models/{adversarial_name}",
+                "size": 1048576,
+                "allocated": 1048576,
+                "slack": 0,
+                "category": "AI Models",
+                "taxonomy": "01_AI_Models",
+            },
+        )
+        result["tree"]["subdirs"][adversarial_name] = {
+            "name": adversarial_name,
+            "path": str(root / adversarial_name),
+            "rel_path": adversarial_name,
+            "direct_files": 1,
+            "direct_bytes": 1048576,
+            "direct_allocated": 1048576,
+            "direct_micro_files": 0,
+            "direct_slack": 0,
+            "direct_slack_percentage": 0.0,
+            "recursive_files": 1,
+            "recursive_bytes": 1048576,
+            "recursive_allocated": 1048576,
+            "recursive_slack": 0,
+            "recursive_slack_percentage": 0.0,
+            "recursive_dirs": 0,
+            "subdirs": {},
+        }
+
+        html_out = result.to_html()
+
+        # Unescaped script tag must NEVER appear
+        self.assertNotIn('<script>alert("xss")</script>', html_out)
+        # Escaped version must appear in the HTML table and treemap
+        escaped_adv = html_mod.escape(adversarial_name, quote=True)
+        self.assertIn(escaped_adv, html_out)
+        self.assertIn(html_mod.escape("safe_folder & notes'1", quote=True), html_out)
+
+        # Zero external URLs (offline self-contained requirement)
+        self.assertNotIn("http://", html_out.lower())
+        self.assertNotIn("https://", html_out.lower())
+
+        # Reasonable size
+        self.assertGreater(len(html_out), 2000)
+        self.assertLess(len(html_out), 500_000)
+
+    def test_html_treemap_squarify_and_other_grouping(self) -> None:
+        """Treemap groups tiny folders into 'Other / Khác' and limits depth to <= 3."""
+        root = self.test_dir / "treemap_group_drive"
+        root.mkdir()
+
+        # Create 3 large folders and 18 tiny folders
+        for i in range(3):
+            big = root / f"big_folder_{i}"
+            big.mkdir()
+            (big / "data.bin").write_bytes(b"X" * 50_000)
+        for i in range(18):
+            tiny = root / f"tiny_folder_{i:02d}"
+            tiny.mkdir()
+            (tiny / "small.txt").write_bytes(b"x" * 10)
+
+        auditor = StorageAuditor(str(root), cluster_size=4096)
+        result = auditor.run_audit()
+        html_out = result.to_html()
+
+        self.assertIn("Other / Khác", html_out)
+        self.assertIn("big_folder_0", html_out)
+
+    def test_cli_audit_html_default_and_custom_path_single_scan(self) -> None:
+        """CLI `smart-drive audit --html` runs a single scan and writes to .smart_drive/reports/audit.html."""
+        from unittest import mock
+        from smart_drive.cli.main import main as cli_main
+        from smart_drive.core.scanner import FastDirectoryScanner
+
+        root = self.create_mock_drive()
+        default_html = root / ".smart_drive" / "reports" / "audit.html"
+        custom_html = self.test_dir / "custom_report.html"
+
+        orig_scan_iter = FastDirectoryScanner.scan_iter
+        scan_calls = []
+
+        def tracked_scan_iter(scanner_self):
+            scan_calls.append(1)
+            return orig_scan_iter(scanner_self)
+
+        with mock.patch.object(FastDirectoryScanner, "scan_iter", tracked_scan_iter):
+            rc = cli_main(["audit", "--root", str(root), "--html"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(scan_calls), 1, "audit --html must scan the filesystem only once")
+        self.assertTrue(default_html.is_file())
+        content = default_html.read_text(encoding="utf-8")
+        self.assertIn("<!DOCTYPE html>", content)
+        self.assertNotIn("http://", content.lower())
+        self.assertNotIn("https://", content.lower())
+
+        # Custom file path
+        rc2 = cli_main(["audit", "--root", str(root), "--html", str(custom_html)])
+        self.assertEqual(rc2, 0)
+        self.assertTrue(custom_html.is_file())
+
+
 if __name__ == "__main__":
     unittest.main()
+

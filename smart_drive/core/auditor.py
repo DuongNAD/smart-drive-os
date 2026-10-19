@@ -11,6 +11,8 @@ Implements:
 
 from __future__ import annotations
 
+import heapq
+import html
 import io
 import json
 import logging
@@ -394,6 +396,12 @@ class AuditResult(dict):
             return self.auditor.generate_ascii_table_report(self)
         return _fallback_ascii_table_report(self)
 
+    def to_html(self) -> str:
+        """Generates a self-contained offline HTML report with squarified treemap."""
+        if self.auditor:
+            return self.auditor.generate_html_report(self)
+        return _fallback_html_report(self)
+
     def export_json(self, filepath: Union[str, Path], indent: int = 2) -> None:
         """Exports JSON report to disk."""
         target = Path(filepath)
@@ -411,6 +419,12 @@ class AuditResult(dict):
         target = Path(filepath)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(self.to_ascii_table(), encoding="utf-8")
+
+    def export_html(self, filepath: Union[str, Path]) -> None:
+        """Exports self-contained HTML treemap report to disk."""
+        target = Path(filepath)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(self.to_html(), encoding="utf-8")
 
 
 AuditReport = AuditResult
@@ -530,7 +544,7 @@ class StorageAuditor:
         total_nominal_bytes = 0
         total_allocated_bytes = 0
         empty_files_count = 0
-        large_files: List[Dict[str, Any]] = []
+        large_files_heap: List[Tuple[int, int, Dict[str, Any]]] = []
         seen_links: Set[Tuple[int, int]] = set()  # (device, inode) of hard-linked data already counted
         hardlinks_not_counted = 0
 
@@ -616,9 +630,9 @@ class StorageAuditor:
 
                 parent_node.add_file(size, allocated)
 
-                # Track top largest files (keep top 20)
-                if size > 10 * 1024 * 1024 or len(large_files) < 20:
-                    large_files.append({
+                # Track top largest files (keep top 50 via min-heap)
+                if len(large_files_heap) < 50 or size > large_files_heap[0][0]:
+                    file_info = {
                         "name": entry.name,
                         "rel_path": entry.rel_path,
                         "size": size,
@@ -626,7 +640,11 @@ class StorageAuditor:
                         "slack": allocated - size,
                         "category": cat_name,
                         "taxonomy": tax_name,
-                    })
+                    }
+                    if len(large_files_heap) < 50:
+                        heapq.heappush(large_files_heap, (size, -total_files, file_info))
+                    else:
+                        heapq.heapreplace(large_files_heap, (size, -total_files, file_info))
 
         # Post-order tree rollup
         root_node.rollup()
@@ -640,8 +658,24 @@ class StorageAuditor:
         total_slack_ratio = total_slack_percentage / 100.0
         total_clusters = (total_allocated_bytes // self.cluster_size) if self.cluster_size > 0 else 0
 
-        large_files.sort(key=lambda f: f["size"], reverse=True)
-        top_largest = large_files[:20]
+        top_largest = [
+            item[2]
+            for item in sorted(large_files_heap, key=lambda x: (-x[0], -x[1]))
+        ]
+
+        top_largest_dirs = [
+            {
+                "name": n.name,
+                "rel_path": n.rel_path or ".",
+                "recursive_files": n.recursive_files,
+                "recursive_bytes": n.recursive_bytes,
+                "recursive_allocated": n.recursive_allocated,
+                "recursive_slack": n.recursive_slack,
+                "recursive_slack_percentage": round(n.recursive_slack_percentage, 2),
+            }
+            for n in root_node.get_top_size_dirs(limit=51)
+            if n.rel_path
+        ][:50]
 
         top_slack_dirs = [
             {
@@ -716,6 +750,7 @@ class StorageAuditor:
             "taxonomies": {name: stat.to_dict() for name, stat in taxonomies.items()},
             "categories": {name: stat.to_dict() for name, stat in categories.items()},
             "top_slack_directories": top_slack_dirs,
+            "top_largest_directories": top_largest_dirs,
             "top_largest_files": top_largest,
             "micro_file_hotspots": micro_file_hotspots,
             "total_recoverable_slack": total_recoverable_slack,
@@ -955,6 +990,765 @@ class StorageAuditor:
 
         return buf.getvalue()
 
+    def generate_html_report(self, data: Dict[str, Any]) -> str:
+        """Renders a self-contained offline HTML report with a squarified treemap (depth <= 3)."""
+        return _render_self_contained_html(data)
+
+
+# ------------------------------------------------------------------------------
+# Squarified Treemap & Self-Contained HTML Generator (Zero External URLs)
+# ------------------------------------------------------------------------------
+
+_TREEMAP_PALETTE: Tuple[str, ...] = (
+    "#2563eb", "#0891b2", "#059669", "#7c3aed", "#d97706",
+    "#dc2626", "#4f46e5", "#0d9488", "#65a30d", "#db2777",
+    "#9333ea", "#ea580c", "#0284c7", "#475569",
+)
+
+
+def _worst_aspect_ratio(row_areas: List[float], side: float) -> float:
+    if not row_areas or side <= 0:
+        return float("inf")
+    s = sum(row_areas)
+    if s <= 0:
+        return float("inf")
+    r_max = max(row_areas)
+    r_min = min(row_areas)
+    if r_min <= 0:
+        return float("inf")
+    s2 = s * s
+    side2 = side * side
+    return max((side2 * r_max) / s2, s2 / (side2 * r_min))
+
+
+def _squarify_rects(
+    items: List[Dict[str, Any]],
+    x: float = 0.0,
+    y: float = 0.0,
+    w: float = 100.0,
+    h: float = 100.0,
+) -> List[Dict[str, Any]]:
+    """Computes Bruls-Huizing-van Wijk squarified treemap coordinates in [x..x+w, y..y+h]."""
+    positive = [dict(it) for it in items if it.get("bytes", 0) > 0]
+    if not positive or w <= 0 or h <= 0:
+        return []
+    positive.sort(key=lambda it: it["bytes"], reverse=True)
+    total_bytes = sum(it["bytes"] for it in positive)
+    if total_bytes <= 0:
+        return []
+
+    total_area = w * h
+    for it in positive:
+        it["_area"] = (it["bytes"] / total_bytes) * total_area
+
+    result: List[Dict[str, Any]] = []
+    rx, ry, rw, rh = x, y, w, h
+    idx = 0
+    n = len(positive)
+
+    while idx < n and rw > 1e-6 and rh > 1e-6:
+        row: List[Dict[str, Any]] = [positive[idx]]
+        idx += 1
+        side = min(rw, rh)
+        while idx < n:
+            candidate = positive[idx]
+            curr_areas = [r["_area"] for r in row]
+            next_areas = curr_areas + [candidate["_area"]]
+            if _worst_aspect_ratio(next_areas, side) <= _worst_aspect_ratio(curr_areas, side):
+                row.append(candidate)
+                idx += 1
+            else:
+                break
+
+        row_area = sum(r["_area"] for r in row)
+        if rw >= rh:
+            col_w = row_area / rh if rh > 0 else 0.0
+            cy = ry
+            for r in row:
+                ih = (r["_area"] / col_w) if col_w > 0 else 0.0
+                r["rect"] = (round(rx, 3), round(cy, 3), round(col_w, 3), round(ih, 3))
+                cy += ih
+                result.append(r)
+            rx += col_w
+            rw = max(0.0, rw - col_w)
+        else:
+            bar_h = row_area / rw if rw > 0 else 0.0
+            cx = rx
+            for r in row:
+                iw = (r["_area"] / bar_h) if bar_h > 0 else 0.0
+                r["rect"] = (round(cx, 3), round(ry, 3), round(iw, 3), round(bar_h, 3))
+                cx += iw
+                result.append(r)
+            ry += bar_h
+            rh = max(0.0, rh - bar_h)
+
+    for r in result:
+        r.pop("_area", None)
+    return result
+
+
+def _prepare_treemap_node(
+    tree_node: Dict[str, Any],
+    depth: int = 0,
+    max_depth: int = 3,
+    min_share: float = 0.015,
+    max_children: int = 14,
+) -> Dict[str, Any]:
+    """Recursively builds a squarified treemap hierarchy up to max_depth, grouping tiny items into 'Other (Khác)'."""
+    name = str(tree_node.get("name") or ".")
+    rel_path = str(tree_node.get("rel_path") or ".")
+    rec_bytes = int(tree_node.get("recursive_bytes", 0) or 0)
+    rec_alloc = int(tree_node.get("recursive_allocated", 0) or 0)
+    rec_slack = int(tree_node.get("recursive_slack", 0) or 0)
+    rec_files = int(tree_node.get("recursive_files", 0) or 0)
+
+    node_out: Dict[str, Any] = {
+        "name": name,
+        "rel_path": rel_path,
+        "bytes": rec_bytes,
+        "bytes_fmt": format_bytes(rec_bytes),
+        "allocated": rec_alloc,
+        "allocated_fmt": format_bytes(rec_alloc),
+        "slack": rec_slack,
+        "slack_fmt": format_bytes(rec_slack),
+        "files": rec_files,
+        "depth": depth,
+        "children": [],
+    }
+
+    if depth >= max_depth:
+        return node_out
+
+    subdirs = tree_node.get("subdirs") or {}
+    raw_children: List[Dict[str, Any]] = []
+    for sub_name, sub_dict in subdirs.items():
+        s_bytes = int(sub_dict.get("recursive_bytes", 0) or 0)
+        s_alloc = int(sub_dict.get("recursive_allocated", 0) or 0)
+        s_files = int(sub_dict.get("recursive_files", 0) or 0)
+        if s_bytes <= 0 and s_alloc > 0:
+            s_bytes = 1
+        if s_bytes > 0:
+            raw_children.append({
+                "raw": sub_dict,
+                "name": str(sub_dict.get("name") or sub_name),
+                "rel_path": str(sub_dict.get("rel_path") or sub_name),
+                "bytes": s_bytes,
+                "allocated": s_alloc,
+                "slack": int(sub_dict.get("recursive_slack", 0) or 0),
+                "files": s_files,
+                "is_dir": True,
+            })
+
+    direct_bytes = int(tree_node.get("direct_bytes", 0) or 0)
+    direct_alloc = int(tree_node.get("direct_allocated", 0) or 0)
+    direct_files = int(tree_node.get("direct_files", 0) or 0)
+    if direct_files > 0 and (direct_bytes > 0 or direct_alloc > 0) and raw_children:
+        eff_bytes = direct_bytes if direct_bytes > 0 else 1
+        raw_children.append({
+            "raw": None,
+            "name": "[Direct Files]",
+            "rel_path": f"{rel_path}/[Direct Files]" if rel_path != "." else "[Direct Files]",
+            "bytes": eff_bytes,
+            "allocated": direct_alloc,
+            "slack": max(0, direct_alloc - direct_bytes),
+            "files": direct_files,
+            "is_dir": False,
+        })
+
+    if not raw_children:
+        return node_out
+
+    raw_children.sort(key=lambda c: c["bytes"], reverse=True)
+    parent_total = sum(c["bytes"] for c in raw_children)
+
+    kept: List[Dict[str, Any]] = []
+    grouped: List[Dict[str, Any]] = []
+    for idx, child in enumerate(raw_children):
+        share = (child["bytes"] / parent_total) if parent_total > 0 else 0.0
+        if idx < max_children and (share >= min_share or idx == 0):
+            kept.append(child)
+        else:
+            grouped.append(child)
+
+    # If only 1 item ended up in 'grouped' and we still have room, keep it directly
+    if len(grouped) == 1 and len(kept) < max_children:
+        kept.append(grouped.pop())
+
+    if grouped:
+        other_bytes = sum(c["bytes"] for c in grouped)
+        other_alloc = sum(c["allocated"] for c in grouped)
+        other_slack = sum(c["slack"] for c in grouped)
+        other_files = sum(c["files"] for c in grouped)
+        kept.append({
+            "raw": None,
+            "name": f"Other / Khác ({len(grouped)} items)",
+            "rel_path": f"{rel_path}/[Other]" if rel_path != "." else "[Other]",
+            "bytes": other_bytes,
+            "allocated": other_alloc,
+            "slack": other_slack,
+            "files": other_files,
+            "is_dir": False,
+            "is_other": True,
+            "grouped_names": [c["name"] for c in grouped[:20]],
+        })
+
+    laid_out = _squarify_rects(kept, 0.0, 0.0, 100.0, 100.0)
+    children_out: List[Dict[str, Any]] = []
+    for i, item in enumerate(laid_out):
+        color = "#64748b" if item.get("is_other") else _TREEMAP_PALETTE[i % len(_TREEMAP_PALETTE)]
+        if item.get("raw") is not None:
+            child_node = _prepare_treemap_node(
+                item["raw"],
+                depth=depth + 1,
+                max_depth=max_depth,
+                min_share=min_share,
+                max_children=max_children,
+            )
+        else:
+            child_node = {
+                "name": item["name"],
+                "rel_path": item["rel_path"],
+                "bytes": item["bytes"],
+                "bytes_fmt": format_bytes(item["bytes"]),
+                "allocated": item["allocated"],
+                "allocated_fmt": format_bytes(item["allocated"]),
+                "slack": item["slack"],
+                "slack_fmt": format_bytes(item["slack"]),
+                "files": item["files"],
+                "depth": depth + 1,
+                "children": [],
+            }
+        child_node["rect"] = item.get("rect", (0.0, 0.0, 0.0, 0.0))
+        child_node["color"] = color
+        child_node["is_other"] = bool(item.get("is_other", False))
+        if item.get("grouped_names"):
+            child_node["grouped_names"] = item["grouped_names"]
+        children_out.append(child_node)
+
+    node_out["children"] = children_out
+    return node_out
+
+
+def _esc(val: Any) -> str:
+    """Escapes any value safely for HTML text and attribute contexts."""
+    return html.escape(str(val if val is not None else ""), quote=True)
+
+
+def _render_static_treemap_boxes(node: Dict[str, Any]) -> str:
+    """Renders static HTML treemap divs for depth 1..3 so the treemap works even without JS."""
+    parts: List[str] = []
+    for child in node.get("children", []):
+        rx, ry, rw, rh = child.get("rect", (0.0, 0.0, 0.0, 0.0))
+        if rw <= 0.1 or rh <= 0.1:
+            continue
+        c_name = _esc(child.get("name", ""))
+        c_rel = _esc(child.get("rel_path", ""))
+        c_bytes = _esc(child.get("bytes_fmt", ""))
+        c_alloc = _esc(child.get("allocated_fmt", ""))
+        c_slack = _esc(child.get("slack_fmt", ""))
+        c_files = format_count(int(child.get("files", 0)))
+        c_color = _esc(child.get("color", "#2563eb"))
+        grouped_attr = ""
+        if child.get("grouped_names"):
+            grouped_attr = f' data-grouped="{_esc(", ".join(child["grouped_names"]))}"'
+
+        nested_html = ""
+        sub_children = child.get("children", [])
+        if sub_children and rw >= 8.0 and rh >= 8.0:
+            sub_parts: List[str] = []
+            for sub in sub_children:
+                sx, sy, sw, sh = sub.get("rect", (0.0, 0.0, 0.0, 0.0))
+                if sw <= 0.5 or sh <= 0.5:
+                    continue
+                s_name = _esc(sub.get("name", ""))
+                s_bytes = _esc(sub.get("bytes_fmt", ""))
+                sub_parts.append(
+                    f'<div class="tm-sub" style="left:{sx}%;top:{sy}%;width:{sw}%;height:{sh}%;" '
+                    f'title="{s_name} ({s_bytes})">'
+                    f'<span class="tm-sub-label">{s_name}</span></div>'
+                )
+            if sub_parts:
+                nested_html = f'<div class="tm-sub-container">{"".join(sub_parts)}</div>'
+
+        parts.append(
+            f'<div class="tm-node" style="left:{rx}%;top:{ry}%;width:{rw}%;height:{rh}%;background:{c_color};" '
+            f'data-rel-path="{c_rel}" data-name="{c_name}" data-bytes="{c_bytes}" '
+            f'data-allocated="{c_alloc}" data-slack="{c_slack}" data-files="{c_files}"{grouped_attr} '
+            f'title="{c_rel} | Logical: {c_bytes} | Allocated: {c_alloc} | Slack: {c_slack} | Files: {c_files}">'
+            f'<div class="tm-header"><span class="tm-title">{c_name}</span>'
+            f'<span class="tm-meta">{c_bytes} ({c_files} files)</span></div>'
+            f'{nested_html}'
+            f'</div>'
+        )
+    if not parts:
+        return '<div class="tm-empty">Empty directory tree (0 bytes)</div>'
+    return "".join(parts)
+
+
+def _render_self_contained_html(data: Dict[str, Any]) -> str:
+    """Produces a single self-contained HTML file with inline CSS/JS and zero external URLs."""
+    summary = data.get("summary") or {}
+    root_path = _esc(data.get("root_path", "."))
+    generated_at = _esc(data.get("generated_at", ""))
+    cluster_size = int(data.get("cluster_size", CLUSTER_SIZE_BYTES) or CLUSTER_SIZE_BYTES)
+    cluster_kb = f"{cluster_size / 1024:.1f}".rstrip("0").rstrip(".")
+    fs_dict = data.get("filesystem") or {}
+    fs_summary = _esc(fs_dict.get("summary") or f"Cluster size: {cluster_kb} KB ({cluster_size:,} B)")
+    slack_note = _esc(data.get("slack_model_note") or "")
+
+    total_files = int(summary.get("total_files", data.get("total_files", 0)) or 0)
+    total_dirs = int(summary.get("total_directories", data.get("total_directories", 0)) or 0)
+    logical_bytes = int(summary.get("total_logical_bytes", data.get("total_logical_bytes", 0)) or 0)
+    allocated_bytes = int(summary.get("total_allocated_bytes", data.get("total_allocated_bytes", 0)) or 0)
+    slack_bytes = int(summary.get("total_slack_bytes", data.get("total_slack_bytes", 0)) or 0)
+    slack_pct = float(summary.get("total_slack_percentage", data.get("total_slack_percentage", 0.0)) or 0.0)
+
+    tree_dict = data.get("tree") or {}
+    treemap_root = _prepare_treemap_node(tree_dict, depth=0, max_depth=3)
+    static_treemap_html = _render_static_treemap_boxes(treemap_root)
+
+    # Safe JSON serialization for inline script: escape <, >, & as unicode escapes
+    # AND html-escape all string fields in treemap_root so no unescaped sequence exists
+    treemap_json = (
+        json.dumps(treemap_root, ensure_ascii=False)
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
+
+    # Top 50 largest directories & Top 50 largest files
+    top_dirs = (data.get("top_largest_directories") or [])[:50]
+    top_files = (data.get("top_largest_files") or [])[:50]
+    top_slack = (data.get("top_slack_directories") or [])[:25]
+
+    dir_rows: List[str] = []
+    for idx, d in enumerate(top_dirs, 1):
+        d_rel = _esc(d.get("rel_path") or d.get("name") or ".")
+        d_files = format_count(int(d.get("recursive_files", 0)))
+        d_log = _esc(format_bytes(int(d.get("recursive_bytes", 0))))
+        d_alloc = _esc(format_bytes(int(d.get("recursive_allocated", 0))))
+        d_slack = _esc(format_bytes(int(d.get("recursive_slack", 0))))
+        d_pct = _esc(format_percentage(float(d.get("recursive_slack_percentage", 0.0))))
+        dir_rows.append(
+            f"<tr><td>{idx}</td><td class=\"mono\">{d_rel}</td>"
+            f"<td class=\"num\">{d_files}</td><td class=\"num\">{d_log}</td>"
+            f"<td class=\"num\">{d_alloc}</td><td class=\"num\">{d_slack}</td>"
+            f"<td class=\"num\">{d_pct}</td></tr>"
+        )
+    if not dir_rows:
+        dir_rows.append('<tr><td colspan="7" class="empty-cell">No directories recorded.</td></tr>')
+
+    file_rows: List[str] = []
+    for idx, f in enumerate(top_files, 1):
+        f_rel = _esc(f.get("rel_path") or f.get("name") or "")
+        f_cat = _esc(f.get("category") or "Other")
+        f_size = _esc(format_bytes(int(f.get("size", 0))))
+        f_alloc = _esc(format_bytes(int(f.get("allocated", 0))))
+        f_slack = _esc(format_bytes(int(f.get("slack", 0))))
+        file_rows.append(
+            f"<tr><td>{idx}</td><td class=\"mono\">{f_rel}</td>"
+            f"<td><span class=\"badge\">{f_cat}</span></td>"
+            f"<td class=\"num\">{f_size}</td><td class=\"num\">{f_alloc}</td>"
+            f"<td class=\"num\">{f_slack}</td></tr>"
+        )
+    if not file_rows:
+        file_rows.append('<tr><td colspan="6" class="empty-cell">No files recorded.</td></tr>')
+
+    slack_rows: List[str] = []
+    for idx, s in enumerate(top_slack, 1):
+        s_rel = _esc(s.get("rel_path") or s.get("name") or ".")
+        s_files = format_count(int(s.get("recursive_files", 0)))
+        s_log = _esc(format_bytes(int(s.get("recursive_bytes", 0))))
+        s_slk = _esc(format_bytes(int(s.get("recursive_slack", 0))))
+        s_pct = _esc(format_percentage(float(s.get("recursive_slack_percentage", 0.0))))
+        slack_rows.append(
+            f"<tr><td>{idx}</td><td class=\"mono\">{s_rel}</td>"
+            f"<td class=\"num\">{s_files}</td><td class=\"num\">{s_log}</td>"
+            f"<td class=\"num\">{s_slk}</td><td class=\"num\">{s_pct}</td></tr>"
+        )
+    if not slack_rows:
+        slack_rows.append('<tr><td colspan="6" class="empty-cell">No slack hotspots recorded.</td></tr>')
+
+    note_banner = f'<div class="note-banner">{slack_note}</div>' if slack_note else ""
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SmartDrive Storage Audit — {root_path}</title>
+<style>
+:root {{
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --border: #334155;
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  margin: 0;
+  padding: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}}
+header {{
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}}
+h1 {{ margin: 0; font-size: 1.5rem; }}
+.subtitle {{ color: var(--muted); font-size: 0.9rem; margin-top: 4px; }}
+.note-banner {{
+  background: #1e3a8a;
+  border: 1px solid #3b82f6;
+  color: #dbeafe;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 18px;
+  font-size: 0.9rem;
+}}
+.cards {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}}
+.card {{
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}}
+.card-label {{ color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }}
+.card-value {{ font-size: 1.35rem; font-weight: 700; margin-top: 4px; }}
+.card-sub {{ color: var(--muted); font-size: 0.82rem; margin-top: 2px; }}
+.section {{
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 24px;
+}}
+.section-header {{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}}
+.section-title {{ margin: 0; font-size: 1.1rem; }}
+.breadcrumb {{
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.88rem;
+}}
+.crumb-btn {{
+  background: #334155;
+  color: var(--text);
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}}
+.crumb-btn:hover {{ background: #475569; }}
+#treemap-canvas {{
+  position: relative;
+  width: 100%;
+  height: 440px;
+  background: #0b1120;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}}
+.tm-node {{
+  position: absolute;
+  border: 1.5px solid #0f172a;
+  overflow: hidden;
+  padding: 4px 6px;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+  display: flex;
+  flex-direction: column;
+}}
+.tm-node:hover {{ filter: brightness(1.14); z-index: 2; }}
+.tm-header {{
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}}
+.tm-meta {{ font-weight: 400; opacity: 0.9; font-size: 0.72rem; }}
+.tm-sub-container {{
+  position: relative;
+  flex: 1;
+  margin-top: 4px;
+  border-radius: 4px;
+  overflow: hidden;
+}}
+.tm-sub {{
+  position: absolute;
+  border: 1px solid rgba(15,23,42,0.55);
+  background: rgba(15,23,42,0.22);
+  padding: 2px 4px;
+  overflow: hidden;
+  font-size: 0.68rem;
+}}
+.tm-sub-label {{
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  opacity: 0.9;
+}}
+.tm-empty {{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+}}
+.tabs {{
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}}
+.tab-btn {{
+  background: #0f172a;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-weight: 600;
+}}
+.tab-btn.active {{
+  background: var(--accent);
+  color: #0f172a;
+  border-color: var(--accent);
+}}
+.table-wrap {{ overflow-x: auto; }}
+table {{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}}
+th, td {{
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}}
+th {{ color: var(--muted); font-weight: 600; background: rgba(15,23,42,0.5); }}
+td.num, th.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+td.mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; }}
+.badge {{
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #334155;
+  font-size: 0.76rem;
+}}
+.empty-cell {{ text-align: center; color: var(--muted); padding: 18px; }}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>SmartDrive Storage Audit &amp; Squarified Treemap</h1>
+    <div class="subtitle">Root: <strong>{root_path}</strong> &bull; Filesystem: <strong>{fs_summary}</strong></div>
+  </div>
+  <div class="subtitle">Generated: {generated_at}</div>
+</header>
+{note_banner}
+<div class="cards">
+  <div class="card">
+    <div class="card-label">Logical Size</div>
+    <div class="card-value">{_esc(format_bytes(logical_bytes))}</div>
+    <div class="card-sub">{logical_bytes:,} bytes</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Allocated on Disk</div>
+    <div class="card-value">{_esc(format_bytes(allocated_bytes))}</div>
+    <div class="card-sub">Cluster: {cluster_kb} KB ({cluster_size:,} B)</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Cluster Slack Waste</div>
+    <div class="card-value">{_esc(format_bytes(slack_bytes))}</div>
+    <div class="card-sub">{slack_pct:.2f}% slack overhead</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Files &amp; Folders</div>
+    <div class="card-value">{format_count(total_files)}</div>
+    <div class="card-sub">{format_count(total_dirs)} directories</div>
+  </div>
+</div>
+
+<section class="section">
+  <div class="section-header">
+    <h2 class="section-title">Squarified Folder Treemap (Depth &le; 3)</h2>
+    <div class="breadcrumb" id="treemap-breadcrumb">
+      <button type="button" class="crumb-btn" onclick="resetTreemap()">Root ({root_path})</button>
+    </div>
+  </div>
+  <div id="treemap-canvas">{static_treemap_html}</div>
+</section>
+
+<section class="section">
+  <div class="tabs">
+    <button type="button" class="tab-btn active" onclick="showTab('dirs', this)">Top 50 Largest Folders ({len(top_dirs)})</button>
+    <button type="button" class="tab-btn" onclick="showTab('files', this)">Top 50 Largest Files ({len(top_files)})</button>
+    <button type="button" class="tab-btn" onclick="showTab('slack', this)">Cluster Slack Hotspots ({len(top_slack)})</button>
+  </div>
+  <div id="tab-dirs" class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Directory (Relative Path)</th>
+          <th class="num">Files</th>
+          <th class="num">Logical Size</th>
+          <th class="num">Allocated Size</th>
+          <th class="num">Cluster Slack</th>
+          <th class="num">Slack %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {"".join(dir_rows)}
+      </tbody>
+    </table>
+  </div>
+  <div id="tab-files" class="table-wrap" style="display:none;">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>File (Relative Path)</th>
+          <th>Category</th>
+          <th class="num">Logical Size</th>
+          <th class="num">Allocated Size</th>
+          <th class="num">Cluster Slack</th>
+        </tr>
+      </thead>
+      <tbody>
+        {"".join(file_rows)}
+      </tbody>
+    </table>
+  </div>
+  <div id="tab-slack" class="table-wrap" style="display:none;">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Directory</th>
+          <th class="num">Files</th>
+          <th class="num">Logical Size</th>
+          <th class="num">Slack Wasted</th>
+          <th class="num">Waste %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {"".join(slack_rows)}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+const TREEMAP_DATA = {treemap_json};
+let currentStack = [TREEMAP_DATA];
+
+function showTab(name, btn) {{
+  ['dirs', 'files', 'slack'].forEach(function(id) {{
+    const el = document.getElementById('tab-' + id);
+    if (el) el.style.display = (id === name) ? 'block' : 'none';
+  }});
+  document.querySelectorAll('.tab-btn').forEach(function(b) {{
+    b.classList.remove('active');
+  }});
+  if (btn) btn.classList.add('active');
+}}
+
+function renderNode(node) {{
+  const canvas = document.getElementById('treemap-canvas');
+  const bc = document.getElementById('treemap-breadcrumb');
+  if (!canvas || !bc) return;
+  bc.innerHTML = '';
+  currentStack.forEach(function(item, idx) {{
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'crumb-btn';
+    btn.textContent = idx === 0 ? 'Root' : item.name;
+    btn.onclick = function() {{
+      currentStack = currentStack.slice(0, idx + 1);
+      renderNode(currentStack[currentStack.length - 1]);
+    }};
+    bc.appendChild(btn);
+  }});
+
+  const children = node.children || [];
+  if (!children.length) return;
+  canvas.innerHTML = '';
+  children.forEach(function(child) {{
+    const rect = child.rect || [0, 0, 0, 0];
+    if (rect[2] <= 0.1 || rect[3] <= 0.1) return;
+    const div = document.createElement('div');
+    div.className = 'tm-node';
+    div.style.left = rect[0] + '%';
+    div.style.top = rect[1] + '%';
+    div.style.width = rect[2] + '%';
+    div.style.height = rect[3] + '%';
+    div.style.background = child.color || '#2563eb';
+    div.title = child.rel_path + ' | Logical: ' + child.bytes_fmt + ' | Allocated: ' + child.allocated_fmt + ' | Slack: ' + child.slack_fmt;
+
+    const header = document.createElement('div');
+    header.className = 'tm-header';
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'tm-title';
+    titleSpan.textContent = child.name;
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'tm-meta';
+    metaSpan.textContent = child.bytes_fmt;
+    header.appendChild(titleSpan);
+    header.appendChild(metaSpan);
+    div.appendChild(header);
+
+    if (child.children && child.children.length > 0) {{
+      div.onclick = function() {{
+        currentStack.push(child);
+        renderNode(child);
+      }};
+    }}
+    canvas.appendChild(div);
+  }});
+}}
+
+function resetTreemap() {{
+  currentStack = [TREEMAP_DATA];
+  renderNode(TREEMAP_DATA);
+}}
+</script>
+</body>
+</html>
+"""
+
 
 # ------------------------------------------------------------------------------
 # Module-level Fallbacks for AuditResult when Auditor is Detached
@@ -968,6 +1762,10 @@ def _fallback_markdown_report(data: Dict[str, Any]) -> str:
 def _fallback_ascii_table_report(data: Dict[str, Any]) -> str:
     auditor = StorageAuditor(data.get("root_path", "."))
     return auditor.generate_ascii_table_report(data)
+
+
+def _fallback_html_report(data: Dict[str, Any]) -> str:
+    return _render_self_contained_html(data)
 
 
 __all__ = [
@@ -984,3 +1782,4 @@ __all__ = [
     "format_count",
     "format_percentage",
 ]
+

@@ -234,6 +234,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_audit.add_argument("--root", help="Root directory of the SSD")
     p_audit.add_argument("--json", action="store_true", help="Output audit report in JSON format")
     p_audit.add_argument("--markdown", action="store_true", help="Output audit report in Markdown format")
+    p_audit.add_argument(
+        "--html",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="FILE",
+        help="Export a self-contained HTML treemap report (default: <root>/.smart_drive/reports/audit.html)",
+    )
     p_audit.add_argument("--export", help="Save output to specified file path")
 
     # 4. clean
