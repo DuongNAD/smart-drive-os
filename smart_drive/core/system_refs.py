@@ -24,6 +24,7 @@ except ImportError:  # pragma: no cover - non-Windows platforms
 
 
 MAX_SHORTCUT_FILES: int = 5000
+MAX_DESKTOP_WALK_DEPTH: int = 3
 
 _EXEC_EXT_RE = re.compile(
     r"^(?P<path>.+?\.(?:exe|sys|dll|bat|cmd|com|ps1|msc))(?=$|[\s,]|/)",
@@ -477,6 +478,18 @@ class SystemRefIndex:
         r"HKLM\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce",
     )
 
+    _USER_SHELL_FOLDERS_KEYS: Tuple[str, ...] = (
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+    )
+
+    _COMMON_SHELL_FOLDERS_KEYS: Tuple[str, ...] = (
+        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+        r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+    )
+
     def __init__(self, refs: Optional[Iterable[SystemRef]] = None) -> None:
         dedup: List[SystemRef] = []
         seen = set()
@@ -524,8 +537,8 @@ class SystemRefIndex:
             cls._collect_startup_entries(reg_reader, refs)
 
         # 3. Shortcut (.lnk) files in Start Menu, Desktop, and Taskbar
-        if sys.platform == "win32" or home is not None:
-            cls._collect_shortcuts(home, refs)
+        if sys.platform == "win32" or home is not None or reg_reader is not None:
+            cls._collect_shortcuts(home, refs, reader=reg_reader)
 
         return cls(refs)
 
@@ -611,15 +624,53 @@ class SystemRefIndex:
                 continue
 
     @classmethod
-    def _collect_shortcuts(cls, home: Optional[Path], out: List[SystemRef]) -> None:
-        dirs_to_scan: List[Path] = []
+    def _resolve_shell_folder(
+        cls,
+        reader: Optional[RegistryReader],
+        keys: Sequence[str],
+        value_name: str,
+    ) -> Optional[Path]:
+        if reader is None:
+            return None
+        val_lower = value_name.lower()
+        for key_path in keys:
+            try:
+                vals = reader.get_values(key_path)
+                for k, v in vals.items():
+                    if k.lower() == val_lower and isinstance(v, str) and v.strip():
+                        expanded = reader.expand_env(v.strip().strip('"'))
+                        if expanded and "%" not in expanded:
+                            return Path(expanded)
+            except Exception:
+                continue
+        return None
+
+    @classmethod
+    def _collect_shortcuts(
+        cls,
+        home: Optional[Path],
+        out: List[SystemRef],
+        reader: Optional[RegistryReader] = None,
+    ) -> None:
+        dirs_to_scan: List[Tuple[Path, Optional[int]]] = []
+        reg_desktop = cls._resolve_shell_folder(reader, cls._USER_SHELL_FOLDERS_KEYS, "Desktop")
+        reg_common_desktop = cls._resolve_shell_folder(reader, cls._COMMON_SHELL_FOLDERS_KEYS, "Common Desktop")
+
         if home is not None:
             h = Path(home)
+            if reg_desktop is not None:
+                dirs_to_scan.append((reg_desktop, MAX_DESKTOP_WALK_DEPTH))
+            else:
+                dirs_to_scan.append((h / "Desktop", MAX_DESKTOP_WALK_DEPTH))
+            if reg_common_desktop is not None:
+                dirs_to_scan.append((reg_common_desktop, MAX_DESKTOP_WALK_DEPTH))
             dirs_to_scan.extend([
-                h / "Desktop",
-                h / "Start Menu",
-                h / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu",
-                h / "AppData" / "Roaming" / "Microsoft" / "Internet Explorer" / "Quick Launch" / "User Pinned" / "TaskBar",
+                (h / "Start Menu", None),
+                (h / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu", None),
+                (
+                    h / "AppData" / "Roaming" / "Microsoft" / "Internet Explorer" / "Quick Launch" / "User Pinned" / "TaskBar",
+                    None,
+                ),
             ])
         else:
             appdata = os.environ.get("APPDATA")
@@ -627,20 +678,24 @@ class SystemRefIndex:
             userprofile = os.environ.get("USERPROFILE")
             public_dir = os.environ.get("PUBLIC")
             if appdata:
-                dirs_to_scan.append(Path(appdata) / "Microsoft" / "Windows" / "Start Menu")
-                dirs_to_scan.append(
-                    Path(appdata) / "Microsoft" / "Internet Explorer" / "Quick Launch" / "User Pinned" / "TaskBar"
-                )
+                dirs_to_scan.append((Path(appdata) / "Microsoft" / "Windows" / "Start Menu", None))
+                dirs_to_scan.append((
+                    Path(appdata) / "Microsoft" / "Internet Explorer" / "Quick Launch" / "User Pinned" / "TaskBar",
+                    None,
+                ))
             if programdata:
-                dirs_to_scan.append(Path(programdata) / "Microsoft" / "Windows" / "Start Menu")
-            if userprofile:
-                dirs_to_scan.append(Path(userprofile) / "Desktop")
-            if public_dir:
-                dirs_to_scan.append(Path(public_dir) / "Desktop")
+                dirs_to_scan.append((Path(programdata) / "Microsoft" / "Windows" / "Start Menu", None))
+            if reg_desktop is not None:
+                dirs_to_scan.append((reg_desktop, MAX_DESKTOP_WALK_DEPTH))
+            elif userprofile:
+                dirs_to_scan.append((Path(userprofile) / "Desktop", MAX_DESKTOP_WALK_DEPTH))
+            if reg_common_desktop is not None:
+                dirs_to_scan.append((reg_common_desktop, MAX_DESKTOP_WALK_DEPTH))
+            elif public_dir:
+                dirs_to_scan.append((Path(public_dir) / "Desktop", MAX_DESKTOP_WALK_DEPTH))
 
-        scanned_count = 0
         seen_dirs = set()
-        for root_dir in dirs_to_scan:
+        for root_dir, max_depth in dirs_to_scan:
             try:
                 if not root_dir.is_dir():
                     continue
@@ -649,17 +704,27 @@ class SystemRefIndex:
                     continue
                 seen_dirs.add(norm_dir)
 
-                for dirpath, _, filenames in os.walk(root_dir):
+                dir_scanned = 0
+                stop_current_dir = False
+                for dirpath, dirnames, filenames in os.walk(root_dir):
+                    if max_depth is not None:
+                        rel = os.path.relpath(dirpath, root_dir)
+                        depth = 1 if rel == "." else len(Path(rel).parts) + 1
+                        if depth >= max_depth:
+                            dirnames[:] = []
                     for fname in filenames:
                         if not fname.lower().endswith(".lnk"):
                             continue
-                        scanned_count += 1
-                        if scanned_count > MAX_SHORTCUT_FILES:
-                            return
+                        dir_scanned += 1
+                        if dir_scanned > MAX_SHORTCUT_FILES:
+                            stop_current_dir = True
+                            break
                         lnk_path = os.path.join(dirpath, fname)
                         target = parse_lnk_file(lnk_path)
                         if target:
                             out.append(SystemRef(kind="shortcut", source=lnk_path, target=target))
+                    if stop_current_dir:
+                        break
             except OSError:
                 continue
 
@@ -746,6 +811,7 @@ def summarize_system_refs(refs: Sequence[SystemRef]) -> str:
 
 
 __all__ = [
+    "MAX_DESKTOP_WALK_DEPTH",
     "MAX_SHORTCUT_FILES",
     "RegistryReader",
     "SystemRef",
