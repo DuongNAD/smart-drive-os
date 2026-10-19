@@ -187,10 +187,10 @@ class ClassifierEngine:
             self._system_refs = SystemRefIndex.collect()
         return self._system_refs
 
-    def _is_protected_by_system(self, dirpath: Union[str, Path]) -> bool:
-        """Checks if a directory is referenced by Windows/system or contains an uninstaller."""
+    def _is_protected_by_system(self, dirpath: Union[str, Path], is_file: Optional[bool] = None) -> bool:
+        """Checks if a directory or file is referenced by Windows/system, lies directly on PATH, or contains an uninstaller."""
         p_str = str(dirpath)
-        refs = self.system_refs.check_folder(p_str)
+        refs = self.system_refs.check_folder(p_str, is_file=is_file)
         if not refs:
             return False
         norm_key = os.path.normcase(os.path.abspath(p_str))
@@ -718,7 +718,7 @@ class ClassifierEngine:
         # Check protected files/dirs against inviolable safeguards
         if is_protected_root_file(p.name) or is_protected_root_dir(p.name):
             return None
-        if p.is_dir() and self._is_protected_by_system(p):
+        if self._is_protected_by_system(p, is_file=not p.is_dir()):
             return None
 
         # Check learning units (Aurora & Polaris)
@@ -994,7 +994,10 @@ class ClassifierEngine:
         allocated: Set[Path] = set()
 
         for item in results:
-            if (item.is_dir or item.source_path.is_dir()) and self._is_protected_by_system(item.source_path):
+            if self._is_protected_by_system(
+                item.source_path,
+                is_file=(not item.is_dir and not item.source_path.is_dir()),
+            ):
                 continue
             rel_parts = self._rel_to_root(item.source_path)
             if rel_parts and len(rel_parts) > 1 and not is_protected_root_dir(rel_parts[0]):

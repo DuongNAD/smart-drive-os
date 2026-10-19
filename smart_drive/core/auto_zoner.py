@@ -164,9 +164,9 @@ class AutoZoner:
             self._system_refs = SystemRefIndex.collect()
         return self._system_refs
 
-    def _is_protected_by_system(self, item_path: str) -> bool:
-        """Checks if a directory is referenced by Windows/system or contains an uninstaller."""
-        refs = self.system_refs.check_folder(item_path)
+    def _is_protected_by_system(self, item_path: str, is_file: Optional[bool] = None) -> bool:
+        """Checks if an item (directory or file) is referenced by Windows/system, lies directly on PATH, or contains an uninstaller."""
+        refs = self.system_refs.check_folder(item_path, is_file=is_file)
         if not refs:
             return False
         norm_key = os.path.normcase(os.path.abspath(item_path))
@@ -264,8 +264,8 @@ class AutoZoner:
         if base_name.startswith("."):
             return None
 
-        # 1b. System reference guard: Never move folders that OS services, PATH, installed apps, or shortcuts depend on
-        if is_dir and self._is_protected_by_system(item_path):
+        # 1b. System reference guard: Never move folders or files that OS services, PATH, installed apps, or shortcuts depend on
+        if self._is_protected_by_system(item_path, is_file=not is_dir):
             return None
 
         # 2. Directory Classification
@@ -427,7 +427,10 @@ class AutoZoner:
                 continue
             if find_unit_root(action.src_path, self.root) is not None:
                 continue
-            if (action.is_dir or os.path.isdir(action.src_path)) and self._is_protected_by_system(action.src_path):
+            if self._is_protected_by_system(
+                action.src_path,
+                is_file=(not action.is_dir and not os.path.isdir(action.src_path)),
+            ):
                 continue
 
             if not os.path.exists(action.src_path):
