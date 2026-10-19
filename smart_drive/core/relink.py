@@ -1416,8 +1416,6 @@ def find_moved(
             local_app_data = _resolve_local_app_data(resolved_home, use_env)
             for msix_claude in _msix_claude_dirs(local_app_data):
                 default_skips.append(str(msix_claude / "scratch-workspaces"))
-        else:
-            default_skips.extend(["/tmp", "/private/tmp", "/var/tmp"])
         effective_skip_dirs: Sequence[str] = default_skips
     else:
         effective_skip_dirs = skip_dirs

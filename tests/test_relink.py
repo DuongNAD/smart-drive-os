@@ -952,6 +952,14 @@ class TestRelink(SmartDriveTestCase):
         scratch_gone = self.fake_appdata / "Claude" / "scratch-workspaces" / "ws1" / "scratch-1"
         worktree_gone = existing_repo / ".claude" / "worktrees" / "wt-removed"
 
+        projects = {
+            str(scratch_gone): {},
+            str(worktree_gone): {},
+            str(sys_temp_gone): {},
+        }
+        if sys.platform == "win32":
+            projects[str(home_temp_gone)] = {}
+
         cfg_file.write_text(
             json.dumps({
                 "preferences": {
@@ -960,12 +968,7 @@ class TestRelink(SmartDriveTestCase):
                         "epitaxy-perm-mode-acks.1": [str(drive / "perm_gone_2")],
                     }
                 },
-                "projects": {
-                    str(scratch_gone): {},
-                    str(worktree_gone): {},
-                    str(sys_temp_gone): {},
-                    str(home_temp_gone): {},
-                },
+                "projects": projects,
             }),
             encoding="utf-8",
         )
