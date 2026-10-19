@@ -45,6 +45,7 @@ try:
 except ImportError:  # Python < 3.11: only the line-level duplicate guard protects TOML files
     tomllib = None  # type: ignore[assignment]
 
+from smart_drive.core.processes import normalize_process_name, probe_running_processes
 from smart_drive.core.root import same_file
 from smart_drive.core.system_refs import RegistryReader, SystemRefIndex, parse_lnk_file
 
@@ -106,42 +107,12 @@ AGENT_PROCESSES: Dict[str, Set[str]] = {
 
 def _running_processes() -> Optional[Set[str]]:
     """Returns running process names from `tasklist` (Windows) or `ps` (POSIX), or None if unreadable."""
-    cmd = ["tasklist", "/FO", "CSV", "/NH"] if sys.platform == "win32" else ["ps", "-A", "-o", "comm="]
-    try:
-        done = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=10,
-            stdin=subprocess.DEVNULL,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if done.returncode != 0 or not done.stdout:
-        return None
-
-    names: Set[str] = set()
-    if sys.platform == "win32":
-        for row in csv.reader(done.stdout.splitlines()):
-            if row and row[0].strip():
-                names.add(row[0].strip())
-    else:
-        for line in done.stdout.splitlines():
-            stripped = line.strip()
-            if stripped:
-                names.add(stripped)
-    return names
+    return probe_running_processes(run_fn=subprocess.run)
 
 
 def _labels_of(process_name: str) -> Set[str]:
     """The coding agent labels a process name such as claude, Claude.exe or /usr/bin/codex stands for."""
-    base = os.path.basename(str(process_name).strip().replace("\\", "/")).casefold()
-    if base.endswith(".exe"):
-        base = base[:-4]
-    return set(AGENT_PROCESSES.get(base, ()))
+    return set(AGENT_PROCESSES.get(normalize_process_name(process_name), ()))
 
 
 def _running_agent_labels() -> Optional[Set[str]]:
