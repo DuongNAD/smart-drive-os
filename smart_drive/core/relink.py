@@ -344,6 +344,8 @@ class PathMapper:
             else:
                 needles.add(last_name.casefold())
                 needles.add(urllib.parse.quote(last_name).casefold())
+                needles.add(html.escape(last_name, quote=True).casefold())
+                needles.add(html.escape(last_name, quote=False).replace("'", "&apos;").casefold())
 
         # Deepest moved folder wins when moves nest.
         rules.sort(key=lambda item: len(item[0]), reverse=True)
@@ -1275,7 +1277,11 @@ def _process_jetbrains_xml_file(
         report.warnings.append(f"{af.path}: invalid UTF-8 ({err})")
         return None, 0
 
-    if not mapper.mentions(text) and "$USER_HOME$" not in text:
+    if (
+        not mapper.mentions(text)
+        and not ("&" in text and mapper.mentions(html.unescape(text)))
+        and "$USER_HOME$" not in text
+    ):
         return None, 0
 
     total_count = 0
