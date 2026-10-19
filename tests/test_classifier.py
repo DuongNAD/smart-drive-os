@@ -527,6 +527,35 @@ class TestSafeguardsAndRootProtection(unittest.TestCase):
                 res = engine.inspect_path(f)
                 self.assertIsNone(res, f"Protected file {f.name} should not be classified")
 
+    def test_all_launchers_protected_at_root(self) -> None:
+        from smart_drive.core.auto_zoner import AutoZoner
+        from smart_drive.core.config import is_protected_root_file
+        from tests.test_launchers_and_invariants_tier5 import ALL_20_LAUNCHER_NAMES
+
+        for name in ALL_20_LAUNCHER_NAMES:
+            self.assertTrue(
+                is_protected_root_file(name),
+                f"Launcher {name} must be recognized by is_protected_root_file",
+            )
+
+        with TempWorkspace(prefix="test_smartdrive_launchers_") as tmp:
+            bat = tmp / "SmartDrive.bat"
+            ps1 = tmp / "SmartDrive.ps1"
+            bat.write_text("@echo off\n", encoding="utf-8")
+            ps1.write_text("# PowerShell\n", encoding="utf-8")
+
+            engine = ClassifierEngine(root_path=tmp)
+            classified = engine.scan_and_classify(tmp, recursive=False)
+            classified_names = {r.name for r in classified}
+            self.assertNotIn("SmartDrive.bat", classified_names)
+            self.assertNotIn("SmartDrive.ps1", classified_names)
+
+            zoner = AutoZoner(str(tmp))
+            plan = zoner.generate_plan()
+            planned_names = {os.path.basename(a.src_path) for a in plan}
+            self.assertNotIn("SmartDrive.bat", planned_names)
+            self.assertNotIn("SmartDrive.ps1", planned_names)
+
     def test_protected_root_dirs_never_scanned_as_movable(self) -> None:
         with TempWorkspace(prefix="test_safe_dirs_") as tmp:
             # 01_AI_Models is a protected root dir

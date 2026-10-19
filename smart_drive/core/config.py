@@ -291,6 +291,7 @@ PROTECTED_ROOT_FILE_PATTERNS: Tuple[str, ...] = (
     "smart_*.bat",
     "smart_*.command",
     "smart_*",
+    "smartdrive.*",
     "check_ssd_status.*",
     "sync_repos.ps1",
     "sync_repos.*",
