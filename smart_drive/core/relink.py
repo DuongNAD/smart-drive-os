@@ -35,6 +35,11 @@ import sys
 import tempfile
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
+try:
+    import tomllib
+except ImportError:  # Python < 3.11: only the line-level duplicate guard protects TOML files
+    tomllib = None  # type: ignore[assignment]
+
 from smart_drive.core.root import same_file
 
 Move = Tuple[str, str]
@@ -686,6 +691,92 @@ def _toml_escape(value: str) -> str:
     )
 
 
+_TOML_BARE_KEY_RE = re.compile(r"[A-Za-z0-9_-]+")
+_TOML_BASIC_RE = re.compile(r'"((?:[^"\\\r\n]|\\.)*)"')
+
+
+def _toml_scan(line: str) -> Tuple[int, int]:
+    """(where the line's comment starts, else len(line); where its first '=' is, else -1), outside quotes."""
+    quote = ""
+    equals = -1
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote:
+            if ch == "\\" and quote == '"':
+                i += 1
+            elif ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "#":
+            return i, equals
+        elif ch == "=" and equals < 0:
+            equals = i
+        i += 1
+    return len(line), equals
+
+
+def _toml_key(text: str) -> Optional[Tuple[str, ...]]:
+    """The parts of a dotted TOML key such as projects.'d:\\proj', or None if text is not a key."""
+    parts: List[str] = []
+    rest = text.strip()
+    while rest:
+        part: Optional[str]
+        if rest[0] == "'":
+            end = rest.find("'", 1)
+            if end < 0:
+                return None
+            part, rest = rest[1:end], rest[end + 1 :]
+        else:
+            match = (_TOML_BASIC_RE if rest[0] == '"' else _TOML_BARE_KEY_RE).match(rest)
+            if match is None:
+                return None
+            part = _toml_unescape(match.group(1)) if rest[0] == '"' else match.group(0)
+            rest = rest[match.end() :]
+        if part is None:
+            return None
+        parts.append(part)
+        rest = rest.lstrip()
+        if rest:
+            if rest[0] != "." or not rest[1:].strip():
+                return None
+            rest = rest[1:].lstrip()
+    return tuple(parts) or None
+
+
+def _toml_definition(
+    line: str, table: Tuple[str, ...], index: int
+) -> Tuple[Tuple[str, ...], Optional[Tuple[str, ...]]]:
+    """For one TOML line: (the table later keys belong to, the table or key path this line defines)."""
+    comment, equals = _toml_scan(line)
+    code = line[:comment].strip()
+    if code.startswith("[["):
+        key = _toml_key(code[2:-2]) if code.endswith("]]") else None
+        # Each [[array]] element is a table of its own, so its keys may repeat another element's.
+        return ((*key, f"[[{index}]]") if key else table), None
+    if code.startswith("["):
+        key = _toml_key(code[1:-1]) if code.endswith("]") else None
+        return (key or table), key
+    key = _toml_key(line[:equals]) if equals >= 0 else None
+    return table, ((*table, *key) if key else None)
+
+
+def _toml_breaks(before: str, after: str) -> bool:
+    """True if tomllib (Python 3.11+) reads before but not after; never True without tomllib."""
+    if tomllib is None:
+        return False
+    try:
+        tomllib.loads(before)
+    except tomllib.TOMLDecodeError:
+        return False
+    try:
+        tomllib.loads(after)
+    except tomllib.TOMLDecodeError:
+        return True
+    return False
+
+
 def _process_toml_file(
     af: AgentFile,
     mapper: PathMapper,
@@ -709,16 +800,19 @@ def _process_toml_file(
         return None, 0
 
     lines = text.splitlines(keepends=True)
-    existing_headers: Set[str] = set()
-    for line in lines:
-        if line.strip().startswith("["):
-            existing_headers.add(line.split("#", 1)[0].strip())
+    # Every table and key the file defines: a rewritten line must not define one of them again.
+    defined: Set[Tuple[str, ...]] = set()
+    table: Tuple[str, ...] = ()
+    for index, line in enumerate(lines):
+        table, path = _toml_definition(line, table, index)
+        if path is not None:
+            defined.add(path)
 
     total_count = 0
     out_lines: List[str] = []
+    table = ()
 
-    for line in lines:
-        is_header = line.strip().startswith("[")
+    for index, line in enumerate(lines):
         line_count = 0
 
         def _replace_match(match: re.Match[str]) -> str:
@@ -741,13 +835,16 @@ def _process_toml_file(
             return match.group(0)
 
         new_line = _TOML_QUOTED_RE.sub(_replace_match, line)
-        if line_count > 0 and is_header:
-            new_header = new_line.split("#", 1)[0].strip()
-            if new_header in existing_headers:
-                # Duplicate table header would make the TOML invalid; keep original header unchanged.
-                out_lines.append(line)
-                continue
-            existing_headers.add(new_header)
+        if line_count > 0:
+            old_path = _toml_definition(line, table, index)[1]
+            new_path = _toml_definition(new_line, table, index)[1]
+            if new_path != old_path and new_path in defined:
+                # The project is already listed under its new path: defining it twice would make the
+                # TOML invalid, so the stale entry stays as it is.
+                new_line, line_count = line, 0
+            elif new_path is not None:
+                defined.add(new_path)
+        table = _toml_definition(new_line, table, index)[0]
 
         out_lines.append(new_line)
         total_count += line_count
@@ -755,8 +852,12 @@ def _process_toml_file(
     if total_count == 0:
         return None, 0
 
+    new_text = "".join(out_lines)
+    if _toml_breaks(text, new_text):
+        report.warnings.append(f"{af.path}: left unchanged, the rewritten file would not be valid TOML")
+        return None, 0
     prefix = b"\xef\xbb\xbf" if has_bom else b""
-    return prefix + "".join(out_lines).encode("utf-8"), total_count
+    return prefix + new_text.encode("utf-8"), total_count
 
 
 def _process_lines_file(

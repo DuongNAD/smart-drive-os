@@ -1537,6 +1537,79 @@ class TestRelink(SmartDriveTestCase):
             self.assertEqual(server["command"], "D:\\03_Development_Projects\\proj\\Café\\run.exe")
             self.assertEqual(server["cwd"], "D:\\proj\\tab\there")
 
+    def test_32_codex_toml_never_lists_a_project_twice(self) -> None:
+        codex_file = self.fake_home / ".codex" / "config.toml"
+        codex_file.parent.mkdir(parents=True, exist_ok=True)
+        # The moved project is already listed under its new path, in each form TOML allows. Codex stores
+        # Windows paths lowercased; the move is lowercase as well so that Linux, which compares paths
+        # case-sensitively, exercises the guard too.
+        cases = {
+            "inline table": (
+                "[projects]\n"
+                "'d:\\proj' = { trust_level = \"trusted\" }\n"
+                "'d:\\03_development_projects\\proj' = { trust_level = \"trusted\" }\n"
+            ),
+            "dotted keys": (
+                "projects.'d:\\proj'.trust_level = \"trusted\"\n"
+                "projects.'d:\\03_development_projects\\proj'.trust_level = \"trusted\"\n"
+            ),
+            "other quoting": (
+                "[projects.'d:\\proj']\n"
+                'trust_level = "trusted"\n\n'
+                '[projects."d:\\\\03_development_projects\\\\proj"]\n'
+                'trust_level = "trusted"\n'
+            ),
+        }
+        for name, content in cases.items():
+            with self.subTest(name):
+                codex_file.write_text(content, encoding="utf-8")
+                relink(
+                    [("d:\\proj", "d:\\03_development_projects\\proj")],
+                    home=self.fake_home,
+                    app_data=self.fake_appdata,
+                )
+                self.assertEqual(codex_file.read_text(encoding="utf-8"), content)
+
+    def test_33_codex_toml_hash_inside_a_quoted_header(self) -> None:
+        codex_file = self.fake_home / ".codex" / "config.toml"
+        codex_file.parent.mkdir(parents=True, exist_ok=True)
+        codex_file.write_text(
+            "[projects.'d:\\c#\\app1']\n"
+            'trust_level = "trusted"\n\n'
+            "[projects.'d:\\c#\\app2'] # second app\n"
+            'trust_level = "trusted"\n',
+            encoding="utf-8",
+        )
+
+        relink([("d:\\c#", "d:\\03_development_projects\\c#")], home=self.fake_home, app_data=self.fake_appdata)
+
+        after = codex_file.read_text(encoding="utf-8")
+        self.assertIn("[projects.'d:\\03_development_projects\\c#\\app1']\n", after)
+        self.assertIn("[projects.'d:\\03_development_projects\\c#\\app2'] # second app\n", after)
+        self.assertNotIn("'d:\\c#\\", after)
+
+    @unittest.skipIf(tomllib is None, "tomllib needs Python 3.11")
+    def test_34_codex_toml_left_unchanged_when_the_rewrite_would_be_invalid(self) -> None:
+        codex_file = self.fake_home / ".codex" / "config.toml"
+        codex_file.parent.mkdir(parents=True, exist_ok=True)
+        # Rewriting the dotted key defines projects.'d:\03_development_projects\proj' a second time
+        content = (
+            "projects.'d:\\proj'.trust_level = \"trusted\"\n\n"
+            "[projects.'d:\\03_development_projects\\proj']\n"
+            'model = "o3"\n'
+        )
+        codex_file.write_text(content, encoding="utf-8")
+
+        report = relink(
+            [("d:\\proj", "d:\\03_development_projects\\proj")],
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+        )
+
+        self.assertEqual(codex_file.read_text(encoding="utf-8"), content)
+        self.assertNotIn("Codex", report.agents)
+        self.assertTrue(any("would not be valid TOML" in w for w in report.warnings), report.warnings)
+
 
 if __name__ == "__main__":
     unittest.main()
