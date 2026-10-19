@@ -1610,6 +1610,23 @@ class TestRelink(SmartDriveTestCase):
         self.assertNotIn("Codex", report.agents)
         self.assertTrue(any("would not be valid TOML" in w for w in report.warnings), report.warnings)
 
+    def test_35_relinking_into_a_subfolder_again_changes_nothing(self) -> None:
+        drive = self.test_dir / "drive_nested"
+        old, new = drive / "AI", drive / "AI" / "legacy"
+        (new / "proj1").mkdir(parents=True)
+        mapper = PathMapper([(str(old), str(new))])
+        once = mapper.map(str(old / "proj1"))
+        self.assertEqual(once, str(new / "proj1"))
+        self.assertIsNone(mapper.map(str(once)))
+
+        claude_json = self.fake_home / ".claude.json"
+        claude_json.write_text(json.dumps({"projects": {str(old / "proj1"): {}}}), encoding="utf-8")
+        # A manual relink is journaled, and relink tells users to run `smart-drive relink` again later
+        for argv in (["relink", str(old), str(new), "--root", str(drive)], ["relink", "--root", str(drive)]):
+            with patch.dict(os.environ, self._cli_env()), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(cli_main(argv), 0)
+        self.assertEqual(list(json.loads(claude_json.read_text(encoding="utf-8"))["projects"]), [str(new / "proj1")])
+
 
 if __name__ == "__main__":
     unittest.main()
