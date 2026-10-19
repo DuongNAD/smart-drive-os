@@ -21,7 +21,7 @@ Workspace: External High-Speed SSD (exFAT, Allocation Unit: 512 KB).
 On a fresh clone or a new machine, run once from the repo root. No prompts; safe to repeat:
 ```bash
 python3 -m smart_drive setup    # macOS / Linux
-python -m smart_drive setup     # Windows
+python -m smart_drive setup     # Windows (or `py -m smart_drive setup` when `python` is not on PATH)
 ```
 - Needs Node >= 22.4 and git. Fetches Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius and Mira into `~/.smart-drive/mcp`, registers them and SmartDrive with the installed coding agents (Claude Code, Antigravity, Cursor, Codex), then health-checks them.
 - Check state without changing anything: `python3 -m smart_drive setup --check --json` (exit code 3 = setup needed). Preview: `--dry-run`. Offline: `--no-clone`.
@@ -35,8 +35,10 @@ Every AI agent working in this workspace must commit in small, verified steps:
 - **Audit before staging**: Run `smart-drive gitignore audit` and check `git status` / `git diff --staged` before committing so secrets, personal learning state (`.vega/`, `.polaris/`, `.sirius/`), and build/OS junk are never tracked.
 
 ## 5. Moving Folders Without Breaking Coding Agents
-Coding agents remember projects and MCP servers by absolute path, and exFAT cannot leave a link at the old place:
-- Move folders with `smart-drive organize --apply` (or `classify --apply`): it relinks the coding agents to the new places. Preview with `--dry-run`.
+Coding agents, IDEs, and shortcuts remember projects and MCP servers by absolute path, and exFAT cannot leave a link at the old place:
+- Move folders with `smart-drive organize --apply` (or `classify --apply` / `Smart_Organize.*`): it skips system-referenced folders (`protected_by_system`: `PATH`, Services, Installed Apps, Startup, `.lnk`, game libraries) and relinks coding agents, VS Code/JetBrains/Obsidian, and `.lnk` shortcuts to the new places. Preview with `--dry-run`.
+- Revert the latest move batch and relink back to original paths with `smart-drive undo --apply` (`--dry-run` default).
 - After moving or renaming a folder by hand, run `smart-drive relink "<old path>" "<new path>"` (`--dry-run` previews). With no arguments it re-applies the latest organize/classify batch.
-- Lost track of moved folders? `smart-drive relink --find` lists stale agent paths and where each folder went; `--find --apply --wait` relinks the sure matches once the agents are closed. A match marked `?` is only a guess (the folder it found may be another project, and the old one deleted): confirm it with the user, then run `smart-drive relink "<old>" "<new>"`. In a terminal, `--find --apply --ask` (menu option `[8]`) asks the user y/N for each `?` match: let the user answer, never answer for them.
-- Close Claude desktop, Claude Code and Codex before relinking (or relink again after closing them), then restart the agents so they load the new paths.
+- Lost track of moved folders or broken shortcuts/IDE entries? `smart-drive relink --find` and `smart-drive paths --broken` list stale paths and where each folder went; `relink --find --apply --wait` or `paths --broken --fix` repairs the sure matches once open apps are closed. A match marked `?` is only a guess (the folder it found may be another project, and the old one deleted): confirm it with the user, then run `smart-drive relink "<old>" "<new>"`. In a terminal, `--find --apply --ask` (menu option `[8]`) asks the user y/N for each `?` match: let the user answer, never answer for them.
+- Run `smart-drive checkup` for a 1-screen health score (`0-100`), `smart-drive audit --html` for an offline HTML treemap, and `smart-drive clean --list-quarantine` / `--restore latest` to inspect or restore quarantined junk.
+- Close Claude desktop, Claude Code, Codex, and open IDEs before relinking (or relink again after closing them), then restart the agents so they load the new paths.
