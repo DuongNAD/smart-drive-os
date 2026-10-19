@@ -517,6 +517,10 @@ class PurgeEngine:
             return True, record.reason
         return False, record.reason
 
+    def _should_quarantine(self, tier: Optional[int]) -> bool:
+        """Only Tier 3 items (logs, .tmp, .bak, crash dumps) are quarantined; regenerable Tier 1-2 items are deleted immediately."""
+        return bool(self.quarantine and tier is not None and int(tier) >= int(JunkTier.TIER_3_SENSITIVE))
+
     def delete_file(self, file_path: str, size: int = 0, tier: Optional[int] = None) -> DeletionRecord:
         """Safely deletes (or quarantines) or simulates deletion of a regular file.
 
@@ -547,7 +551,14 @@ class PurgeEngine:
             except (ValueError, TypeError):
                 tier = None
         if tier is None:
-            rule = match_junk_rule(base_name, is_dir=False, max_tier=JunkTier.TIER_3_SENSITIVE)
+            rel_parts = [p for p in rel_path.split("/") if p and p != "."]
+            rule = match_junk_rule(
+                base_name,
+                is_dir=False,
+                max_tier=JunkTier.TIER_3_SENSITIVE,
+                is_root_level=(len(rel_parts) <= 1),
+                rel_path=rel_path,
+            )
             if rule is not None:
                 tier = int(rule.tier)
 
@@ -584,11 +595,12 @@ class PurgeEngine:
             self.audit_records.append(record)
             return record
 
+        use_quarantine = self._should_quarantine(tier)
         try:
             if ".." in Path(file_path).parts:
                 raise OSError("refusing to remove a file path named with '..'")
             if os.path.exists(real_path) or os.path.islink(real_path):
-                if self.quarantine:
+                if use_quarantine:
                     self._quarantine_item(real_path, rel_path, size=size, tier=tier, is_dir=False)
                 else:
                     self._make_writable_and_remove_file(real_path)
@@ -599,14 +611,14 @@ class PurgeEngine:
                 allocated_size=allocated,
                 is_dir=False,
                 status="DELETED",
-                reason="Quarantined successfully" if self.quarantine else "Purged successfully",
+                reason="Quarantined successfully" if use_quarantine else "Purged successfully",
                 timestamp=ts,
                 tier=tier,
             )
             self.audit_records.append(record)
             return record
         except Exception as exc:
-            action_word = "quarantine" if self.quarantine else "unlink"
+            action_word = "quarantine" if use_quarantine else "unlink"
             record = DeletionRecord(
                 path=real_path,
                 rel_path=rel_path,
@@ -644,7 +656,14 @@ class PurgeEngine:
             except (ValueError, TypeError):
                 tier = None
         if tier is None:
-            rule = match_junk_rule(base_name, is_dir=True, max_tier=JunkTier.TIER_3_SENSITIVE)
+            rel_parts = [p for p in rel_path.split("/") if p and p != "."]
+            rule = match_junk_rule(
+                base_name,
+                is_dir=True,
+                max_tier=JunkTier.TIER_3_SENSITIVE,
+                is_root_level=(len(rel_parts) <= 1),
+                rel_path=rel_path,
+            )
             if rule is not None:
                 tier = int(rule.tier)
 
@@ -681,11 +700,12 @@ class PurgeEngine:
             self.audit_records.append(record)
             return record
 
+        use_quarantine = self._should_quarantine(tier)
         try:
             if ".." in Path(dir_path).parts:
                 raise OSError("refusing to remove a directory tree named with '..' (it may resolve elsewhere)")
             if os.path.lexists(real_path):
-                if self.quarantine:
+                if use_quarantine:
                     self._quarantine_item(real_path, rel_path, size=0, tier=tier, is_dir=True)
                 else:
                     self._make_writable_and_remove_dir(real_path)
@@ -696,7 +716,7 @@ class PurgeEngine:
                 allocated_size=0,
                 is_dir=True,
                 status="DELETED",
-                reason="Quarantined directory tree successfully" if self.quarantine else "Purged directory tree successfully",
+                reason="Quarantined directory tree successfully" if use_quarantine else "Purged directory tree successfully",
                 timestamp=ts,
                 tier=tier,
             )

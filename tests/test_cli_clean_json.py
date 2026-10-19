@@ -317,12 +317,12 @@ class TestReclaimableSpaceCountsEveryItem(unittest.TestCase):
 
 
 class TestCleanQuarantineCLI(unittest.TestCase):
-    """T11 CLI tests: default quarantine, --list-quarantine, --restore, --purge-quarantine, --no-quarantine."""
+    """T11 CLI tests: Tier 3 quarantine vs Tier 1-2 permanent delete, --list-quarantine, --restore, --purge-quarantine, --no-quarantine."""
 
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="sd_clean_q_")).resolve()
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
-        for rel in JUNK + KEEPERS:
+        for rel in JUNK + ("x.tmp",) + KEEPERS:
             path = self.root / rel
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("content_" + rel.replace("/", "_"), encoding="utf-8")
@@ -333,7 +333,16 @@ class TestCleanQuarantineCLI(unittest.TestCase):
             code = main(["clean", "--root", str(self.root), *args])
         return code, out.getvalue(), err.getvalue()
 
-    def test_apply_quarantines_by_default_and_restore_brings_files_back_without_overwriting(self) -> None:
+    def test_tier1_only_run_does_not_create_quarantine_dir(self) -> None:
+        code, out, _ = self.run_cmd("--tier", "1", "--apply", "--json")
+        self.assertEqual(code, 0)
+        report = json.loads(out)
+        self.assertIsNone(report["batch_id"])
+        self.assertFalse((self.root / ".DS_Store").exists())
+        self.assertFalse((self.root / "Thumbs.db").exists())
+        self.assertFalse((self.root / ".smart_drive" / "quarantine").exists())
+
+    def test_apply_quarantines_only_tier3_and_restore_brings_files_back_without_overwriting(self) -> None:
         code, out, _ = self.run_cmd("--tier", "3", "--apply", "--json")
         self.assertEqual(code, 0)
         report = json.loads(out)
@@ -343,7 +352,15 @@ class TestCleanQuarantineCLI(unittest.TestCase):
 
         batch_dir = self.root / ".smart_drive" / "quarantine" / batch_id
         self.assertTrue((batch_dir / "manifest.json").is_file())
+        # Tier 3 items (scratch.tmp, x.tmp) are quarantined
         self.assertTrue((batch_dir / "scratch.tmp").is_file())
+        self.assertTrue((batch_dir / "x.tmp").is_file())
+        # Tier 1 (Thumbs.db, .DS_Store) and Tier 2 (__pycache__) are permanently deleted, NOT in quarantine
+        self.assertFalse((batch_dir / "Thumbs.db").exists())
+        self.assertFalse((batch_dir / ".DS_Store").exists())
+        self.assertFalse((batch_dir / "__pycache__").exists())
+        manifest = json.loads((batch_dir / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual({m["original"] for m in manifest}, {"scratch.tmp", "x.tmp"})
 
         # --list-quarantine
         code_l, out_l, _ = self.run_cmd("--list-quarantine", "--json")
@@ -359,11 +376,9 @@ class TestCleanQuarantineCLI(unittest.TestCase):
         self.assertEqual(code_r, 0)
         rest_rep = json.loads(out_r)
         self.assertEqual(rest_rep["skipped_count"], 1)
-        self.assertGreaterEqual(rest_rep["restored_count"], 3)
+        self.assertEqual(rest_rep["restored_count"], 1)
         self.assertEqual((self.root / "scratch.tmp").read_text(encoding="utf-8"), "NEW_USER_CONTENT")
-        self.assertTrue((self.root / ".DS_Store").is_file())
-        self.assertTrue((self.root / "Thumbs.db").is_file())
-        self.assertTrue((self.root / "__pycache__" / "mod.pyc").is_file())
+        self.assertTrue((self.root / "x.tmp").is_file())
         # Conflicted file remains in quarantine
         self.assertTrue((batch_dir / "scratch.tmp").is_file())
 
@@ -374,6 +389,7 @@ class TestCleanQuarantineCLI(unittest.TestCase):
         self.assertFalse(report["quarantine"])
         self.assertIsNone(report["batch_id"])
         self.assertFalse((self.root / ".DS_Store").exists())
+        self.assertFalse((self.root / "scratch.tmp").exists())
         self.assertFalse((self.root / ".smart_drive" / "quarantine").exists())
 
     def test_purge_quarantine_cli_dry_run_and_apply_with_older_than(self) -> None:

@@ -293,9 +293,21 @@ class TestPurgeEngineExecution(SmartDriveTestCase):
 
 
 class TestQuarantineEngine(SmartDriveTestCase):
-    """T11: PurgeEngine quarantine by default, restore, older-than purge, and scanner exclusion."""
+    """T11: PurgeEngine quarantines Tier 3 items, deletes Tier 1-2 immediately, and excludes quarantine from scanners."""
 
-    def test_quarantine_writes_manifest_and_is_ignored_by_scanners(self) -> None:
+    def test_tier1_only_batch_does_not_create_quarantine_dir(self) -> None:
+        mock_root = self.create_mock_drive()
+        detector = JunkDetector(str(mock_root), max_tier=JunkTier.TIER_1_SAFE)
+        junk_items = detector.find_junk()
+        self.assertGreater(len(junk_items), 0)
+
+        engine = PurgeEngine(str(mock_root), dry_run=False, quarantine=True)
+        summary = engine.purge_items(junk_items)
+        self.assertEqual(summary.total_succeeded, len(junk_items))
+        self.assertIsNone(engine.batch_id)
+        self.assertFalse((mock_root / ".smart_drive" / "quarantine").exists())
+
+    def test_quarantine_writes_manifest_for_tier3_only_and_is_ignored_by_scanners(self) -> None:
         import json
         from smart_drive.core.duplicates import DuplicateDetector
         from smart_drive.core.purge_engine import (
@@ -307,9 +319,12 @@ class TestQuarantineEngine(SmartDriveTestCase):
         from smart_drive.indexer.manager import IndexManager
 
         mock_root = self.create_mock_drive()
-        detector = JunkDetector(str(mock_root), max_tier=JunkTier.TIER_1_SAFE)
+        detector = JunkDetector(str(mock_root), max_tier=JunkTier.TIER_3_SENSITIVE)
         junk_items = detector.find_junk()
-        self.assertGreater(len(junk_items), 0)
+        tier3_items = [j for j in junk_items if int(j.tier) == int(JunkTier.TIER_3_SENSITIVE)]
+        tier12_items = [j for j in junk_items if int(j.tier) < int(JunkTier.TIER_3_SENSITIVE)]
+        self.assertGreater(len(tier3_items), 0)
+        self.assertGreater(len(tier12_items), 0)
 
         engine = PurgeEngine(str(mock_root), dry_run=False, quarantine=True)
         summary = engine.purge_items(junk_items)
@@ -321,10 +336,15 @@ class TestQuarantineEngine(SmartDriveTestCase):
         self.assertTrue(manifest_path.is_file())
 
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        self.assertEqual(len(manifest), len(junk_items))
+        self.assertEqual(len(manifest), len(tier3_items))
+        manifest_origs = {entry["original"] for entry in manifest}
         for entry in manifest:
             self.assertTrue({"original", "quarantined", "size", "tier"} <= set(entry))
+            self.assertEqual(entry["tier"], int(JunkTier.TIER_3_SENSITIVE))
             self.assertTrue((mock_root / entry["quarantined"]).exists())
+        for j12 in tier12_items:
+            self.assertNotIn(j12.rel_path, manifest_origs)
+            self.assertFalse((batch_dir / j12.rel_path).exists())
 
         # Scanner, JunkDetector, DuplicateDetector, and IndexManager must ignore .smart_drive/quarantine
         scanned_rels = [e.rel_path for e in FastDirectoryScanner(str(mock_root)).scan_iter()]
@@ -350,13 +370,13 @@ class TestQuarantineEngine(SmartDriveTestCase):
             db.close()
         db_path.unlink(missing_ok=True)
 
-        # List and restore
+        # List and restore Tier 3 items
         batches = list_quarantine_batches(str(mock_root))
         self.assertEqual(len(batches), 1)
         res = restore_quarantine_batch(str(mock_root), "latest")
         self.assertTrue(res["ok"])
-        self.assertEqual(res["restored_count"], len(junk_items))
-        for item in junk_items:
+        self.assertEqual(res["restored_count"], len(tier3_items))
+        for item in tier3_items:
             self.assertTrue(os.path.exists(item.path))
         self.assertFalse(batch_dir.exists())
 
@@ -364,25 +384,26 @@ class TestQuarantineEngine(SmartDriveTestCase):
         from unittest.mock import patch
 
         mock_root = self.create_mock_drive()
-        ds_store = mock_root / ".DS_Store"
-        self.assertTrue(ds_store.exists())
+        tmp_file = mock_root / "cache.tmp"
+        tmp_file.write_bytes(b"temp data")
+        self.assertTrue(tmp_file.exists())
 
         engine = PurgeEngine(str(mock_root), dry_run=False, quarantine=True)
         with patch("smart_drive.core.purge_engine.os.rename", side_effect=OSError("simulated rename failure")):
-            rec = engine.delete_file(str(ds_store))
+            rec = engine.delete_file(str(tmp_file))
         self.assertEqual(rec.status, "FAILED")
-        self.assertTrue(ds_store.exists(), "Original file must NOT be unlinked when os.rename fails")
+        self.assertTrue(tmp_file.exists(), "Original file must NOT be unlinked when os.rename fails")
 
     def test_purge_quarantine_batches_respects_older_than_and_dry_run(self) -> None:
         from smart_drive.core.purge_engine import purge_quarantine_batches
 
         root = self.test_dir
-        old_junk = root / ".DS_Store"
+        old_junk = root / "old.tmp"
         old_junk.write_bytes(b"old")
         eng_old = PurgeEngine(str(root), dry_run=False, quarantine=True, batch_id="20260101-000000")
         eng_old.delete_file(str(old_junk))
 
-        new_junk = root / "Thumbs.db"
+        new_junk = root / "new.tmp"
         new_junk.write_bytes(b"new")
         eng_new = PurgeEngine(str(root), dry_run=False, quarantine=True, batch_id="20260110-000000")
         eng_new.delete_file(str(new_junk))
