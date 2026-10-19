@@ -159,6 +159,53 @@ class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
         self.assertTrue((root / ".metadata_never_index").exists())
         self.assertTrue((root / ".fseventsd" / "no_log").exists())
 
+    def test_slack_bytes_uses_explicit_cluster_size(self) -> None:
+        """A 100-byte file reports 3,996 slack bytes on 4 KB clusters and 524,188 on 512 KB clusters."""
+        root = self.test_dir
+        loose = root / "loose_note.pdf"
+        loose.write_bytes(b"x" * 100)
+
+        zoner_4k = AutoZoner(str(root), cluster_size=4096)
+        plan_4k = zoner_4k.generate_plan()
+        self.assertEqual(len(plan_4k), 1)
+        self.assertEqual(plan_4k[0].nominal_size, 100)
+        self.assertEqual(plan_4k[0].slack_bytes, 3996)
+
+        zoner_512k = AutoZoner(str(root), cluster_size=524288)
+        plan_512k = zoner_512k.generate_plan()
+        self.assertEqual(len(plan_512k), 1)
+        self.assertEqual(plan_512k[0].nominal_size, 100)
+        self.assertEqual(plan_512k[0].slack_bytes, 524188)
+
+    def test_cluster_size_detected_from_filesystem_with_512k_fallback(self) -> None:
+        """AutoZoner uses detect_filesystem(root).block_size when > 0 and falls back to 524,288 when 0."""
+        from unittest.mock import patch
+        from smart_drive.core.fsinfo import FilesystemInfo
+
+        root = self.test_dir
+        fs_4k = FilesystemInfo(
+            path=str(root),
+            fs_type="ntfs",
+            block_size=4096,
+            mount_point="E:\\",
+            source="win32",
+        )
+        with patch("smart_drive.core.auto_zoner.detect_filesystem", return_value=fs_4k):
+            zoner = AutoZoner(str(root))
+            self.assertEqual(zoner.cluster_size, 4096)
+
+        fs_unknown = FilesystemInfo(
+            path=str(root),
+            fs_type="unknown",
+            block_size=0,
+            mount_point="",
+            source="unknown",
+        )
+        with patch("smart_drive.core.auto_zoner.detect_filesystem", return_value=fs_unknown):
+            zoner_fallback = AutoZoner(str(root))
+            self.assertEqual(zoner_fallback.cluster_size, 524288)
+
 
 if __name__ == "__main__":
     unittest.main()
+
