@@ -1541,6 +1541,18 @@ def _has_all_subs(folder: Path, subs: Set[str]) -> bool:
     return subs.issubset(present)
 
 
+def _holds_all(folder: Path, names: Set[str]) -> bool:
+    """Returns True if folder holds an entry of any kind (file or folder, hidden or not) for every name."""
+    if not names:
+        return True
+    try:
+        with os.scandir(folder) as it:
+            present = {entry.name.casefold() for entry in it}
+    except OSError:
+        return False
+    return names.issubset(present)
+
+
 def _is_unreadable_drive_path(text: str) -> bool:
     if not isinstance(text, str) or not text or _CONTROL_CHAR_RE.search(text):
         return False
@@ -1807,7 +1819,9 @@ def find_moved(
                             if c3.name.casefold() == target_cf:
                                 same_all.append(c3)
 
-            same_passing = [str(c) for c in same_all if _has_all_subs(c, direct_subs)]
+            # What agents remember inside a moved MCP server or venv is often a file (main.py) or a hidden
+            # folder (.venv): the same-name folder must hold those too, not only subfolders.
+            same_passing = [str(c) for c in same_all if _holds_all(c, direct_subs)]
             if len(same_all) == 1 and len(same_passing) == 1:
                 resolved_new = same_passing[0]
                 resolved_kind = "same-name"

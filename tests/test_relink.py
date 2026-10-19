@@ -1768,6 +1768,30 @@ class TestRelink(SmartDriveTestCase):
         self.assertIn("runs inside Claude Code, so it cannot wait for it to close", err_buf.getvalue())
         self.assertIn(str(new_dir), json.loads(claude_file.read_text(encoding="utf-8"))["projects"])
 
+    def test_41_find_moved_mcp_server_counts_files_and_hidden_folders(self) -> None:
+        drive = self.test_dir / "drive_mcp"
+        new_server = drive / "02_Code" / "mcp-notes"
+        (new_server / ".venv" / "bin").mkdir(parents=True)
+        (new_server / "main.py").write_text("print('notes')\n", encoding="utf-8")
+        old_server = drive / "mcp-notes"
+        (self.fake_home / ".claude.json").write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "notes": {
+                            "command": str(old_server / ".venv" / "bin" / "python"),
+                            "args": [str(old_server / "main.py")],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        entries = find_moved(root=str(drive), home=self.fake_home, skip_dirs=[])
+
+        self.assertEqual([(e.old, e.new, e.kind) for e in entries], [(str(old_server), str(new_server), "same-name")])
+
 
 if __name__ == "__main__":
     unittest.main()
