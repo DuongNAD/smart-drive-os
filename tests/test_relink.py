@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -1820,6 +1821,29 @@ class TestRelink(SmartDriveTestCase):
         self.assertIsNotNone(report)
         self.assertFalse(any("journal" in w for w in report.warnings), report.warnings)
         self.assertEqual([tuple(m) for m in last_moves(str(drive))["moves"]], moves)
+
+    @unittest.skipIf(sys.platform == "win32", "POSIX file modes")
+    def test_44_private_config_never_written_world_readable(self) -> None:
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(json.dumps({"projects": {"/data/proj": {}}}), encoding="utf-8")
+        os.chmod(claude_file, 0o600)
+        modes = []
+        real_replace = os.replace
+
+        def spy_replace(src, dst):
+            modes.append(stat.S_IMODE(os.stat(src).st_mode))
+            return real_replace(src, dst)
+
+        # Even when the target's mode cannot be copied, the new file must not be readable by others
+        with (
+            patch("smart_drive.core.relink.shutil.copymode", side_effect=OSError("not permitted")),
+            patch("smart_drive.core.relink.os.replace", side_effect=spy_replace),
+        ):
+            report = relink([("/data/proj", "/data/03_Development_Projects/proj")], home=self.fake_home)
+
+        self.assertEqual(report.agents, {"Claude Code": 1})
+        self.assertEqual(modes, [0o600])
+        self.assertEqual(stat.S_IMODE(claude_file.stat().st_mode), 0o600)
 
 
 if __name__ == "__main__":

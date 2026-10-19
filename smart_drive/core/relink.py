@@ -1003,7 +1003,14 @@ def _write_agent_file(af: AgentFile, content: bytes, report: RelinkReport) -> bo
     try:
         if af.backup and _is_file(real_target):
             shutil.copy2(str(real_target), str(real_target) + BACKUP_SUFFIX)
-        with open(tmp_path, "wb") as f:
+        # Configs such as ~/.claude.json are private (0600): the copy is created private too and only
+        # gets the target's mode below, so it is never readable by others, even if copymode fails.
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+        fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
+        with os.fdopen(fd, "wb") as f:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
