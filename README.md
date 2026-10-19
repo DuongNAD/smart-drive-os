@@ -204,9 +204,11 @@ smart-drive relink                                       # re-apply latest batch
 smart-drive relink "E:\Old\proj" "E:\New\proj" --dry-run # a folder moved by hand: preview
 smart-drive relink "E:\Old\proj" "E:\New\proj"           # ...then apply
 smart-drive relink --find                                # list stale agent paths and where folders went
-smart-drive relink --find --apply --wait                 # relink sure matches after open agents close
+smart-drive relink --find --apply --wait                 # relink the sure (✓) matches after open agents close
 ```
 Menu option `[8]` in `SmartDrive` does the same in a few key presses. Close Claude desktop, Claude Code, and Codex before relinking (an open agent can write old settings back), or pass `--wait` so SmartDrive waits for them to close, then reopen them. If a command in a moved `.venv` still points at the old place, run `uv sync --reinstall` in that project.
+
+`--find` marks a folder ✓ only when the move journal, or what the agents remember inside the old folder, shows where it went. A folder found by its name alone is marked `?` and never relinked by `--apply`, since it may be another project and the old one deleted: check it, then run the `smart-drive relink "OLD" "NEW"` command printed next to it.
 
 ---
 

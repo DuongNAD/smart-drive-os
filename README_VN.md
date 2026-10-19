@@ -204,9 +204,11 @@ smart-drive relink             # áp dụng lại đợt dời gần nhất (sau
 smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an" --dry-run # thư mục tự dời tay: xem trước
 smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an"           # ...rồi áp dụng
 smart-drive relink --find                # liệt kê đường dẫn cũ của agent và nơi thư mục đã tới
-smart-drive relink --find --apply --wait # cập nhật mục chắc chắn sau khi agent đang mở đóng
+smart-drive relink --find --apply --wait # cập nhật các mục chắc chắn (✓) sau khi agent đang mở đóng
 ```
 Mục `[8]` trong menu `SmartDrive` làm việc này với vài phím bấm. Đóng Claude desktop, Claude Code và Codex trước khi relink (agent đang mở có thể ghi đè cấu hình cũ khi thoát), hoặc thêm `--wait` để SmartDrive chờ chúng đóng rồi mới ghi tệp. Nếu lệnh trong `.venv` đã dời vẫn trỏ về chỗ cũ, chạy `uv sync --reinstall` trong dự án đó.
+
+`--find` chỉ đánh dấu ✓ khi nhật ký dời thư mục, hoặc những gì agent nhớ bên trong thư mục cũ, cho biết thư mục đã tới đâu. Thư mục chỉ trùng tên được đánh dấu `?` và `--apply` không bao giờ tự cập nhật nó, vì đó có thể là một dự án khác còn thư mục cũ đã bị xóa: hãy kiểm tra rồi chạy lệnh `smart-drive relink "CŨ" "MỚI"` được in ngay bên cạnh.
 
 ---
 
