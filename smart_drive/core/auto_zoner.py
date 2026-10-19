@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import re
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from smart_drive.core.config import (
     CLUSTER_SIZE_BYTES,
@@ -119,6 +120,22 @@ class AutoZoner:
 
     PROJECT_INDICATORS = frozenset({
         ".git", "package.json", "pyproject.toml", "cargo.toml", "go.mod", "pom.xml", "cmakelists.txt"
+    })
+
+    AI_MODEL_FOLDER_TOKENS: FrozenSet[str] = frozenset({
+        "model", "models", "weights", "checkpoint", "checkpoints", "gguf",
+    })
+
+    LEARNING_FOLDER_TOKENS: FrozenSet[str] = frozenset({
+        "learn", "learning", "course", "courses", "book", "books", "note", "notes", "tutorial", "tutorials",
+    })
+
+    TOOLBOX_FOLDER_TOKENS: FrozenSet[str] = frozenset({
+        "tool", "tools", "utility", "utilities", "script", "scripts",
+    })
+
+    ARCHIVE_FOLDER_TOKENS: FrozenSet[str] = frozenset({
+        "archive", "archives", "backup", "backups", "dump", "dumps", "old",
     })
 
     def __init__(
@@ -268,6 +285,14 @@ class AutoZoner:
 
         return project_count
 
+    @staticmethod
+    def _folder_name_tokens(name: str) -> Set[str]:
+        """Splits a folder name into lowercase whole-word tokens across non-alphanumeric separators and camelCase."""
+        cleaned = re.sub(r"(?i)dumpstack", " ", name)
+        camel_split = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", cleaned)
+        camel_split = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", camel_split)
+        return {tok.lower() for tok in re.findall(r"[a-z0-9]+", camel_split, flags=re.IGNORECASE)}
+
     def classify_item(self, item_path: str) -> Optional[Tuple[str, str, str]]:
         """Classifies a loose item into (target_taxonomy, target_subpath, reason).
 
@@ -335,17 +360,17 @@ class AutoZoner:
                     f"Folder of {child_projects} development projects",
                 )
 
-            base_lower = base_name.lower()
-            if any(k in base_lower for k in ("model", "weights", "checkpoint", "gguf")):
+            tokens = self._folder_name_tokens(base_name)
+            if tokens & self.AI_MODEL_FOLDER_TOKENS:
                 return ("01_AI_Models", os.path.join("01_AI_Models", base_name), "Detected AI model folder naming")
 
-            if any(k in base_lower for k in ("learn", "course", "book", "note", "tutorial")):
+            if tokens & self.LEARNING_FOLDER_TOKENS:
                 return ("02_Learning_Knowledge", os.path.join("02_Learning_Knowledge", base_name), "Detected educational/course folder naming")
 
-            if any(k in base_lower for k in ("tool", "utility", "script")):
+            if tokens & self.TOOLBOX_FOLDER_TOKENS:
                 return ("05_Dev_Toolbox", os.path.join("05_Dev_Toolbox", base_name), "Detected tool/utility folder naming")
 
-            if any(k in base_lower for k in ("archive", "backup", "dump", "old_")):
+            if tokens & self.ARCHIVE_FOLDER_TOKENS:
                 return ("06_Archives_Storage", os.path.join("06_Archives_Storage", base_name), "Detected archive/backup folder naming")
 
             return None
