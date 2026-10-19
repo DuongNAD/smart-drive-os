@@ -70,13 +70,20 @@ def cmd_offload(args: argparse.Namespace) -> int:
     # 2. Revert Action
     if getattr(args, "revert", None):
         try:
-            res = revert_cache(
-                name=args.revert,
-                dry_run=dry_run,
-            )
+            rev_kwargs: Dict[str, Any] = {
+                "name": args.revert,
+                "dry_run": dry_run,
+            }
+            if force:
+                rev_kwargs["force"] = force
+            if wait_minutes is not None:
+                rev_kwargs["wait_minutes"] = wait_minutes
+            res = revert_cache(**rev_kwargs)
             if is_json:
                 print(json.dumps(res, indent=2, ensure_ascii=False))
             else:
+                for w in res.get("warnings", []):
+                    sys.stderr.write(f"{w}\n")
                 print(f"\n{res.get('message', 'Revert completed.')}")
                 print(f"Restored Native Path: {res.get('restored_path')}")
             return 0
@@ -85,7 +92,7 @@ def cmd_offload(args: argparse.Namespace) -> int:
                 print(json.dumps({"status": "error", "error": str(exc)}, indent=2))
             else:
                 sys.stderr.write(f"Error: {exc}\n")
-            return 1
+            return 3 if "Timed out waiting for" in str(exc) else 1
 
     # 3. Scan Action (Default when --scan or no move/revert specified)
     summary = get_scan_summary()

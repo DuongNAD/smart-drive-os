@@ -509,7 +509,7 @@ def _update_manifest(
 
 
 CACHE_BLOCKING_PROCESSES: Dict[str, Set[str]] = {
-    "docker_wsl": {"docker desktop", "com.docker.backend", "vmmem", "wsl"},
+    "docker_wsl": {"docker desktop", "com.docker.backend", "vmmem", "vmmemwsl", "wsl"},
     "ollama": {"ollama", "ollama app"},
     "cargo": {"cargo", "rustc"},
 }
@@ -523,6 +523,7 @@ CACHE_PROCESS_LABELS: Dict[str, str] = {
     "docker desktop": "Docker Desktop",
     "com.docker.backend": "com.docker.backend",
     "vmmem": "vmmem",
+    "vmmemwsl": "VmmemWSL",
     "wsl": "wsl",
     "ollama": "ollama",
     "ollama app": "ollama app",
@@ -582,6 +583,50 @@ def wait_for_cache_processes(name: str, wait_minutes: float) -> List[str]:
         time.sleep(2)
         blocking, _ = running_cache_processes(name)
     return []
+
+
+def _check_cache_processes(
+    clean_name: str,
+    verb: str,
+    gerund: str,
+    dry_run: bool,
+    force: bool,
+    wait_minutes: Optional[float],
+) -> Tuple[List[str], List[str]]:
+    """Enforces blocking/warning process rules for `offload_cache` and `revert_cache`.
+
+    Returns `(blocking_procs, warnings)`.
+    """
+    blocking_procs, warning_procs = running_cache_processes(clean_name)
+    warnings: List[str] = []
+    if warning_procs:
+        warnings.append(
+            f"Warning: {', '.join(warning_procs)} is currently running while {gerund} '{clean_name}'."
+        )
+
+    if blocking_procs and not dry_run:
+        if wait_minutes is not None and not force:
+            blocking_procs = wait_for_cache_processes(clean_name, wait_minutes)
+            if blocking_procs:
+                raise RuntimeError(
+                    f"Timed out waiting for {', '.join(blocking_procs)} to close before {gerund} '{clean_name}'; "
+                    "no files were moved."
+                )
+        elif not force:
+            raise RuntimeError(
+                f"Cannot {verb} '{clean_name}' while {', '.join(blocking_procs)} is running. "
+                "Close the application first, pass --wait to wait for it to exit, or use --force to override."
+            )
+        else:
+            warnings.append(
+                f"Warning: forced {verb} of '{clean_name}' while {', '.join(blocking_procs)} was running."
+            )
+    elif blocking_procs and dry_run:
+        warnings.append(
+            f"would be blocked: {', '.join(blocking_procs)} is running"
+        )
+
+    return blocking_procs, warnings
 
 
 def offload_cache(
@@ -666,34 +711,14 @@ def offload_cache(
             )
 
     # 3b. Check running processes associated with this cache
-    blocking_procs, warning_procs = running_cache_processes(clean_name)
-    warnings: List[str] = []
-    if warning_procs:
-        warnings.append(
-            f"Warning: {', '.join(warning_procs)} is currently running while offloading '{clean_name}'."
-        )
-
-    if blocking_procs and not dry_run:
-        if wait_minutes is not None and not force:
-            blocking_procs = wait_for_cache_processes(clean_name, wait_minutes)
-            if blocking_procs:
-                raise RuntimeError(
-                    f"Timed out waiting for {', '.join(blocking_procs)} to close before offloading '{clean_name}'; "
-                    "no files were moved."
-                )
-        elif not force:
-            raise RuntimeError(
-                f"Cannot offload '{clean_name}' while {', '.join(blocking_procs)} is running. "
-                "Close the application first, pass --wait to wait for it to exit, or use --force to override."
-            )
-        else:
-            warnings.append(
-                f"Warning: forced offload of '{clean_name}' while {', '.join(blocking_procs)} was running."
-            )
-    elif blocking_procs and dry_run:
-        warnings.append(
-            f"Note: {', '.join(blocking_procs)} is currently running; close it or pass --wait / --force before moving."
-        )
+    blocking_procs, warnings = _check_cache_processes(
+        clean_name,
+        verb="offload",
+        gerund="offloading",
+        dry_run=dry_run,
+        force=force,
+        wait_minutes=wait_minutes,
+    )
 
     # 4. Measure size and file count
     size_bytes, file_count = calculate_dir_size(source_path)
@@ -716,6 +741,9 @@ def offload_cache(
 
     # If dry-run requested, return plan without making any disk modifications
     if dry_run:
+        dry_msg = f"[DRY-RUN] Would safely offload {format_bytes(size_bytes)} ({file_count} files) to '{target_cache_dir}' and create a {LINK_NAME}."
+        if blocking_procs:
+            dry_msg += f" (would be blocked: {', '.join(blocking_procs)} is running)"
         return {
             "status": "dry_run",
             "name": clean_name,
@@ -728,7 +756,7 @@ def offload_cache(
             "phases_planned": 7,
             "warnings": warnings,
             "blocking_processes": blocking_procs,
-            "message": f"[DRY-RUN] Would safely offload {format_bytes(size_bytes)} ({file_count} files) to '{target_cache_dir}' and create a {LINK_NAME}.",
+            "message": dry_msg,
         }
 
     # Ensure parent offload root directory exists
@@ -839,7 +867,12 @@ def offload_cache(
 # 5. REVERT ENGINE
 # ==============================================================================
 
-def revert_cache(name: str, dry_run: bool = False) -> Dict[str, Any]:
+def revert_cache(
+    name: str,
+    dry_run: bool = False,
+    force: bool = False,
+    wait_minutes: Optional[float] = None,
+) -> Dict[str, Any]:
     """Reverts an offloaded cache junction back to a native directory on C:.
 
     Steps:
@@ -855,6 +888,8 @@ def revert_cache(name: str, dry_run: bool = False) -> Dict[str, Any]:
     Args:
         name: Name of cache to revert (e.g. 'uv', 'huggingface').
         dry_run: If True, simulates revert without filesystem changes.
+        force: If True, overrides blocking process checks.
+        wait_minutes: Optional minutes to wait for blocking processes to close.
 
     Returns:
         Dict detailing the restored cache path and reclaimed space.
@@ -864,6 +899,7 @@ def revert_cache(name: str, dry_run: bool = False) -> Dict[str, Any]:
         ValueError: If cache is not currently an active junction.
         FileNotFoundError: If junction target directory is missing.
         OSError: If system drive has insufficient free space.
+        RuntimeError: If a blocking process is running or revert fails.
     """
     clean_name = name.strip().lower()
     if clean_name not in CACHE_CATALOG:
@@ -891,6 +927,16 @@ def revert_cache(name: str, dry_run: bool = False) -> Dict[str, Any]:
             f"Junction target directory '{target_dir}' does not exist on disk. Cannot safely revert data."
         )
 
+    # 2b. Check running processes associated with this cache before touching any files
+    blocking_procs, warnings = _check_cache_processes(
+        clean_name,
+        verb="revert",
+        gerund="reverting",
+        dry_run=dry_run,
+        force=force,
+        wait_minutes=wait_minutes,
+    )
+
     # 3. Calculate target size
     size_bytes, file_count = calculate_dir_size(target_dir)
 
@@ -909,6 +955,9 @@ def revert_cache(name: str, dry_run: bool = False) -> Dict[str, Any]:
             raise
 
     if dry_run:
+        dry_msg = f"[DRY-RUN] Would revert {format_bytes(size_bytes)} ({file_count} files) back to native directory '{source_path}'."
+        if blocking_procs:
+            dry_msg += f" (would be blocked: {', '.join(blocking_procs)} is running)"
         return {
             "status": "dry_run",
             "name": clean_name,
@@ -917,7 +966,9 @@ def revert_cache(name: str, dry_run: bool = False) -> Dict[str, Any]:
             "size_bytes": size_bytes,
             "size_formatted": format_bytes(size_bytes),
             "file_count": file_count,
-            "message": f"[DRY-RUN] Would revert {format_bytes(size_bytes)} ({file_count} files) back to native directory '{source_path}'.",
+            "warnings": warnings,
+            "blocking_processes": blocking_procs,
+            "message": dry_msg,
         }
 
     timestamp = int(time.time())
@@ -962,6 +1013,7 @@ def revert_cache(name: str, dry_run: bool = False) -> Dict[str, Any]:
             "freed_secondary_bytes": size_bytes,
             "freed_formatted": format_bytes(size_bytes),
             "file_count": file_count,
+            "warnings": warnings,
             "message": f"✓ Successfully reverted '{clean_name}' back to native local directory at '{source_path}'.",
         }
 
