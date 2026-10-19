@@ -20,6 +20,7 @@ Safety invariants:
 
 from __future__ import annotations
 
+import ast
 import csv
 import dataclasses
 from dataclasses import dataclass, field
@@ -991,6 +992,61 @@ def _process_lines_file(
     return prefix + "".join(out_lines).encode("utf-8"), total_count
 
 
+_FINDER_ASSIGN_RE = re.compile(r"^(MAPPING|NAMESPACES)(\s*:[^=]*)?\s*=\s*(.+?)\s*$")
+
+
+def _map_literal(value: Any, mapper: PathMapper) -> Tuple[Any, int]:
+    """value (str, list or dict of them) with its paths mapped, and how many changed."""
+    if isinstance(value, str):
+        mapped = mapper.map_value(value)
+        return (value, 0) if mapped is None else (mapped, 1)
+    if isinstance(value, list):
+        pairs = [_map_literal(item, mapper) for item in value]
+        return [item for item, _ in pairs], sum(count for _, count in pairs)
+    if isinstance(value, dict):
+        pairs = {key: _map_literal(item, mapper) for key, item in value.items()}
+        return {key: item for key, (item, _) in pairs.items()}, sum(count for _, count in pairs.values())
+    return value, 0
+
+
+def _process_finder_file(
+    af: AgentFile,
+    mapper: PathMapper,
+    report: RelinkReport,
+) -> Tuple[Optional[bytes], int]:
+    """Rewrites MAPPING / NAMESPACES of a setuptools editable finder (__editable___*_finder.py).
+
+    setuptools >= 64 installs a flat-layout project in editable mode with an import-only .pth and this
+    module, which holds the project's absolute path; without it the moved venv cannot import the project.
+    """
+    try:
+        text = af.path.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError) as err:
+        report.warnings.append(f"{af.path}: not read ({err})")
+        return None, 0
+    if not mapper.mentions(text):
+        return None, 0
+
+    total = 0
+    out_lines: List[str] = []
+    for line in text.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        match = _FINDER_ASSIGN_RE.match(body)
+        if match:
+            try:
+                value = ast.literal_eval(match.group(3))
+            except (ValueError, SyntaxError):
+                value = None
+            new_value, count = _map_literal(value, mapper)
+            if count:
+                total += count
+                line = f"{match.group(1)}{match.group(2) or ''} = {new_value!r}{line[len(body):]}"
+        out_lines.append(line)
+    if total == 0:
+        return None, 0
+    return "".join(out_lines).encode("utf-8"), total
+
+
 def _write_agent_file(af: AgentFile, content: bytes, report: RelinkReport) -> bool:
     """Writes content atomically to the real path of af.path, creating a rolling backup when requested."""
     try:
@@ -1304,15 +1360,21 @@ def _relink_virtualenvs(
 
             for sp in site_packages:
                 try:
-                    files = sorted(sp.glob("*.pth")) + sorted(sp.glob("*.egg-link"))
+                    files = (
+                        sorted(sp.glob("*.pth"))
+                        + sorted(sp.glob("*.egg-link"))
+                        + sorted(sp.glob("__editable___*_finder.py"))
+                    )
                 except OSError:
                     files = []
                 for f in files:
                     if not _is_file(f) or f.name.endswith(BACKUP_SUFFIX):
                         continue
-                    af = AgentFile(path=f, agent="Python venv", kind="lines", backup=True)
+                    finder = f.suffix == ".py"
+                    af = AgentFile(path=f, agent="Python venv", kind="finder" if finder else "lines", backup=True)
                     try:
-                        new_bytes, count = _process_lines_file(af, mapper, report)
+                        process = _process_finder_file if finder else _process_lines_file
+                        new_bytes, count = process(af, mapper, report)
                         if new_bytes is not None and count > 0:
                             if _write_agent_file(af, new_bytes, report):
                                 report.updated.append({"file": str(af.path), "agent": af.agent, "paths": count})

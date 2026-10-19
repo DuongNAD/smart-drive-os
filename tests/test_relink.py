@@ -1845,6 +1845,34 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(modes, [0o600])
         self.assertEqual(stat.S_IMODE(claude_file.stat().st_mode), 0o600)
 
+    def test_45_setuptools_editable_finder_follows_the_move(self) -> None:
+        old_proj = self.test_dir / "flat_pkg"
+        new_proj = self.test_dir / "03_Development_Projects" / "flat_pkg"
+        venv_dir = new_proj / ".venv"
+        sp_dir = venv_dir / ("Lib" if sys.platform == "win32" else "lib/python3.11") / "site-packages"
+        sp_dir.mkdir(parents=True)
+        (venv_dir / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+        # What setuptools >= 64 writes for a flat layout: an import-only .pth plus a finder module
+        (sp_dir / "__editable__.flat_pkg-0.1.pth").write_text(
+            "import __editable___flat_pkg_0_1_finder; __editable___flat_pkg_0_1_finder.install()", encoding="utf-8"
+        )
+        finder = sp_dir / "__editable___flat_pkg_0_1_finder.py"
+        finder.write_text(
+            "import sys\n"
+            f"MAPPING: dict[str, str] = {{'flat_pkg': {str(old_proj / 'flat_pkg')!r}}}\n"
+            f"NAMESPACES: dict[str, list[str]] = {{'ns': [{str(old_proj / 'ns')!r}]}}\n"
+            "PATH_PLACEHOLDER = '__editable__.flat_pkg-0.1.finder' + '.__path_hook__'\n",
+            encoding="utf-8",
+        )
+
+        report = relink([(str(old_proj), str(new_proj))], home=self.fake_home, app_data=self.fake_appdata)
+
+        namespace: dict = {}
+        exec(finder.read_text(encoding="utf-8"), namespace)
+        self.assertEqual(namespace["MAPPING"], {"flat_pkg": str(new_proj / "flat_pkg")})
+        self.assertEqual(namespace["NAMESPACES"], {"ns": [str(new_proj / "ns")]})
+        self.assertEqual(report.agents.get("Python venv"), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
