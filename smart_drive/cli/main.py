@@ -426,7 +426,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_off.add_argument("--target", "-t", help="Target secondary drive or directory (e.g. 'D:', 'D:\\', or path)")
     p_off.add_argument("--revert", "-r", help="Name of cache to revert back to native C-drive directory")
     p_off.add_argument("--dry-run", action="store_true", help="Simulate offload/revert operation without moving files")
-    p_off.add_argument("--force", "-f", action="store_true", help="Force offload even if warnings exist")
+    p_off.add_argument("--force", "-f", action="store_true", help="Force offload even if warnings or running processes exist")
+    p_off.add_argument(
+        "--wait",
+        nargs="?",
+        const=30.0,
+        default=None,
+        type=float,
+        metavar="MINUTES",
+        help="Wait up to MINUTES (default: 30) for blocking cache applications to close before offloading",
+    )
     p_off.add_argument("--json", action="store_true", help="Output results in JSON format")
 
     # 17. health
