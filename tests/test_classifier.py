@@ -18,6 +18,8 @@ import sys
 import unittest
 import zipfile
 
+from unittest.mock import patch
+
 from smart_drive.core.classifier import (
     ClassifierEngine,
     ClassificationResult,
@@ -25,11 +27,30 @@ from smart_drive.core.classifier import (
     FormatInspection,
     RelocationAction,
 )
+from smart_drive.core.system_refs import SystemRefIndex
 from smart_drive.cli.cmd_classify import cmd_classify
 from tests.helpers import TempWorkspace, SmartDriveTestCase
 
 
-class TestFormatDetectors(unittest.TestCase):
+class _IsolatedClassifierTestCase(unittest.TestCase):
+    """Base test case ensuring unit tests never scan the host Registry/Start Menu/Desktop."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._collect_patcher = patch(
+            "smart_drive.core.system_refs.SystemRefIndex.collect",
+            side_effect=AssertionError(
+                "SystemRefIndex.collect() must not be called in unit tests; inject system_refs=SystemRefIndex([])"
+            ),
+        )
+        self._collect_patcher.start()
+
+    def tearDown(self) -> None:
+        self._collect_patcher.stop()
+        super().tearDown()
+
+
+class TestFormatDetectors(_IsolatedClassifierTestCase):
     """Tests synthetic binary and structural inspection for specialized file formats."""
 
     def test_detect_gguf(self) -> None:
@@ -39,7 +60,7 @@ class TestFormatDetectors(unittest.TestCase):
             payload = b"GGUF" + struct.pack("<I", 3) + struct.pack("<Q", 128) + struct.pack("<Q", 64) + b"\x00" * 32
             p.write_bytes(payload)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -63,7 +84,7 @@ class TestFormatDetectors(unittest.TestCase):
             payload = struct.pack("<Q", header_len) + meta_json + b"\x00" * 1000
             p.write_bytes(payload)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -80,7 +101,7 @@ class TestFormatDetectors(unittest.TestCase):
             payload = b"PAR1" + b"\x00" * 100 + b"PAR1"
             p.write_bytes(payload)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -99,7 +120,7 @@ class TestFormatDetectors(unittest.TestCase):
             p_fea = tmp / "data.feather"
             p_fea.write_bytes(b"FEA1\x00\x00" + b"\x00" * 64)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
 
             insp_arrow = engine.detect_format(p_arrow)
             self.assertIsNotNone(insp_arrow)
@@ -123,7 +144,7 @@ class TestFormatDetectors(unittest.TestCase):
             p_weights = tmp / "model_weights.h5"
             p_weights.write_bytes(b"\x89HDF\r\n\x1a\n" + b"\x00" * 32)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
 
             insp_data = engine.detect_format(p_data)
             self.assertIsNotNone(insp_data)
@@ -143,7 +164,7 @@ class TestFormatDetectors(unittest.TestCase):
             p = tmp / "deep_learning_paper.pdf"
             p.write_bytes(b"%PDF-1.7\n%test content stream\n%%EOF\n")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -160,7 +181,7 @@ class TestFormatDetectors(unittest.TestCase):
                 zf.writestr("mimetype", "application/epub+zip")
                 zf.writestr("META-INF/container.xml", "<container/>")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -177,7 +198,7 @@ class TestFormatDetectors(unittest.TestCase):
                 zf.writestr("archive/byteorder", b"little")
                 zf.writestr("archive/data/0", b"\x00" * 64)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -192,7 +213,7 @@ class TestFormatDetectors(unittest.TestCase):
             payload = b"\x80\x02ctorch._utils\n_rebuild_tensor\nq\x01."
             p.write_bytes(payload)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -207,7 +228,7 @@ class TestFormatDetectors(unittest.TestCase):
             payload = b"\x08\x07\x12\x0apytorch_ai\x1a\x051.13\x22\x04onnx"
             p.write_bytes(payload)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -226,7 +247,7 @@ class TestFormatDetectors(unittest.TestCase):
             }
             p.write_text(json.dumps(cfg), encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -244,7 +265,7 @@ class TestFormatDetectors(unittest.TestCase):
             ]
             p.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -260,7 +281,7 @@ class TestFormatDetectors(unittest.TestCase):
             p_tsv = tmp / "eval.tsv"
             p_tsv.write_text("id\ttext\tscore\n1\tsample A\t0.9\n2\tsample B\t0.8\n", encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
 
             insp_csv = engine.detect_format(p_csv)
             self.assertIsNotNone(insp_csv)
@@ -281,7 +302,7 @@ class TestFormatDetectors(unittest.TestCase):
             p = tmp / "research_notes.md"
             p.write_text("# Research Notes\n\n- Finding 1\n- Finding 2\n", encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -298,7 +319,7 @@ class TestFormatDetectors(unittest.TestCase):
             with zipfile.ZipFile(p_archive, "w") as zf:
                 zf.writestr("test.txt", "regular file")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
 
             insp_script = engine.detect_format(p_script)
             self.assertIsNotNone(insp_script)
@@ -319,14 +340,14 @@ class TestFormatDetectors(unittest.TestCase):
             p = tmp / "empty.dat"
             p.touch()
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_format(p)
             self.assertIsNotNone(insp)
             assert insp is not None
             self.assertEqual(insp.format_type, "Empty File")
 
 
-class TestProjectRepoDetection(unittest.TestCase):
+class TestProjectRepoDetection(_IsolatedClassifierTestCase):
     """Tests recognition of project repositories (Git, Rust, Node, Python)."""
 
     def test_detect_git_repo(self) -> None:
@@ -336,7 +357,7 @@ class TestProjectRepoDetection(unittest.TestCase):
             (repo / ".git").mkdir()
             (repo / "README.md").write_text("# Project\n", encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_project_repo(repo)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -351,7 +372,7 @@ class TestProjectRepoDetection(unittest.TestCase):
             repo.mkdir()
             (repo / "Cargo.toml").write_text('[package]\nname = "rust_engine"\n', encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_project_repo(repo)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -365,7 +386,7 @@ class TestProjectRepoDetection(unittest.TestCase):
             repo.mkdir()
             (repo / "package.json").write_text('{"name": "web_client", "version": "1.0.0"}', encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_project_repo(repo)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -379,7 +400,7 @@ class TestProjectRepoDetection(unittest.TestCase):
             repo.mkdir()
             (repo / "pyproject.toml").write_text('[project]\nname = "ml_pipeline"\n', encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_project_repo(repo)
             self.assertIsNotNone(insp)
             assert insp is not None
@@ -394,12 +415,12 @@ class TestProjectRepoDetection(unittest.TestCase):
             prot_dir.mkdir()
             (prot_dir / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             insp = engine.detect_project_repo(prot_dir)
             self.assertIsNone(insp)
 
 
-class TestCollisionAvoidanceAndRelocation(unittest.TestCase):
+class TestCollisionAvoidanceAndRelocation(_IsolatedClassifierTestCase):
     """Tests destination resolution, numeric collision suffixes, and safe relocation."""
 
     def test_no_collision(self) -> None:
@@ -407,7 +428,7 @@ class TestCollisionAvoidanceAndRelocation(unittest.TestCase):
             src = tmp / "test_model.gguf"
             src.write_bytes(b"GGUF" + struct.pack("<I", 3) + b"\x00" * 32)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             res = engine.inspect_path(src)
             self.assertIsNotNone(res)
             assert res is not None
@@ -428,7 +449,7 @@ class TestCollisionAvoidanceAndRelocation(unittest.TestCase):
             src.parent.mkdir(parents=True, exist_ok=True)
             src.write_bytes(b"GGUF" + struct.pack("<I", 3) + b"\x00" * 32)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             res = engine.inspect_path(src)
             self.assertIsNotNone(res)
             assert res is not None
@@ -449,7 +470,7 @@ class TestCollisionAvoidanceAndRelocation(unittest.TestCase):
             src = tmp / "test_model.gguf"
             src.write_bytes(b"GGUF" + struct.pack("<I", 3) + b"\x00" * 32)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             res = engine.inspect_path(src)
             self.assertIsNotNone(res)
             assert res is not None
@@ -471,7 +492,7 @@ class TestCollisionAvoidanceAndRelocation(unittest.TestCase):
             file_a.write_text("# Notes A", encoding="utf-8")
             file_b.write_text("# Notes B", encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             res_a = engine.inspect_path(file_a)
             res_b = engine.inspect_path(file_b)
             self.assertIsNotNone(res_a)
@@ -494,7 +515,7 @@ class TestCollisionAvoidanceAndRelocation(unittest.TestCase):
             p = weights_dir / "model.gguf"
             p.write_bytes(b"GGUF" + struct.pack("<I", 3) + b"\x00" * 32)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             res = engine.inspect_path(p)
             self.assertIsNotNone(res)
             assert res is not None
@@ -505,7 +526,7 @@ class TestCollisionAvoidanceAndRelocation(unittest.TestCase):
             self.assertTrue(p.exists())
 
 
-class TestSafeguardsAndRootProtection(unittest.TestCase):
+class TestSafeguardsAndRootProtection(_IsolatedClassifierTestCase):
     """Tests inviolable safeguards ensuring root orchestration files and dirs are never moved."""
 
     def test_protected_root_files_never_classified(self) -> None:
@@ -522,7 +543,7 @@ class TestSafeguardsAndRootProtection(unittest.TestCase):
             mcp.write_text("{}", encoding="utf-8")
             setup_bat.write_text("@echo off", encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             for f in [gemini, readme, agents, mcp, setup_bat]:
                 res = engine.inspect_path(f)
                 self.assertIsNone(res, f"Protected file {f.name} should not be classified")
@@ -544,13 +565,13 @@ class TestSafeguardsAndRootProtection(unittest.TestCase):
             bat.write_text("@echo off\n", encoding="utf-8")
             ps1.write_text("# PowerShell\n", encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             classified = engine.scan_and_classify(tmp, recursive=False)
             classified_names = {r.name for r in classified}
             self.assertNotIn("SmartDrive.bat", classified_names)
             self.assertNotIn("SmartDrive.ps1", classified_names)
 
-            zoner = AutoZoner(str(tmp))
+            zoner = AutoZoner(str(tmp), system_refs=SystemRefIndex([]))
             plan = zoner.generate_plan()
             planned_names = {os.path.basename(a.src_path) for a in plan}
             self.assertNotIn("SmartDrive.bat", planned_names)
@@ -563,7 +584,7 @@ class TestSafeguardsAndRootProtection(unittest.TestCase):
             ai_dir.mkdir()
             (ai_dir / "model.gguf").write_bytes(b"GGUF" + struct.pack("<I", 3) + b"\x00" * 32)
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             # Inspecting 01_AI_Models as a target directory should not treat the folder itself as a repo
             repo_res = engine.detect_project_repo(ai_dir)
             self.assertIsNone(repo_res)
@@ -571,6 +592,18 @@ class TestSafeguardsAndRootProtection(unittest.TestCase):
 
 class TestClassifierCLI(unittest.TestCase):
     """Tests CLI invocation for suggest, dry-run, apply, and json modes."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._collect_patcher = patch(
+            "smart_drive.core.system_refs.SystemRefIndex.collect",
+            return_value=SystemRefIndex([]),
+        )
+        self._collect_patcher.start()
+
+    def tearDown(self) -> None:
+        self._collect_patcher.stop()
+        super().tearDown()
 
     def test_cli_suggest_default(self) -> None:
         with TempWorkspace(prefix="test_cli_suggest_") as tmp:
@@ -801,7 +834,7 @@ class TestClassifierCLI(unittest.TestCase):
             self.assertNotIn("nested.md", names)
 
 
-class TestClassifierEdgeCases(unittest.TestCase):
+class TestClassifierEdgeCases(_IsolatedClassifierTestCase):
     """Tests edge cases, contract methods, corrupt files, and directory collisions."""
 
     def test_apply_organization_contract(self) -> None:
@@ -809,7 +842,7 @@ class TestClassifierEdgeCases(unittest.TestCase):
             p = tmp / "test.parquet"
             p.write_bytes(b"PAR1" + b"\x00" * 32 + b"PAR1")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             classified = engine.scan_and_classify(tmp)
             self.assertEqual(len(classified), 1)
 
@@ -836,7 +869,7 @@ class TestClassifierEdgeCases(unittest.TestCase):
             p3 = tmp / "bad.epub"
             p3.write_bytes(b"PK\x03\x04BADZIPDATA")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
 
             # None of these should raise an exception
             res1 = engine.detect_format(p1)
@@ -861,7 +894,7 @@ class TestClassifierEdgeCases(unittest.TestCase):
             (incoming_repo / "package.json").write_text("{}", encoding="utf-8")
             (incoming_repo / "index.js").write_text("console.log('hi')", encoding="utf-8")
 
-            engine = ClassifierEngine(root_path=tmp)
+            engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
             classified = engine.scan_and_classify(incoming_repo.parent)
             self.assertEqual(len(classified), 1)
             self.assertEqual(classified[0].name, "web_app")
