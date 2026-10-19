@@ -1698,6 +1698,35 @@ def _repair_worktrees(
         _run_git_repair(git_bin, wt_dir, [], report)
 
 
+def _candidate_venv_dirs(base: Path, max_subdirs: int = _MAX_WORKTREE_SCAN_DIRS) -> List[Path]:
+    """Returns candidate virtualenv paths at base and <base>/<child>/{.venv,venv,env} (depth 1)."""
+    candidates: List[Path] = [base, base / ".venv", base / "venv", base / "env"]
+    try:
+        with os.scandir(base) as it:
+            entries = sorted(list(it), key=lambda e: e.name.casefold())
+    except OSError:
+        return candidates
+
+    scanned = 0
+    for entry in entries:
+        name = entry.name
+        if not name or name.startswith((".", "$")) or name.casefold() in _WORKTREE_SKIP_DIRS:
+            continue
+        if _is_link_entry(entry):
+            continue
+        try:
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+        except OSError:
+            continue
+        scanned += 1
+        child = Path(entry.path)
+        candidates.extend((child, child / ".venv", child / "venv", child / "env"))
+        if scanned >= max_subdirs:
+            break
+    return candidates
+
+
 def _relink_virtualenvs(
     moves: Sequence[Move],
     mapper: PathMapper,
@@ -1709,7 +1738,7 @@ def _relink_virtualenvs(
         base = Path(new_path)
         if not _is_dir(base):
             continue
-        for venv_dir in (base, base / ".venv", base / "venv", base / "env"):
+        for venv_dir in _candidate_venv_dirs(base):
             key = str(venv_dir).casefold() if _CASE_INSENSITIVE else str(venv_dir)
             if key in seen_venvs:
                 continue
