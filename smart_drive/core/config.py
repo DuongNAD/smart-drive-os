@@ -282,6 +282,11 @@ PROTECTED_ROOT_FILES: FrozenSet[str] = frozenset({
     "setup_deeptutor_mcp.bat",
     "setup_deeptutor_mcp.command",
     ".metadata_never_index",
+    "pagefile.sys",
+    "hiberfil.sys",
+    "swapfile.sys",
+    "dumpstack.log",
+    "dumpstack.log.tmp",
 })
 
 # Wildcard glob patterns for protected root files.

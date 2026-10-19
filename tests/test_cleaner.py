@@ -144,6 +144,60 @@ class TestInviolableWhitelistGuards(SmartDriveTestCase):
         with self.assertRaises(SecurityViolationError):
             guard.validate_deletion(str(mock_root / "01_AI_Models"))
 
+    def test_windows_root_system_files_never_classified_or_purged(self) -> None:
+        """Windows root system files (DumpStack.log.tmp, pagefile.sys, etc.) are protected from classify and purge."""
+        from smart_drive.core.auto_zoner import AutoZoner
+        from smart_drive.core.classifier import ClassifierEngine
+
+        root = self.test_dir
+        win_sys_files = [
+            "DumpStack.log.tmp",
+            "DumpStack.log",
+            "pagefile.sys",
+            "hiberfil.sys",
+            "swapfile.sys",
+        ]
+        for fname in win_sys_files:
+            (root / fname).write_bytes(b"WIN_KERNEL_LOCKED")
+
+        subdir = root / "03_Development_Projects" / "p"
+        subdir.mkdir(parents=True, exist_ok=True)
+        nested_tmp = subdir / "foo.tmp"
+        nested_tmp.write_text("regular temp file", encoding="utf-8")
+
+        # 1. ClassifierEngine (both recursive=False and recursive=True) and AutoZoner ignore them
+        classifier = ClassifierEngine(root_path=root)
+        for rec in (False, True):
+            classified_names = {r.name for r in classifier.scan_and_classify(root, recursive=rec)}
+            for fname in win_sys_files:
+                self.assertNotIn(fname, classified_names, f"{fname} should not be classified (recursive={rec})")
+
+        zoner = AutoZoner(str(root))
+        planned_names = {os.path.basename(a.src_path) for a in zoner.generate_plan()}
+        for fname in win_sys_files:
+            self.assertNotIn(fname, planned_names, f"{fname} should not be planned by AutoZoner")
+
+        # 2. JunkDetector at Tier 3 ignores root system files, but still detects nested foo.tmp
+        detector = JunkDetector(str(root), max_tier=JunkTier.TIER_3_SENSITIVE)
+        junk_names = {item.name for item in detector.find_junk()}
+        for fname in win_sys_files:
+            self.assertNotIn(fname, junk_names, f"{fname} at root must not be flagged as Tier 3 junk")
+        self.assertIn("foo.tmp", junk_names, "Nested foo.tmp should still be detected at Tier 3")
+
+        # 3. PurgeEngine and SecurityGuard refuse direct deletion of root system files
+        guard = SecurityGuard(str(root))
+        engine = PurgeEngine(str(root), dry_run=False)
+        for fname in win_sys_files:
+            fpath = str(root / fname)
+            is_prot, reason = guard.is_protected(fpath)
+            self.assertTrue(is_prot, f"{fname} must be protected by SecurityGuard")
+            with self.assertRaises(SecurityViolationError):
+                guard.validate_deletion(fpath)
+            rec_del = engine.delete_file(fpath)
+            self.assertEqual(rec_del.status, "BLOCKED")
+            self.assertTrue((root / fname).exists(), f"{fname} was deleted!")
+
+
 
 class TestPurgeEngineExecution(SmartDriveTestCase):
     """Tier 1 & Tier 3: Dry-run simulation and apply purge execution."""
