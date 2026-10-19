@@ -108,6 +108,7 @@ def cmd_undo(args: argparse.Namespace) -> int:
         return 0
 
     executed_moves: List[Tuple[str, str]] = []
+    errors: List[Dict[str, str]] = []
     for src, dest in valid_pairs:
         if not os.path.lexists(src):
             conflicts.append({
@@ -130,10 +131,10 @@ def cmd_undo(args: argparse.Namespace) -> int:
             _move(src, dest)
             executed_moves.append((src, dest))
         except OSError as err:
-            conflicts.append({
+            errors.append({
                 "src": src,
                 "dest": dest,
-                "reason": str(err),
+                "error": str(err),
             })
 
     relinked = after_moves(root, executed_moves, "undo") if executed_moves else None
@@ -152,9 +153,11 @@ def cmd_undo(args: argparse.Namespace) -> int:
         except Exception:
             pass
 
+    exit_code = 1 if errors else 0
+
     if as_json:
         print(json.dumps({
-            "status": "applied",
+            "status": "applied" if not errors else "partial_failure",
             "dry_run": False,
             "root": root,
             "undoes": batch_time,
@@ -165,10 +168,12 @@ def cmd_undo(args: argparse.Namespace) -> int:
             "moved_count": len(executed_moves),
             "conflicts": conflicts,
             "conflict_count": len(conflicts),
+            "errors": errors,
+            "failed_count": len(errors),
             "relink": relinked.to_dict() if relinked else None,
             "index_update": inc_res,
         }, indent=2, ensure_ascii=False))
-        return 0
+        return exit_code
 
     print(f"✓ Undo applied ({batch_tool} @ {batch_time}):")
     print(f"  - Restored items: {len(executed_moves)}")
@@ -176,9 +181,11 @@ def cmd_undo(args: argparse.Namespace) -> int:
         print(f"    {src} -> {dest}")
     for c in conflicts:
         print(f"  ! Conflict skipped: {c['src']} -> {c['dest']} ({c['reason']})")
+    for e in errors:
+        sys.stderr.write(f"  ! Failed to restore: {e['src']} -> {e['dest']} ({e['error']})\n")
     if inc_res:
         print(f"  - Index updated: +{inc_res['added']} ~{inc_res['modified']} -{inc_res['deleted']}")
     if relinked and (relinked.changed or relinked.warnings or relinked.errors):
         print("Coding agents updated:")
         print_relink(relinked)
-    return 0
+    return exit_code
