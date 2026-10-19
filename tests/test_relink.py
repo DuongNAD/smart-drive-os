@@ -1873,6 +1873,25 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(namespace["NAMESPACES"], {"ns": [str(new_proj / "ns")]})
         self.assertEqual(report.agents.get("Python venv"), 2)
 
+    def test_46_find_moved_lists_the_drive_once_for_many_missing_folders(self) -> None:
+        drive = self.test_dir / "drive_many"
+        for zone in ("zone_a", "zone_b"):
+            for proj in ("proj_1", "proj_2"):
+                (drive / zone / proj / "src").mkdir(parents=True)
+                (drive / zone / proj / "README.md").write_text("# proj\n", encoding="utf-8")
+        claude_file = self.fake_home / ".claude.json"
+
+        def scandir_calls(missing: int) -> int:
+            projects = {str(drive / f"gone_{n}"): {} for n in range(missing)}
+            claude_file.write_text(json.dumps({"projects": projects}), encoding="utf-8")
+            with patch("smart_drive.core.relink.os.scandir", wraps=os.scandir) as scandir:
+                entries = find_moved(root=str(drive), home=self.fake_home, skip_dirs=[])
+            self.assertEqual([e.kind for e in entries], ["not-found"] * missing)
+            return scandir.call_count
+
+        # Every missing folder searches the same drive: list it once per run, not once per missing folder
+        self.assertEqual(scandir_calls(6), scandir_calls(1))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1589,8 +1589,16 @@ def _is_link_entry(entry: os.DirEntry[str]) -> bool:
         return True
 
 
-def _list_subdirs(directory: Path) -> List[Path]:
-    """Lists direct subdirectories of directory, skipping hidden/system entries and symlinks/junctions."""
+def _list_subdirs(directory: Path, listings: Optional[Dict[str, List[Path]]] = None) -> List[Path]:
+    """Lists direct subdirectories of directory, skipping hidden/system entries and symlinks/junctions.
+
+    listings keeps each listing for one find_moved() run: missing folders that share an existing ancestor
+    search the same folders, so each folder is read from disk once per run, not once per missing folder."""
+    if listings is not None:
+        key = str(directory)
+        if key not in listings:
+            listings[key] = _list_subdirs(directory)
+        return listings[key]
     out: List[Path] = []
     try:
         with os.scandir(directory) as it:
@@ -1613,11 +1621,11 @@ def _list_subdirs(directory: Path) -> List[Path]:
     return out
 
 
-def _has_all_subs(folder: Path, subs: Set[str]) -> bool:
+def _has_all_subs(folder: Path, subs: Set[str], listings: Optional[Dict[str, List[Path]]] = None) -> bool:
     """Returns True if folder contains every directory name in subs (case-insensitive)."""
     if not subs:
         return True
-    present = {_fold(sub.name) for sub in _list_subdirs(folder)}
+    present = {_fold(sub.name) for sub in _list_subdirs(folder, listings)}
     return subs.issubset(present)
 
 
@@ -1854,6 +1862,7 @@ def find_moved(
 
     batches = _all_move_batches(root)
     results: List[MovedFolder] = []
+    listings: Dict[str, List[Path]] = {}
 
     for m_key, mg in moved_groups.items():
         m_str = mg["old"]
@@ -1888,14 +1897,14 @@ def find_moved(
         if resolved_kind is None:
             target_cf = _fold(m_names[-1])
             same_all: List[Path] = []
-            a_children = _list_subdirs(a_path) if _is_dir(a_path) else []
+            a_children = _list_subdirs(a_path, listings) if _is_dir(a_path) else []
             for c1 in a_children:
-                c1_children = _list_subdirs(c1)
+                c1_children = _list_subdirs(c1, listings)
                 for c2 in c1_children:
                     if _fold(c2.name) == target_cf:
                         same_all.append(c2)
                     else:
-                        for c3 in _list_subdirs(c2):
+                        for c3 in _list_subdirs(c2, listings):
                             if _fold(c3.name) == target_cf:
                                 same_all.append(c3)
 
@@ -1907,7 +1916,7 @@ def find_moved(
                 resolved_kind = "same-name"
             else:
                 if len(direct_subs) >= 2:
-                    renamed_matches = [str(c1) for c1 in a_children if _has_all_subs(c1, direct_subs)]
+                    renamed_matches = [str(c1) for c1 in a_children if _has_all_subs(c1, direct_subs, listings)]
                     if len(renamed_matches) == 1:
                         resolved_new = renamed_matches[0]
                         resolved_kind = "renamed"
