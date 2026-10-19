@@ -93,7 +93,7 @@ smart-drive organize --apply
 
 **Dời thư mục không gãy coding agent** — `organize --apply` và `classify --apply` tự cập nhật đường dẫn agent. Sau khi tự dời thư mục tay (hoặc qua mục `[8]` trong menu `SmartDrive`), chạy:
 ```bash
-smart-drive relink --find --apply --wait
+smart-drive relink --find --apply --ask --wait
 smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an" --wait
 ```
 
@@ -142,7 +142,7 @@ Các ổ SSD di động dung lượng lớn (như Kingston XS2000 2 TB) định 
 | Nhóm tính năng | Tóm tắt một dòng | Lệnh chính | Mục chi tiết |
 |---|---|---|---|
 | **CLI Hợp Nhất & Kiểm Toán** | 22 lệnh cho khởi tạo, chỉ mục FTS5, đo cluster slack 512 KB và quản trị ổ đĩa | `smart-drive audit` | [Bảng Tra Cứu Lệnh CLI](#bảng-tra-cứu-lệnh-cli) |
-| **Relink Đường Dẫn Agent** | Giữ coding agent, session, lịch sử, git worktree và `.venv` hoạt động sau khi dời thư mục | `smart-drive relink --find --apply --wait` | [Dời Thư Mục Và Giữ Coding Agent Hoạt Động](#dời-thư-mục-và-giữ-coding-agent-hoạt-động) |
+| **Relink Đường Dẫn Agent** | Giữ coding agent, session, lịch sử, git worktree và `.venv` hoạt động sau khi dời thư mục | `smart-drive relink --find --apply --ask --wait` | [Dời Thư Mục Và Giữ Coding Agent Hoạt Động](#dời-thư-mục-và-giữ-coding-agent-hoạt-động) |
 | **Máy Chủ MCP & Setup** | 9 công cụ JSON-RPC 2.0 stdio (M8ven Hạng A 100/100) và trình cài hệ sinh thái 1 lệnh | `python -m smart_drive setup` | [Máy Chủ MCP & Trợ Lý Lập Trình AI](#máy-chủ-mcp--trợ-lý-lập-trình-ai) |
 | **Tìm Kiếm FTS5 <10ms** | Tìm kiếm SQLite FTS5 `unicode61` BM25 theo từ khóa, đuôi tệp, dung lượng nhị phân, thư mục | `smart-drive search "<truy_vấn>"` | [Cú Pháp Tìm Kiếm](#cú-pháp-tìm-kiếm) |
 | **Tài Liệu Học Tập** | Đánh chỉ mục Aurora Slides & Polaris (`slide`, `fact`, `capture`) và ghim bảo vệ nguyên khối | `smart-drive search --kind slide "<q>"` | [Tài Liệu Học Tập](#tài-liệu-học-tập-aurora-slides-và-polaris) |
@@ -168,7 +168,7 @@ Mọi lệnh chạy qua `smart-drive <lệnh>` hoặc `python -m smart_drive <l�
 | `clean` | `--dry-run` *(mặc định)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Dọn rác bắt buộc chạy thử kèm whitelist. Với `--apply`, trả mã `1` nếu xóa thất bại (mục bị lá chắn an toàn từ chối được báo riêng, không tính là lỗi). |
 | `search` | `<truy_vấn>`, `--ext <đuôi>`, `--size <cỡ>`, `--category <nhóm>`, `--kind <loại>`, `--limit <n>`, `--json` | Tìm kiếm siêu tốc (<10ms) bằng SQLite FTS5 kết hợp xếp hạng BM25. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Tự phân loại file rời, định tuyến môn FPTU bằng AcademicClassifier, giảm slack và cập nhật đường dẫn agent khi dời thư mục. |
-| `relink` | `[OLD NEW]`, `--find`, `--apply`, `--wait [PHÚT]`, `--root <đd>`, `--dry-run`, `--json` | Cập nhật đường dẫn dự án và MCP trong cấu hình agent, chuyển lịch sử Claude Code và sửa git worktree sau khi dời thư mục. |
+| `relink` | `[OLD NEW]`, `--find`, `--apply`, `--ask`, `--wait [PHÚT]`, `--root <đd>`, `--dry-run`, `--json` | Cập nhật đường dẫn dự án và MCP trong cấu hình agent, chuyển lịch sử Claude Code và sửa git worktree sau khi dời thư mục. |
 | `sentinel` | `--root <đd>`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng (hệ tệp nhận diện, trạng thái git), phục hồi khiên bảo vệ thiếu (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <đd>`, `--all`, `--auth-token <token>`, `--require-auth` | Khởi chạy máy chủ MCP stdio (`serve`) hoặc đăng ký cấu hình cho AI agent (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Tự đăng ký máy chủ MCP vào tệp cấu hình của IDE và AI Agent. |
@@ -205,10 +205,11 @@ smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an" --dry-run # thư mục tự dờ
 smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an"           # ...rồi áp dụng
 smart-drive relink --find                # liệt kê đường dẫn cũ của agent và nơi thư mục đã tới
 smart-drive relink --find --apply --wait # cập nhật các mục chắc chắn (✓) sau khi agent đang mở đóng
+smart-drive relink --find --apply --ask --wait # ...và hỏi y/N cho từng mục ? trước
 ```
 Mục `[8]` trong menu `SmartDrive` làm việc này với vài phím bấm. Đóng Claude desktop, Claude Code và Codex trước khi relink (agent đang mở có thể ghi đè cấu hình cũ khi thoát), hoặc thêm `--wait` để SmartDrive chờ chúng đóng rồi mới ghi tệp. Nếu lệnh trong `.venv` đã dời vẫn trỏ về chỗ cũ, chạy `uv sync --reinstall` trong dự án đó.
 
-`--find` chỉ đánh dấu ✓ khi nhật ký dời thư mục, hoặc những gì agent nhớ bên trong thư mục cũ, cho biết thư mục đã tới đâu. Thư mục chỉ trùng tên được đánh dấu `?` và `--apply` không bao giờ tự cập nhật nó, vì đó có thể là một dự án khác còn thư mục cũ đã bị xóa: hãy kiểm tra rồi chạy lệnh `smart-drive relink "CŨ" "MỚI"` được in ngay bên cạnh.
+`--find` chỉ đánh dấu ✓ khi nhật ký dời thư mục, hoặc những gì agent nhớ bên trong thư mục cũ, cho biết thư mục đã tới đâu. Thư mục chỉ trùng tên được đánh dấu `?` và `--apply` không bao giờ tự cập nhật nó, vì đó có thể là một dự án khác còn thư mục cũ đã bị xóa: hãy kiểm tra rồi chạy lệnh `smart-drive relink "CŨ" "MỚI"` được in ngay bên cạnh. Hoặc thêm `--ask` (mục `[8]` đã dùng sẵn): lệnh hỏi `Relink CŨ -> MỚI? [y/N]` cho từng thư mục `?` chỉ có một ứng viên, rồi cập nhật các thư mục bạn trả lời `y` cùng lúc với các mục ✓. Nhấn Enter nghĩa là không. Lệnh chỉ hỏi khi chạy trong terminal: với `--json` hoặc đầu vào qua pipe thì không hỏi gì.
 
 ---
 

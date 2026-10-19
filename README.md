@@ -93,7 +93,7 @@ smart-drive organize --apply
 
 **Moving folders without breaking coding agents** — `organize --apply` and `classify --apply` relink agents automatically. After moving folders by hand (or via menu option `[8]` in `SmartDrive`), run:
 ```bash
-smart-drive relink --find --apply --wait
+smart-drive relink --find --apply --ask --wait
 smart-drive relink "E:\Old\proj" "E:\New\proj" --wait
 ```
 
@@ -142,7 +142,7 @@ High-capacity external SSDs (such as the Kingston XS2000 2 TB) format exFAT with
 | Capability | One-Line Summary | Main Command | Section |
 |---|---|---|---|
 | **Unified CLI & Storage Audit** | 22 commands for setup, FTS5 indexing, 512 KB slack math, and drive governance | `smart-drive audit` | [CLI Command Reference](#cli-command-reference) |
-| **Agent Path Relinking** | Keeps coding agents, sessions, history, worktrees, and `.venv` working after moves | `smart-drive relink --find --apply --wait` | [Folder Moves and Coding Agents](#folder-moves-and-coding-agents) |
+| **Agent Path Relinking** | Keeps coding agents, sessions, history, worktrees, and `.venv` working after moves | `smart-drive relink --find --apply --ask --wait` | [Folder Moves and Coding Agents](#folder-moves-and-coding-agents) |
 | **MCP Server & Setup** | 9 JSON-RPC 2.0 stdio tools (M8ven Grade A 100/100) and 1-command ecosystem setup | `python -m smart_drive setup` | [MCP Server & AI Coding Agents](#mcp-server--ai-coding-agents) |
 | **Sub-10ms FTS5 Search** | SQLite FTS5 `unicode61` BM25 search with extension, binary size, category, dir filters | `smart-drive search "<query>"` | [Search Syntax](#search-syntax) |
 | **Learning Materials** | Indexes Aurora Slides & Polaris (`slide`, `fact`, `capture`) and pins learning units | `smart-drive search --kind slide "<q>"` | [Learning Materials](#learning-materials-aurora-slides-and-polaris) |
@@ -168,7 +168,7 @@ All commands run via `smart-drive <command>` or `python -m smart_drive <command>
 | `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run and inviolable whitelist. With `--apply`, exits `1` if a deletion failed (refused safety-guard items are reported, not failures). |
 | `search` | `<query>`, `--ext <ext>`, `--size <spec>`, `--category <cat>`, `--kind <k>`, `--limit <n>`, `--json` | Sub-10ms SQLite FTS5 multi-criteria query parser with BM25 ranking. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Auto-zoning, loose-file relocation, AcademicClassifier routing, and slack rebalancing; keeps coding agents pointed at moved folders. |
-| `relink` | `[OLD NEW]`, `--find`, `--apply`, `--wait [MIN]`, `--root <path>`, `--dry-run`, `--json` | Rewrites project/MCP paths remembered by coding agents, moves Claude Code history, and repairs git worktrees after folders move. |
+| `relink` | `[OLD NEW]`, `--find`, `--apply`, `--ask`, `--wait [MIN]`, `--root <path>`, `--dry-run`, `--json` | Rewrites project/MCP paths remembered by coding agents, moves Claude Code history, and repairs git worktrees after folders move. |
 | `sentinel` | `--root <path>`, `--auto-heal`, `--no-heal`, `--json` | 1-touch health audit (detected filesystem, git repo status) and shield self-healing (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <path>`, `--all`, `--auth-token <token>`, `--require-auth` | Starts the JSON-RPC 2.0 stdio MCP server (`serve`) or registers configs for AI agents (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Auto-registers SmartDrive MCP Server in AI coding agent config files. |
@@ -205,10 +205,11 @@ smart-drive relink "E:\Old\proj" "E:\New\proj" --dry-run # a folder moved by han
 smart-drive relink "E:\Old\proj" "E:\New\proj"           # ...then apply
 smart-drive relink --find                                # list stale agent paths and where folders went
 smart-drive relink --find --apply --wait                 # relink the sure (✓) matches after open agents close
+smart-drive relink --find --apply --ask --wait           # ...and ask y/N for each ? match first
 ```
 Menu option `[8]` in `SmartDrive` does the same in a few key presses. Close Claude desktop, Claude Code, and Codex before relinking (an open agent can write old settings back), or pass `--wait` so SmartDrive waits for them to close, then reopen them. If a command in a moved `.venv` still points at the old place, run `uv sync --reinstall` in that project.
 
-`--find` marks a folder ✓ only when the move journal, or what the agents remember inside the old folder, shows where it went. A folder found by its name alone is marked `?` and never relinked by `--apply`, since it may be another project and the old one deleted: check it, then run the `smart-drive relink "OLD" "NEW"` command printed next to it.
+`--find` marks a folder ✓ only when the move journal, or what the agents remember inside the old folder, shows where it went. A folder found by its name alone is marked `?` and never relinked by `--apply` on its own, since it may be another project and the old one deleted: check it, then run the `smart-drive relink "OLD" "NEW"` command printed next to it. Or add `--ask` (menu option `[8]` does): it asks `Relink OLD -> NEW? [y/N]` for each `?` folder with one candidate, and relinks the ones you answer `y` together with the ✓ ones. Enter means no. It asks only in a terminal: with `--json` or piped input it asks nothing.
 
 ---
 
