@@ -5,95 +5,126 @@
 *Saturn's rings as orderly storage lanes: every file in its lane, across the whole drive.*
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
-[![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](#)
+[![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](pyproject.toml)
 [![Privacy: 100% Local](https://img.shields.io/badge/Privacy-100%25%20Local-success?style=flat-square&logo=shield)](PRIVACY.md)
-[![Architecture: Workstation Hybrid](https://img.shields.io/badge/architecture-Workstation%20Hybrid%20Native-blueviolet.svg)](#)
-[![Filesystem: exFAT 512KB Guard](https://img.shields.io/badge/filesystem-exFAT%20512KB%20Guard-orange.svg)](#)
-[![Filesystem: NTFS 4KB Native](https://img.shields.io/badge/filesystem-NTFS%204KB%20Native-cyan.svg)](#)
-[![MCP Protocol: JSON-RPC 2.0](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
-[![MCP Security Audit: Grade A (100/100)](https://img.shields.io/badge/MCP%20Audit-Grade%20A%20(100%2F100)-brightgreen.svg)](#)
-[![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Tests: 1019/1019 Passed (100%)](https://img.shields.io/badge/tests-1019%2F1019%20passed%20(100%25)-brightgreen.svg)](#)
-[![20 Portable Launchers](https://img.shields.io/badge/launchers-20%20portable%20scripts-blue.svg)](#)
+[![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![Release: v1.3.1](https://img.shields.io/badge/release-v1.3.1-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.3.1)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **High-Performance Autonomous Drive Operating Suite, Workstation Hybrid Architecture, Snapshot Integrity Engine & Sub-10ms SQLite FTS5 Instant Search for External SSDs (exFAT), Internal Secondary Drives (NTFS), and AI Coding Agents.**
->
-> 🇻🇳 **Tài liệu hướng dẫn Tiếng Việt đầy đủ**: Dành cho người dùng, sinh viên đại học (FPTU) và lập trình viên Việt Nam: [README_VN.md](README_VN.md)
-> 
-> 🚀 **Internal Secondary Drive Architect & C-Drive Cache Offloader**: Chi tiết kiến trúc quy hoạch ổ SSD phụ trong máy trạm (`D:`, `E:`), offload thư mục cache AI bằng NTFS Junctions (`mklink /J`) và giám sát TRIM: [README_INTERNAL.md](README_INTERNAL.md)
+SmartDrive-OS is a zero-dependency drive operating suite and sub-10ms SQLite FTS5 search engine for external portable SSDs (exFAT 512 KB clusters) and internal secondary workstation drives (NTFS 4 KB clusters). It is built for developers, university students, and AI coding agents (Claude Code, Claude Desktop, Antigravity, Cursor, Codex, Windsurf) to organize drives without breaking agent paths, govern `.gitignore` rules, offload `C:` caches, and verify file integrity with SHA-256 snapshots. Everything runs 100% locally on the Python 3.9+ standard library (`dependencies = []`) with zero telemetry.
+
+> 🇻🇳 **Tiếng Việt**: [README_VN.md](README_VN.md) · 🚀 **Internal NTFS Drive & C-Drive Cache Offload Guide**: [README_INTERNAL.md](README_INTERNAL.md)
 
 ---
 
 ## Table of Contents
 
-1. [The Problem: Dual Filesystem Geometry Trap](#the-problem-dual-filesystem-geometry-trap)
-   - [The exFAT 512KB Cluster Slack Trap](#the-exfat-512kb-cluster-slack-trap)
-   - [The Internal Secondary Drive (NTFS 4KB) Challenge](#the-internal-secondary-drive-ntfs-4kb-challenge)
-   - [Comparison: External exFAT vs. Internal NTFS](#comparison-external-exfat-vs-internal-ntfs)
-2. [Workstation Hybrid Architecture](#workstation-hybrid-architecture)
-3. [Core Capabilities & Innovations](#core-capabilities--innovations)
-   - [1. Workstation Hybrid Architecture & Dynamic Geometry Adaptation](#1-workstation-hybrid-architecture--dynamic-geometry-adaptation)
-   - [2. AcademicClassifier & Vietnamese University Localization](#2-academicclassifier--vietnamese-university-localization)
-   - [3. Personal Reading, OEM Drivers & Installer Auto-Routing](#3-personal-reading-oem-drivers--installer-auto-routing)
-   - [4. AutoZoner Inviolable Self-Defense & Workstation Protection](#4-autozoner-inviolable-self-defense--workstation-protection)
-   - [5. Environment & PATH Verification CLI (`self-path-check`)](#5-environment--path-verification-cli-self-path-check)
-   - [6. Model Context Protocol (MCP) Server Grade A (100/100) & Token Efficiency](#6-model-context-protocol-mcp-server-grade-a-100100--token-efficiency)
-   - [7. Suite of 20 Portable Cross-Platform Launchers](#7-suite-of-20-portable-cross-platform-launchers)
-   - [8. C-Drive Cache Offloader & NTFS Directory Junctions (`smart-drive offload`)](#8-c-drive-cache-offloader--ntfs-directory-junctions-smart-drive-offload)
-   - [9. SHA-256 Snapshot Integrity & Incremental Backup Engine](#9-sha-256-snapshot-integrity--incremental-backup-engine)
-   - [10. 100% Zero Pip Dependencies (`dependencies = []`)](#10-100-zero-pip-dependencies-dependencies--)
-   - [11. Duplicate Clones & Portable-SSD Mirrors (`smart-drive repos`)](#11-duplicate-clones--portable-ssd-mirrors-smart-drive-repos)
-   - [12. Gitignore Governance & Personal Data Protection (`smart-drive gitignore`)](#12-gitignore-governance--personal-data-protection-smart-drive-gitignore)
-   - [13. Folder Moves That Keep Coding Agents Working (`smart-drive relink`)](#13-folder-moves-that-keep-coding-agents-working-smart-drive-relink)
-4. [3-Step Quickstart](#3-step-quickstart)
-5. [The 5 Preset Profiles](#the-5-preset-profiles)
-6. [Cross-Platform Portable Launchers Guide](#cross-platform-portable-launchers-guide)
-7. [Comprehensive CLI Command Reference](#comprehensive-cli-command-reference)
-8. [Advanced Search Query Syntax](#advanced-search-query-syntax)
-9. [Works with Aurora Slides and Polaris](#works-with-aurora-slides-and-polaris)
-10. [Safe Junk Cleaner & 3-Tier Protection Hierarchy](#safe-junk-cleaner--3-tier-protection-hierarchy)
-11. [Gitignore Governance](#gitignore-governance)
-12. [Model Context Protocol (MCP) Server & AI Coding Agent Integration](#model-context-protocol-mcp-server--ai-coding-agent-integration)
-13. [Testing & Verification Record (992 Tests, 100% Pass Rate)](#testing--verification-record-992-tests-100-pass-rate)
-14. [Privacy, Security & Data Isolation](#privacy-security--data-isolation)
-15. [Contributing & License](#contributing--license)
+- [Quickstart](#quickstart)
+- [Everyday Use](#everyday-use)
+- [Why exFAT Needs This](#why-exfat-needs-this)
+- [Features at a Glance](#features-at-a-glance)
+  - [CLI Command Reference](#cli-command-reference)
+  - [Folder Moves and Coding Agents](#folder-moves-and-coding-agents)
+  - [MCP Server & AI Coding Agents](#mcp-server--ai-coding-agents)
+  - [Search Syntax](#search-syntax)
+  - [Learning Materials (Aurora Slides and Polaris)](#learning-materials-aurora-slides-and-polaris)
+  - [Gitignore Governance](#gitignore-governance)
+  - [Safe Junk Cleaner](#safe-junk-cleaner)
+  - [Snapshots and Backup](#snapshots-and-backup)
+  - [Workstation Hybrid and C-Drive Offload](#workstation-hybrid-and-c-drive-offload)
+  - [Launchers](#launchers)
+  - [Profiles](#profiles)
+- [Testing](#testing)
+- [Privacy, Security & Data Isolation](#privacy-security--data-isolation)
+- [Contributing & License](#contributing--license)
 
 ---
 
-## The Problem: Dual Filesystem Geometry Trap
+## Quickstart
 
-Modern developers and power users work across two fundamentally different physical drive environments:
+### 1. Install (or run without installing)
+```bash
+pip install -e .                    # editable install (`smart-drive` CLI)
+python -m smart_drive <subcommand>  # or run directly from the checkout
+smart-drive self-path-check         # check PATH and print 1-click shell setup
+```
 
-### The exFAT 512KB Cluster Slack Trap
+### 2. Initialise the drive
+Run `Setup_SSD.bat` / `Setup_SSD.ps1` (Windows), `Setup_SSD.command` (macOS), `./Setup_SSD.sh` (Linux), or `smart-drive init --profile <name>` (see [Profiles](#profiles)):
+- `workstation-hybrid`: secondary drive (`D:`, `E:`) with games, Windows apps, and coursework.
+- `internal-developer-vault`: internal NVMe/SATA SSD receiving offloaded `C:` dev and AI caches.
+- `ai-developer`: portable external SSD for LLM weights, checkpoints, datasets, and AI agents.
+- `data-science`: data engineering pipelines, raw data, and EDA notebooks.
+- `general-workspace` *(default)*: universal active/archive code, learning notes, and utilities.
+```bash
+python -m smart_drive init --profile workstation-hybrid
+python -m smart_drive init --profile ai-developer
+```
 
-High-capacity external SSDs (such as the **Kingston XS2000 2TB**) formatted with exFAT default to an allocation unit size (cluster size) of **512 KB (524,288 bytes)**. While ideal for continuous video recording, this geometry is catastrophic for modern development repositories containing thousands of source code and config files:
+### 3. Set up the MCP ecosystem (one command)
+Fetch Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, and Mira into `~/.smart-drive/mcp` (off the exFAT drive), register them with SmartDrive in every installed coding agent (Claude Code, Antigravity, Cursor, Codex), and health-check them. No prompts; safe to repeat:
+```bash
+python3 -m smart_drive setup  # macOS / Linux (Windows: python -m smart_drive setup)
+```
+Needs Node.js >= 22.4 and git. `--dry-run` previews; `--check --json` reports state (exit code `3` = setup needed); `--no-clone` stays offline; `--agents claude,cursor` limits targets. Registered servers are reused, never cloned twice (`mcp-agy` is separate: own venv, Python >= 3.10, API key).
 
-$$\text{Cluster Allocation} = \left\lceil \frac{\text{File Size}}{524,288} \right\rceil \times 524,288 \text{ bytes}$$
+### 4. Register SmartDrive MCP standalone
+```bash
+smart-drive mcp register --all  # Antigravity, Claude, Cursor, Codex, Windsurf, .mcp.json
+```
 
-$$\text{Wasted Slack} = \text{Cluster Allocation} - \text{Nominal File Size}$$
+---
 
-| File Nominal Size | Physical Space on Disk | Cluster Slack Wasted | Slack Ratio |
-|---|---|---|---|
-| **0 bytes** | 0 bytes (directory entry only) | 0 bytes | 0.0% |
-| **1 byte** | **524,288 bytes** (512 KB) | **524,287 bytes** | **99.9998%** |
-| **10 KB** (code / config) | **524,288 bytes** (512 KB) | **514,048 bytes** | **98.05%** |
-| **100 KB** (JSON / docs) | **524,288 bytes** (512 KB) | **421,888 bytes** | **80.47%** |
-| **524,289 bytes** (512 KB + 1B) | **1,048,576 bytes** (1,024 KB) | **524,287 bytes** | **50.00%** |
+## Everyday Use
 
-- **Real-World Impact**: A project containing **10,000 source files** totalling **15 MB** actually consumes over **5.12 GB** on your external exFAT SSD — wasting **>99% of disk capacity** solely on cluster slack!
-- Furthermore, operating system indexing daemons (macOS Spotlight `mds`, Windows Search) continuously write hidden metadata (`.DS_Store`, `Thumbs.db`, `.fseventsd`), generating excessive I/O wear and battery drain.
+**Search (<10ms)** — Query the SQLite FTS5 index with BM25 ranking instead of recursive `find`/`grep`:
+```bash
+smart-drive search "llama cat:ai_models"
+smart-drive search "exam ext:pdf size:>1MB dir:DBI202"
+smart-drive search --kind slide "vòng lặp"
+```
 
-### The Internal Secondary Drive (NTFS 4KB) Challenge
+**Organize** — Auto-zone root folders into the 6 taxonomies, route coursework, and rebalance exFAT slack:
+```bash
+smart-drive organize --dry-run
+smart-drive organize --apply
+```
 
-On developer workstations and gaming rigs, a secondary internal NVMe/SATA SSD (`D:`, `E:`) formatted with **NTFS 4KB** faces the opposite challenge:
-- The system drive (`C:`) is rapidly choked by massive AI models, HuggingFace weights, Ollama blobs, Docker WSL2 images, pip, uv, npm, and Gradle caches (often reaching 50GB – 200GB+).
-- Moving these caches manually breaks developer tools and requires administrative elevation for standard symlinks (`mklink /D`).
-- The internal drive already hosts critical system folders (`WindowsApps`, `Program Files`, `$Recycle.Bin`), game installations (`SteamLibrary`, `Riot Games`, `LDPlayer`), active enterprise databases (`Microsoft SQL Server 2022`), and university coursework. Blind drive organization tools risk breaking working installations or corrupting active database data files.
+**Moving folders without breaking coding agents** — `organize --apply` and `classify --apply` relink agents automatically. After moving folders by hand (or via menu option `[8]` in `SmartDrive`), run:
+```bash
+smart-drive relink --find --apply --wait
+smart-drive relink "E:\Old\proj" "E:\New\proj" --wait
+```
 
-### Comparison: External exFAT vs. Internal NTFS
+**Clean** — Preview and purge OS metadata junk, build caches, or logs (mandatory dry-run default):
+```bash
+smart-drive clean
+smart-drive clean --apply --tier 1
+```
+
+**Health (Sentinel)** — Verify mount, filesystem geometry, shields (auto-healed), index, and Git status:
+```bash
+smart-drive sentinel
+smart-drive health
+```
+
+**Snapshot and backup** — Create streaming SHA-256 manifests to detect bit rot and run incremental backups:
+```bash
+smart-drive snapshot create pre_release
+smart-drive snapshot verify pre_release
+smart-drive backup --target E:\Backups\SSD_Mirror --dry-run
+```
+
+---
+
+## Why exFAT Needs This
+
+High-capacity external SSDs (such as the Kingston XS2000 2 TB) format exFAT with **512 KB (524,288-byte) clusters**:
+- Physical allocation is $\lceil \text{File Size} / 524,288 \rceil \times 524,288\text{ B}$ (0 B $\rightarrow$ 0 B; 1 B $\rightarrow$ 512 KB / 99.9998% slack; 10 KB $\rightarrow$ 512 KB / 98.05% slack; 100 KB $\rightarrow$ 512 KB / 80.47% slack; 512 KB + 1 B $\rightarrow$ 1,024 KB / 50% slack).
+- A repo with **10,000 source files** (15 MB nominal) consumes **>5.12 GB** on exFAT (>99% cluster slack waste).
+- OS indexers (macOS Spotlight `mds`, Windows Search) write hidden metadata (`.DS_Store`, `Thumbs.db`, `.fseventsd`), causing I/O wear and battery drain.
+- Internal secondary SSDs (`D:`, `E:` on NTFS 4 KB) face `C:` exhaustion from 50–200 GB AI/dev caches while hosting Windows apps, games, and active SQL Server databases that must never be moved or deleted.
 
 | Dimension | External Portable SSD (exFAT) | Internal Secondary SSD (NTFS) |
 |---|---|---|
@@ -106,333 +137,126 @@ On developer workstations and gaming rigs, a secondary internal NVMe/SATA SSD (`
 
 ---
 
-## Workstation Hybrid Architecture
+## Features at a Glance
 
-SmartDrive-OS bridges this divide with a unified, zero-external-dependency workstation architecture:
-
-```
-+---------------------------------------------------------------------------------------------------------+
-|                                      User & AI Agent Interfaces                                         |
-|   +-----------------------+   +-----------------------+   +---------------------+                       |
-|   | 20 Portable Launchers |   |   Python CLI & TUI    |   |  AI Coding Agents   |                       |
-|   | (.bat/.ps1/.cmd/.sh)  |   | (smart-drive CLI/TUI) |   | (Antigravity/Claude)|                       |
-|   +-----------+-----------+   +-----------+-----------+   +----------+----------+                       |
-+---------------|---------------------------|--------------------------|----------------------------------+
-                |                           |                          |
-                +---------------------------+                          | JSON-RPC 2.0 stdio
-                                            |                          v
-                                            v             +-----------------------------------------------+
-+---------------------------------------------------------|        MCP Server Grade A (100/100)           |
-|                                                         |  - 100% AST-Resolvable Isolated Handlers      |
-|                     SmartDrive-OS Core Subsystems       |  - Token-Efficient Paged Compressed JSON      |
-|                                                         |  - Constant-Time HMAC Handshake Auth          |
-|  +--------------------------------+  +------------------+  - stdio Transport, No Network Listener       |
-|  | Drive Initializer              |  | Storage Auditor  +-----------------------------------------------+
-|  | - 5 Preset Profiles            |  | - Adaptive Geometry (512KB exFAT vs 4KB NTFS)                    |
-|  | - Anti-Indexing Shields        |  | - Precise Cluster Slack & Capacity Calculation                   |
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  | AcademicClassifier & Localizer |  | AutoZoner & Inviolable Self-Defense                              |
-|  | - FPTU Course Code Extraction  |  | - Repository & Running Code Anchors (_SMART_DRIVE_REPO_DIR)       |
-|  | - Vietnamese Mojibake Repair   |  | - Windows Apps Protection (WindowsApps, Program Files)           |
-|  | - Semester Auto-Zoning (Ky_1-7)|  | - Games Protection (SteamLibrary, Riot Games, LDPlayer)          |
-|  | - Personal Books & Drivers     |  | - Active DB Service Shield (Microsoft SQL Server 2022)           |
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  | Purge / Safe Cleaner Engine    |  | C-Drive Cache Offloader & NTFS Junctions                         |
-|  | - 3-Tier Granular Rule Match   |  | - 7-Phase Transactional Migration with Rollback Safety           |
-|  | - Mandatory Dry-Run Safeguard  |  | - Unprivileged Non-Elevated mklink /J Reparse Points             |
-|  | - Whitelist Protected System   |  | - Target Caches: HuggingFace, Ollama, PyTorch, Docker, Pip, Npm  |
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  | SQLite FTS5 Search Engine      |  | Snapshot & Incremental Backup Engine                             |
-|  | - unicode61 BM25 Tokenizer     |  | - Streaming 64KB-Chunk SHA-256 Hashing                           |
-|  | - Sub-10ms Multi-Criteria Query|  | - Point-in-Time Manifests & Bit-Rot Verification                 |
-|  +--------------------------------+  +------------------------------------------------------------------+
-+---------------------------------------------------------------------------------------------------------+
-                                            |
-                   +------------------------+------------------------+
-                   |                                                 |
-                   v                                                 v
-+-------------------------------------------------+ +-----------------------------------------------------+
-| Target 1: External Portable SSD (exFAT 512KB)   | | Target 2: Internal Secondary SSD (NTFS 4KB)         |
-|  01_AI_Models/        02_Learning_Knowledge/    | |  01_AI_Models/        02_Learning_Knowledge/ (FPTU) |
-|  03_Development_Proj/ 04_System_Workspaces/     | |  03_Development_Proj/ 04_System_Workspaces/         |
-|  05_Dev_Toolbox/      06_Archives_Storage/      | |  05_Dev_Toolbox/      06_Archives_Storage/          |
-|  .metadata_never_index .fseventsd/no_log        | |  [PROTECTED APPS]: WindowsApps, Program Files,      |
-|  .smart_drive/index.db (FTS5 search index)      | |  SteamLibrary, Riot Games, LDPlayer, SQL2022, fo4   |
-|  .smart_drive/snapshots/<manifest>.json         | |  [PROTECTED DB]:   DBI202_VuPT\MSSQL16.MSSQLSERVER  |
-+-------------------------------------------------+ +-----------------------------------------------------+
-```
+| Capability | One-Line Summary | Main Command | Section |
+|---|---|---|---|
+| **Unified CLI & Storage Audit** | 22 commands for setup, FTS5 indexing, 512 KB slack math, and drive governance | `smart-drive audit` | [CLI Command Reference](#cli-command-reference) |
+| **Agent Path Relinking** | Keeps coding agents, sessions, history, worktrees, and `.venv` working after moves | `smart-drive relink --find --apply --wait` | [Folder Moves and Coding Agents](#folder-moves-and-coding-agents) |
+| **MCP Server & Setup** | 9 JSON-RPC 2.0 stdio tools (M8ven Grade A 100/100) and 1-command ecosystem setup | `python -m smart_drive setup` | [MCP Server & AI Coding Agents](#mcp-server--ai-coding-agents) |
+| **Sub-10ms FTS5 Search** | SQLite FTS5 `unicode61` BM25 search with extension, binary size, category, dir filters | `smart-drive search "<query>"` | [Search Syntax](#search-syntax) |
+| **Learning Materials** | Indexes Aurora Slides & Polaris (`slide`, `fact`, `capture`) and pins learning units | `smart-drive search --kind slide "<q>"` | [Learning Materials](#learning-materials-aurora-slides-and-polaris) |
+| **Gitignore Governance** | Stack-aware `.gitignore` blocks, Constellation `personal-data` guard, secret/leak audits | `smart-drive gitignore audit` | [Gitignore Governance](#gitignore-governance) |
+| **3-Tier Safe Cleaner** | Dry-run-first junk cleaner with an inviolable whitelist for manifests, apps, and DBs | `smart-drive clean` | [Safe Junk Cleaner](#safe-junk-cleaner) |
+| **Snapshots, Backup & Repos** | Streaming SHA-256 bit-rot verification, incremental backup, duplicate & clone audits | `smart-drive snapshot create` | [Snapshots and Backup](#snapshots-and-backup) |
+| **Workstation Hybrid & Offload** | Adaptive exFAT/NTFS geometry, `AcademicClassifier` (FPTU), self-defense, `C:` offload | `smart-drive offload --scan` | [Workstation Hybrid and C-Drive Offload](#workstation-hybrid-and-c-drive-offload) |
+| **20 Portable Launchers** | Zero-Git 1-click `.bat`, `.ps1`, `.command`, `.sh` scripts plus `self-path-check` | `SmartDrive.bat` / `./SmartDrive.sh` | [Launchers](#launchers) |
+| **5 Preset Profiles** | Layouts for hybrid workstations, C-drive vaults, AI, data science, and general use | `smart-drive init --profile <name>` | [Profiles](#profiles) |
 
 ---
 
-## Core Capabilities & Innovations
+## CLI Command Reference
 
-### 1. Workstation Hybrid Architecture & Dynamic Geometry Adaptation
-SmartDrive-OS automatically identifies the underlying drive hardware and filesystem geometry through `FilesystemAdapter` and `DriveDetectorBackend`:
-- **exFAT Volumes (512KB Clusters)**: Activates the **512KB Cluster Slack Guard**, enforcing anti-symlink invariants, Spotlight/FSEvents anti-indexing shields (`.metadata_never_index`, `.fseventsd/no_log`), and loose file packaging.
-- **NTFS Volumes (4KB Clusters)**: Dynamically adjusts slack math to standard 4,096-byte clusters, enables NTFS Directory Junctions (`mklink /J`), verifies hardware TRIM status (`fsutil behavior query DisableDeleteNotify`), and activates C-drive cache offloading.
-
-### 2. AcademicClassifier & Vietnamese University Localization
-Designed specifically for university students, educators, and software engineering learners (with specialized knowledge of Vietnamese universities such as **FPT University / FPTU**):
-- **Course Code Regex Extraction**: Automatically parses course codes across filename boundaries (`DBI202`, `WED201c`, `SWE202c`, `PRN211`, `PRJ301`, `OSG`, etc.).
-- **Academic Keyword Detection**: Identifies practical exam practice (`PE`, `de thi`, `on luyen`, `pe_dbi202`), lab assignments (`lab1_sp26`, `testjava`), and academic terms (`sp26`, `fa25`, `su25`).
-- **Semester Auto-Zoning**: Automatically groups coursework into standardized semester folders `02_Learning_Knowledge/FPTU/Ky_1/` through `Ky_7/`.
-- **Vietnamese Mojibake & Font Corruption Repair**: Automatically repairs corrupted Unicode / question-mark folder names caused by non-UTF-8 zip extractions or legacy archive tools:
-  - `h?c k? 3 fptu` $\rightarrow$ `Hoc_Ky_3_fptu`
-  - `n luy?n pe dbi202` $\rightarrow$ `On_Luyen_pe_dbi202`
-  - `k 1 fptu` $\rightarrow$ `Ky_1_fptu`
-  - `dich truyen` $\rightarrow$ `Dich_Truyen`
-
-### 3. Personal Reading, OEM Drivers & Installer Auto-Routing
-SmartDrive-OS categorizes non-code assets into specialized workstations zones:
-- `dich truyen` (manga/light novel/translated books) $\rightarrow$ `02_Learning_Knowledge/Personal_Books/dich truyen`
-- `lenovo` (OEM recovery and hardware drivers) $\rightarrow$ `05_Dev_Toolbox/OEM_Drivers/LENOVO`
-- `sql2022` (standalone database setup kits) $\rightarrow$ `05_Dev_Toolbox/Installers/SQL2022`
-
-### 4. AutoZoner Inviolable Self-Defense & Workstation Protection
-To prevent destructive accidents when running SmartDrive-OS directly on a root workstation volume, the engine incorporates **multi-layered inviolable defense**:
-- **Code Repository Self-Protection**: AutoZoner strictly resolves its executing file (`_CURRENT_FILE`), core module (`_SMART_DRIVE_CORE_DIR`), package root (`_SMART_DRIVE_PKG_DIR`), repository root (`_SMART_DRIVE_REPO_DIR`), and all parent ancestors. `classify_item()` guarantees that `smart-drive-os` is **never relocated, deleted, or altered**.
-- **Windows System Directory Defense**: Whitelists and excludes Windows system folders (`WindowsApps`, `Program Files`, `Program Files (x86)`, `$Recycle.Bin`, `System Volume Information`, `WpSystem`, `DeliveryOptimization`, `WUDownloadCache`).
-- **Game & Platform Launcher Defense**: Whitelists and excludes game directories (`SteamLibrary`, `Riot Games`, `LDPlayer`, `fo4`, `32837`, `Downloads`).
-- **Active Database Service Defense**: Specifically protects active Microsoft SQL Server 2022 instances, databases, and LDF/MDF data directories (`DBI202_VuPT\MSSQL16.MSSQLSERVER`, `MSSQLSERVER`, `MSSQL`).
-- **Quiet Scanning**: Excluded system directories are pre-filtered during directory enumeration, generating zero unnecessary syscalls and suppressing permission warnings at `DEBUG` level.
-
-### 5. Environment & PATH Verification CLI (`self-path-check`)
-Ensures developer convenience across Windows, macOS, and Linux:
-```bash
-smart-drive self-path-check
-```
-- Inspects system `PATH` and verifies whether the `smart-drive` CLI script is discoverable.
-- **Finds the command where pip really put it**: it looks in the running Python's own environment first (a venv, a pyenv version, ...) and then in the per-user location, and only suggests adding a directory that actually holds the command. If the package is not installed for that Python it says so and prints the `pip install` command instead. pyenv users are pointed to `pyenv rehash`.
-- **1-Click Windows PowerShell Setup**: If not on PATH, provides an exact copy-paste PowerShell command:
-  ```powershell
-  [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:APPDATA\Python\Python311\Scripts", "User")
-  ```
-- **POSIX Shell Setup**: Provides the exact export line for `~/.bashrc` or `~/.zshrc`.
-- **Zero-Config Fallback**: Once the package is installed, SmartDrive-OS can be run from anywhere without any PATH setup using (from an uninstalled source checkout it only works inside the project folder):
-  ```bash
-  python -m smart_drive <subcommand>
-  ```
-
-### 6. Model Context Protocol (MCP) Server Grade A (100/100) & Token Efficiency
-SmartDrive-OS provides an enterprise-hardened MCP stdio server conforming to JSON-RPC 2.0:
-- **Grade A (100/100) Security Audit Compliance**: Passed 100% of MCP registry security checks with zero warnings.
-- **100% Static AST-Resolvable Handler Isolation**: Handlers are explicitly mapped and resolved through static dispatch, enabling security analyzers to inspect every tool handler.
-- **Token-Efficient Compressed JSON Output**: Formatted with pagination (`limit`, `offset`, `total_groups`, `returned_group_count`, `has_more`, `next_offset`). Duplicate file lists are capped at a maximum of 10 preview paths per group (`truncated_files_count`) to protect AI context windows against token exhaustion.
-- **8 Specialized Tools**: `ssd_search`, `ssd_audit`, `ssd_clean`, `ssd_find_duplicates`, `ssd_update_index`, `ssd_check_safety`, `ssd_status`, `ssd_auto_organize`.
-- **1-Click Multi-Agent Registration**:
-  ```bash
-  smart-drive mcp register --all
-  # Or:
-  smart-drive mcp-config --all
-  ```
-  Automatically detects and registers configurations for **Google Antigravity 2.0**, **Claude Code & Claude Desktop**, **Cursor IDE / OpenAI Codex**, **Windsurf**, and local workspace `.mcp.json`.
-- **Constant-Time HMAC Authentication Handshake**: Token verification powered by standard library `hmac.compare_digest` with optional `--auth-token` and `--require-auth` CLI parameters.
-- **Strict Loopback Network Isolation**: Embedded web components strictly validate socket addresses against `ALLOWED_LOOPBACK_HOSTS = ("127.0.0.1", "localhost")`, instantly rejecting external LAN bindings.
-
-### 7. Suite of 20 Portable Cross-Platform Launchers
-Zero Git requirement, zero account dependencies. 5 essential workflows provided across 4 script formats:
-
-| Script Workflow | Windows CMD (`.bat`) | Windows PowerShell (`.ps1`) | macOS App (`.command`) | Linux/POSIX (`.sh`) |
-|---|---|---|---|---|
-| **Drive Setup** | `Setup_SSD.bat` | `Setup_SSD.ps1` | `Setup_SSD.command` | `Setup_SSD.sh` |
-| **Quick Search** | `Quick_Search.bat` | `Quick_Search.ps1` | `Quick_Search.command` | `Quick_Search.sh` |
-| **Quick Clean** | `Quick_Clean.bat` | `Quick_Clean.ps1` | `Quick_Clean.command` | `Quick_Clean.sh` |
-| **Quick Audit** | `Quick_Audit.bat` | `Quick_Audit.ps1` | `Quick_Audit.command` | `Quick_Audit.sh` |
-| **Interactive Menu** | `SmartDrive.bat` | `SmartDrive.ps1` | `SmartDrive.command` | `SmartDrive.sh` |
-
-All 20 launchers reside both in the repository root and in `launchers/` for instant execution.
-
-### 8. C-Drive Cache Offloader & NTFS Directory Junctions (`smart-drive offload`)
-- **7-Phase Transactional Migration**: Safe migration of heavy developer and AI caches (HuggingFace, Ollama, PyTorch, Docker WSL2, pip, uv, npm, Conda, Gradle, Cargo) from `C:` to secondary drive (`D:\04_System_Offload_Caches\<name>`).
-- **Unprivileged NTFS Directory Junctions (`mklink /J`)**: Creates transparent Windows hardware reparse points without requiring Administrator elevation or Developer Mode.
-- **Instant Rollback Safety**: Automatic transactional rollback if any step fails during offload or revert operations.
-
-### 9. SHA-256 Snapshot Integrity & Incremental Backup Engine
-- **Streaming 64KB-Chunk SHA-256 Hashing**: Constant-memory $O(1)$ SHA-256 calculation detecting silent bit rot and corruption.
-- **Point-in-Time Manifests**: Snapshot critical directories into `.smart_drive/snapshots/<name>.json`.
-- **Safe Incremental Backup**: Transfers only modified or new files to backup targets, automatically excluding OS junk.
-- **Honest Coverage**: Snapshots and backups cover `02_Learning_Knowledge`, `03_Development_Projects` and `05_Dev_Toolbox` by default (choose others with `--partitions`) and skip hidden folders such as `.git`, `.github` and `.vscode` (add them with `--include-hidden`). Every run lists what it did not cover, so a gap is never silent.
-
-### 10. 100% Zero Pip Dependencies (`dependencies = []`)
-- Strict architectural rule: `dependencies = []` in `pyproject.toml`.
-- Fully written using the Python Standard Library (`sqlite3`, `hashlib`, `hmac`, `json`, `urllib`, `shutil`, `pathlib`, `ctypes`, `subprocess`, `argparse`).
-- Guaranteed to run out of the box on any machine with Python 3.9+ installed.
-
-### 11. Duplicate Clones & Portable-SSD Mirrors (`smart-drive repos`)
-A project is meant to live once on the portable SSD and once on each machine it is plugged into. `smart-drive repos` scans the SSD, your home folder and every other non-system drive (or the folders you pass) and sorts every clone by project and place:
-- **Mirrors** (the same project on the SSD and on this machine) are expected. The report only says whether they are in sync and what each side needs: `commit`, `push`, `pull`, or `fetch to compare`.
-- **Duplicates** (the same project twice on the SSD, or twice on this machine's drives) get a plan: which clone to keep (the newest commit), which copies are redundant (same branch), and which should become a `git worktree` of the kept clone (another branch), with the exact command. On git 2.48+ the command uses `--relative-paths`, so worktrees on the SSD survive a new drive letter or macOS.
-- **Blocked** copies (uncommitted files, stashes, unpushed commits, linked worktrees, or no remote) are never offered for removal.
-- Linked worktrees are part of their clone, never duplicates; worktrees whose folder is gone are listed with `git worktree prune`.
-- Read-only: nothing is fetched, written, or deleted. Dependency, build, and hidden folders are not searched. `--json` returns the full report for agents.
-
-### 12. Gitignore Governance & Personal Data Protection (`smart-drive gitignore`)
-Ensures clean, robust `.gitignore` rules across every git repository on the drive without recursive disk scans:
-- **Stack-Aware Auto-Detection**: Dynamically detects repo tech stacks (Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models, and Learning) from root and shallow filesystem cues (<5ms).
-- **exFAT Cluster Slack Defense**: Automatically ignores high-slack micro-files on 512KB exFAT clusters—such as agent scratch trees (`**/.agents/*`, which often hold hundreds of tiny files consuming hundreds of megabytes in cluster slack; `.agents/skills/`, `.agents/workflows/` and `.agents/rules/` are agent configuration and stay tracked), `.claude/settings.local.json`, runtime caches (`__pycache__/`, `.pytest_cache/`, `node_modules/`), build outputs (`target/`, `dist/`, `bin/`, `obj/`), and OS metadata.
-- **Constellation "Personal-Data" Contract Protection**: For learning repositories (Aurora slides, Polaris briefs, Vega memory collections, Sirius execution journals), automatically locks down personal learning history: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/`, `.polaris/` (learner profile), and `.sirius/` (execution journal).
-- **Public Repository Leak Detection**: Zero-network remote URL inspection flags when personal learning data is tracked in repositories with public remotes (GitHub, GitLab, Bitbucket) or unconfigured remotes.
-- **Safe Untracking (`--untrack`)**: Runs `git rm -r --cached` on matching tracked files without touching files in the working tree and refusing when staged changes exist.
-
-### 13. Folder Moves That Keep Coding Agents Working (`smart-drive relink`)
-Coding agents remember every project and MCP server by absolute path, and exFAT cannot keep a link at the old place. Whenever `organize` or `classify` moves a folder, SmartDrive rewrites those paths for you:
-- **Agent settings**: Claude Code (`~/.claude.json`), Claude desktop (config, sessions, worktree records), Codex (`config.toml`), Gemini CLI, Antigravity, Cursor, Windsurf, the Constellation manifest and the drive's `.mcp.json`. Each file keeps its own format and is first copied to `<file>.bak.smart-drive`; permission settings are never touched.
-- **History and repositories**: Claude Code history and memory move to the new project's folder, git worktrees are repaired, and editable installs inside a moved `.venv` point at the new place.
-- **Journal**: every batch of moves is logged in `.smart_drive/moves.jsonl`, so it can be applied again later.
-
-How to run it:
-```bash
-smart-drive organize --dry-run                             # preview the moves and which agents will follow
-smart-drive organize --apply                               # move, then relink the agents
-smart-drive relink                                         # apply the latest batch again (e.g. after closing an agent)
-smart-drive relink "E:\Old\proj" "E:\New\proj" --dry-run   # a folder moved by hand: preview
-smart-drive relink "E:\Old\proj" "E:\New\proj"             # ...then apply
-smart-drive relink --find                                  # list stale agent paths and where each folder went
-smart-drive relink --find --apply --wait                   # relink the sure matches, waiting for open agents to close
-```
-Menu option `[8]` of the `SmartDrive` launchers does the same in a few key presses. Close Claude desktop, Claude Code and Codex before relinking (an open agent can write its old settings back), then reopen them. If a command inside a moved `.venv` still points at the old place, run `uv sync --reinstall` in that project.
-
----
-
-## 3-Step Quickstart
-
-### Step 1: Run Environment Check
-Verify your Python environment and PATH accessibility:
-```bash
-python -m smart_drive self-path-check
-```
-
-Or install in editable developer mode:
-```bash
-pip install -e .
-```
-
-### Step 2: 1-Touch Initialization
-Initialize standard taxonomy directories, install anti-indexing shields, generate AI manifests, and build the initial FTS5 search index with a single command or double-click:
-
-- **Windows**: Double-click `Setup_SSD.bat` or run `Setup_SSD.ps1`
-- **macOS**: Double-click `Setup_SSD.command`
-- **Linux**: Execute `./Setup_SSD.sh`
-- **CLI**:
-  ```bash
-  # For internal secondary drives (D:, E:) with coursework & games:
-  python -m smart_drive init --profile workstation-hybrid
-
-  # Or for external USB SSDs with AI models:
-  python -m smart_drive init --profile ai-developer
-  ```
-
-### Step 3: Register AI Agents
-Register SmartDrive-OS as an MCP Server across all your AI coding assistants in 1 click:
-```bash
-smart-drive mcp register --all
-```
-
-### Step 4: Set Up the MCP Ecosystem (one command)
-Fetch Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius and Mira and register them, together with SmartDrive, in every coding agent installed on this machine (Windows, macOS and Linux). It is the command a coding agent should run on a fresh clone: no prompts, safe to repeat.
-```bash
-python3 -m smart_drive setup     # macOS / Linux  (Windows: python -m smart_drive setup)
-```
-- Needs Node.js >= 22.4 and git. The servers are cloned to `~/.smart-drive/mcp` (not onto the exFAT drive) and registered through Constellation in Claude Code, Antigravity, Cursor and Codex.
-- `--dry-run` previews, `--check --json` reports the state (exit code `3` means setup is still needed), `--no-clone` never touches the network, `--agents claude,cursor` limits the targets.
-- Servers that are already registered on the machine are reused, never cloned twice. `mcp-agy` is not part of it: it needs its own venv, Python >= 3.10 and an API key.
-
----
-
-## The 5 Preset Profiles
-
-SmartDrive-OS provides 5 tailored profiles for different workflows:
-
-| Profile | Target Architecture | Included Taxonomies & Subdirectories |
-|---|---|---|
-| **`workstation-hybrid`** *(Recommended for dual-drive PCs)* | Internal Secondary Drive (`D:`, `E:`) with existing games, apps, and student coursework | `01_AI_Models`, `02_Learning_Knowledge` (`FPTU/`, `Personal_Books/`, `Notes/`), `03_Development_Projects` (`active/`, `archive/`), `04_System_Workspaces`, `05_Dev_Toolbox` (`OEM_Drivers/`, `Installers/`, `scripts/`), `06_Archives_Storage` |
-| **`internal-developer-vault`** | Dedicated Internal secondary NVMe/SATA SSD receiving offloaded C-drive caches | `01_AI_Models`, `02_Development_Workspaces`, `03_Data_Vault`, `04_System_Offload_Caches` (`huggingface/`, `ollama/`, `pip/`, `uv/`), `05_Dev_Toolbox`, `06_Archives_Storage` |
-| **`ai-developer`** | High-speed external SSD dedicated to LLMs, fine-tuning, and AI agents | `01_AI_Models` (`checkpoints/`, `gguf/`, `safetensors/`, `datasets/`), `02_Learning_Knowledge`, `03_Development_Projects` (`ai_agents/`), `04_System_Workspaces`, `05_Dev_Toolbox`, `06_Archives_Storage` |
-| **`data-science`** | Data engineering, tabular pipelines, and EDA notebooks | `01_AI_Models`, `02_Learning_Knowledge`, `03_Development_Projects` (`notebooks/`, `data_raw/`, `pipelines/`), `04_System_Workspaces`, `05_Dev_Toolbox`, `06_Archives_Storage` |
-| **`general-workspace`** *(Default)* | Universal active/archive code, docs, learning notes, and utilities | Standard 6 taxonomies with `Notes/`, `References/`, `active/`, `archive/`, and `scripts/` |
-
----
-
-## Cross-Platform Portable Launchers Guide
-
-The project includes 20 portable launchers that require **zero Git installation** and run with 1 touch:
-
-```
-smart-drive-os/
-├── launchers/
-│   ├── Setup_SSD.bat        Quick_Search.bat        Quick_Clean.bat        Quick_Audit.bat        SmartDrive.bat
-│   ├── Setup_SSD.ps1        Quick_Search.ps1        Quick_Clean.ps1        Quick_Audit.ps1        SmartDrive.ps1
-│   ├── Setup_SSD.command    Quick_Search.command    Quick_Clean.command    Quick_Audit.command    SmartDrive.command
-│   └── Setup_SSD.sh         Quick_Search.sh         Quick_Clean.sh         Quick_Audit.sh         SmartDrive.sh
-```
-
-- **`Setup_SSD`**: Interactive 1-touch drive initialization and profile selector.
-- **`Quick_Search`**: Interactive instant SQLite FTS5 search prompt.
-- **`Quick_Clean`**: Safe dry-run junk preview followed by confirmed Tier 1 purge.
-- **`Quick_Audit`**: Instant storage breakdown and 512KB cluster slack audit.
-- **`SmartDrive`**: Full interactive TUI menu giving access to all operations.
-
----
-
-## Comprehensive CLI Command Reference
-
-All commands can be invoked via `smart-drive <command>` or `python -m smart_drive <command>`:
+All commands run via `smart-drive <command>` or `python -m smart_drive <command>`:
 
 | Command | Key Arguments | Description |
 |---|---|---|
-| `self-path-check` | *(none)* | Inspects Python CLI script paths on system `PATH` and outputs 1-click configuration commands. |
+| `self-path-check` | *(none)* | Inspects Python CLI script paths on system `PATH` and outputs 1-click setup commands. |
 | `init` | `--profile <name>`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
 | `status` | `--root <path>`, `--json` | Inspect SSD mount point, detected filesystem, geometry, shield health, and taxonomy status. |
-| `audit` | `--root <path>`, `--json`, `--markdown`, `--export <file>` | Detailed storage breakdown and cluster slack metrics, modelled at 512 KB exFAT clusters; the report names the detected filesystem and says when that model does not apply (APFS, NTFS, ext4 ...). Hard-linked data is counted once and the extra paths are reported ("Hard Links Not Counted"), and symlinks are skipped and counted. |
-| `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run safeguard and inviolable whitelist protection. With `--apply` it exits `1` if a deletion failed (items refused by the safety guard are reported but are not failures). |
-| `search` | `<query>`, `--ext <ext>`, `--size <spec>`, `--category <cat>`, `--limit <n>`, `--json` | Sub-10ms SQLite FTS5 multi-criteria query parser with BM25 ranking. |
-| `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Autonomous drive auto-zoning, loose-file relocation, AcademicClassifier routing, and slack rebalancing; keeps coding agents pointed at moved folders. |
-| `relink` | `[OLD NEW]`, `--root <path>`, `--dry-run`, `--json` | Rewrites project and MCP server paths remembered by coding agents, carries Claude Code history over, and repairs git worktrees after folders move. |
+| `audit` | `--root <path>`, `--json`, `--markdown`, `--export <file>` | Storage & cluster slack modelled at 512 KB exFAT; names the detected filesystem and notes when that model does not apply (APFS, NTFS, ext4 ...). Hard links counted once ("Hard Links Not Counted"); symlinks skipped and counted. |
+| `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run and inviolable whitelist. With `--apply`, exits `1` if a deletion failed (refused safety-guard items are reported, not failures). |
+| `search` | `<query>`, `--ext <ext>`, `--size <spec>`, `--category <cat>`, `--kind <k>`, `--limit <n>`, `--json` | Sub-10ms SQLite FTS5 multi-criteria query parser with BM25 ranking. |
+| `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Auto-zoning, loose-file relocation, AcademicClassifier routing, and slack rebalancing; keeps coding agents pointed at moved folders. |
+| `relink` | `[OLD NEW]`, `--find`, `--apply`, `--wait [MIN]`, `--root <path>`, `--dry-run`, `--json` | Rewrites project/MCP paths remembered by coding agents, moves Claude Code history, and repairs git worktrees after folders move. |
 | `sentinel` | `--root <path>`, `--auto-heal`, `--no-heal`, `--json` | 1-touch health audit (detected filesystem, git repo status) and shield self-healing (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <path>`, `--all`, `--auth-token <token>`, `--require-auth` | Starts the JSON-RPC 2.0 stdio MCP server (`serve`) or registers configs for AI agents (`register`). |
-| `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Auto-registers SmartDrive MCP Server in standard AI coding agent config files. |
-| `setup` | `--check`, `--dry-run`, `--json`, `--agents <list>`, `--only <list>`, `--dest <dir>`, `--no-clone`, `--no-health`, `--repair` | One command: fetches the MCP ecosystem (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira) and registers it with the installed coding agents (Claude Code, Antigravity, Cursor, Codex), then health-checks it. Exit code `3` from `--check` means setup is still needed. |
+| `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Auto-registers SmartDrive MCP Server in AI coding agent config files. |
+| `setup` | `--check`, `--dry-run`, `--json`, `--agents <list>`, `--only <list>`, `--dest <dir>`, `--no-clone`, `--no-health`, `--repair` | Fetches the MCP ecosystem (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira), registers it with installed coding agents (Claude Code, Antigravity, Cursor, Codex), and health-checks it. Exit code `3` from `--check` = setup needed. |
 | `snapshot create` | `[name]`, `--partitions <list>`, `--include-hidden`, `--root <path>`, `--json` | Generates a point-in-time manifest with 64KB-chunk streaming SHA-256 hashes. |
-| `snapshot list` | `--root <path>`, `--json` | Lists all recorded point-in-time snapshots with sizes and file counts. |
-| `snapshot verify` | `<name>`, `--no-untracked`, `--root <path>`, `--json` | Validates data integrity of files against snapshot manifest to detect tampering or bit rot. |
+| `snapshot list` | `--root <path>`, `--json` | Lists recorded point-in-time snapshots with sizes and file counts. |
+| `snapshot verify` | `<name>`, `--no-untracked`, `--root <path>`, `--json` | Validates file integrity against snapshot manifest to detect tampering or bit rot. |
 | `backup` | `--target <path>`, `--dry-run`, `--hash`, `--partitions <list>`, `--include-hidden`, `--json` | Safe incremental backup copying only modified/new files to target directory. |
-| `classify` | `[path]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Deep content inspection (magic bytes & markers) for AI models, datasets, docs, and code repos. Symlinks and junctions are never followed or moved, and nothing is read from or written to a place that is reached through one. |
-| `offload` | `--scan`, `--move <name>`, `--target <drive>`, `--revert <name>`, `--dry-run`, `--json` | Developer/AI cache discovery and transactional offloading to a secondary drive (NTFS junction on Windows, symbolic link on macOS/Linux). |
-| `health` | `[drive]`, `--root <path>`, `--json` | SSD health, TRIM verification (Windows), partition geometry, and storage utilization monitor. Takes a drive letter on Windows or a volume path (`/Volumes/MySSD`) on macOS/Linux. |
-| `dup` | `--root <path>`, `--json` | 3-phase SHA-256 duplicate candidate detector with cluster slack reclamation preview. Several names for the same data (hard links) are one file, never offered as copies to delete. |
-| `repos` | `[paths...]`, `--root <ssd>`, `--portable <path>`, `--max-depth <n>`, `--json` | Read-only report of git clones: duplicates of one project in the same place (with keep / remove / worktree suggestions) and the sync state of SSD-vs-machine mirrors. |
-| `gitignore audit` | `[repo]`, `--root <path>`, `--json` | Audit repositories for missing recommended .gitignore patterns, tracked junk (.agents, pycache), and tracked personal learning data in public repos. |
-| `gitignore apply` | `<repo>`, `--yes`, `--untrack`, `--json` | Apply SmartDrive-managed .gitignore block for repo stack (dry-run by default; `--yes` to apply; `--untrack` to remove matching files from git index). |
+| `classify` | `[path]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Deep content inspection (magic bytes & markers) for AI models, datasets, docs, and code repos. Never follows/moves symlinks or junctions, or reads/writes through one. |
+| `offload` | `--scan`, `--move <name>`, `--target <drive>`, `--revert <name>`, `--dry-run`, `--json` | Developer/AI cache discovery and transactional offloading to a secondary drive (NTFS junction on Windows, symlink on macOS/Linux). |
+| `health` | `[drive]`, `--root <path>`, `--json` | SSD health, TRIM check (Windows), partition geometry, and utilization monitor (drive letter on Windows or `/Volumes/MySSD` on macOS/Linux). |
+| `dup` | `--root <path>`, `--json` | 3-phase SHA-256 duplicate detector with slack reclamation preview. Hard links to the same data are one file, never offered for deletion. |
+| `repos` | `[paths...]`, `--root <ssd>`, `--portable <path>`, `--max-depth <n>`, `--json` | Read-only report of git clones: duplicates in the same place (keep / remove / worktree suggestions) and sync state of SSD-vs-machine mirrors. |
+| `gitignore audit` | `[repo]`, `--root <path>`, `--all`, `--owner <name>`, `--keep <pat>`, `--json` | Audit repos for missing `.gitignore` patterns, tracked junk (`.agents`, pycache), and tracked personal learning data in public repos. |
+| `gitignore apply` | `<repo>`, `--yes`, `--untrack`, `--keep <pat>`, `--json` | Apply SmartDrive-managed `.gitignore` block for repo stack (dry-run default; `--yes` to apply; `--untrack` to remove matching files from git index). |
 | `index` | `--root <path>`, `--db <path>`, `--batch <n>` | Full SQLite FTS5 index creation (>15,000 files/sec). |
-| `update` | `--root <path>`, `--db <path>`, `--json` | Fast $O(1)$ incremental search index synchronization (<2s). |
+| `update` | `[path]`, `--root <path>`, `--db <path>`, `--quiet`, `--json` | Fast $O(1)$ incremental search index synchronization (<2s). |
 
 ---
 
-## Advanced Search Query Syntax
+## Folder Moves and Coding Agents
 
-The SQLite FTS5 search engine processes complex queries in under 10 milliseconds:
+Coding agents remember projects and MCP servers by absolute path, and exFAT cannot leave a link at the old place. When `organize` or `classify` moves a folder, SmartDrive rewrites those paths:
+- **Agent settings**: Claude Code (`~/.claude.json`), Claude desktop (config, sessions, worktrees, including Microsoft Store MSIX), Codex (`config.toml`), Gemini CLI, Antigravity, Cursor, Windsurf, Constellation manifest, and the drive's `.mcp.json`. Each file keeps its format and is backed up to `<file>.bak.smart-drive`; permissions are never touched.
+- **History and repositories**: Claude Code history and memory move to the new project folder, git worktrees are repaired, and editable installs in a moved `.venv` point at the new place.
+- **Journal**: every batch of moves is logged in `.smart_drive/moves.jsonl` so it can be re-applied later.
+
+How to run it:
+```bash
+smart-drive organize --dry-run                           # preview moves and which agents follow
+smart-drive organize --apply                             # move, then relink the agents
+smart-drive relink                                       # re-apply latest batch (after closing an agent)
+smart-drive relink "E:\Old\proj" "E:\New\proj" --dry-run # a folder moved by hand: preview
+smart-drive relink "E:\Old\proj" "E:\New\proj"           # ...then apply
+smart-drive relink --find                                # list stale agent paths and where folders went
+smart-drive relink --find --apply --wait                 # relink sure matches after open agents close
+```
+Menu option `[8]` in `SmartDrive` does the same in a few key presses. Close Claude desktop, Claude Code, and Codex before relinking (an open agent can write old settings back), or pass `--wait` so SmartDrive waits for them to close, then reopen them. If a command in a moved `.venv` still points at the old place, run `uv sync --reinstall` in that project.
+
+---
+
+## MCP Server & AI Coding Agents
+
+SmartDrive-OS exposes a JSON-RPC 2.0 `stdio` MCP server with **9 tools**:
+
+1. `ssd_search`: Instant FTS5 search returning compact tokens (<2,000 tokens/query). *(read-only)*
+2. `ssd_audit`: Storage breakdown and cluster slack waste analytics with compact formatting. *(read-only)*
+3. `ssd_clean`: Whitelist-protected safe junk cleaner with dry-run support. *(destructive)*
+4. `ssd_find_duplicates`: 3-phase SHA-256 duplicate detection with pagination and preview capping. *(read-only)*
+5. `ssd_update_index`: Fast incremental index synchronization (<2s). *(idempotent)*
+6. `ssd_check_safety`: exFAT compatibility validator (9 Win32 forbidden chars, 22 DOS stems, symlinks). *(read-only)*
+7. `ssd_status`: SSD mount root status, shield health, and taxonomy status. *(read-only)*
+8. `ssd_auto_organize`: Autonomous drive auto-zoning and anti-slack relocation with `AcademicClassifier`. *(destructive)*
+9. `ssd_gitignore`: Stack-aware `.gitignore` governance, personal data defense, secrets audit, and safe untracking. *(idempotent)*
+
+Register across all agents via `smart-drive mcp register --all` (or `smart-drive mcp-config --all`). From a source checkout (without `pip install`), each entry sets `PYTHONPATH` to the checkout so clients can launch from any folder. Templates in `configs/`: `.mcp.json` (workspace), `mcp_config.json` (Antigravity), `claude_desktop_config.json` (Claude Desktop & Code), `cursor_mcp.json` (Cursor / Codex), `windsurf_mcp.json` (Windsurf).
+
+<details>
+<summary>M8ven MCP Directory Certification (Grade A 100/100) & Token Efficiency</summary>
+
+Certified on the [M8ven MCP Directory](https://m8ven.ai/mcp/duongnad-smart-drive-os) with a **Grade A (100/100) Trust Score** (token: `duongnad-smart-drive-os-1kxkwu`):
+- **Static AST Handler Isolation**: Mapped via `SmartDriveMCPServer.TOOL_HANDLERS` without dynamic reflection.
+- **Paged Compact JSON**: Paginated (`limit`, `offset`, `total_groups`, `returned_group_count`, `has_more`, `next_offset`) with duplicate previews capped at 10 paths/group (`truncated_files_count`).
+- **HMAC Auth & Rate Limiting**: `hmac.compare_digest` via `auth/handshake` (`--auth-token`, `--require-auth`, `SMART_DRIVE_MCP_AUTH_TOKEN`) and thread-safe `SlidingWindowRateLimiter` (`-32000` with `Retry-After`).
+- **Path Sanitizers, Loopback & Tool Hints**: `_resolve_safe_path` blocks `../`, `\0`, and cross-drive jumps; web helpers enforce `ALLOWED_LOOPBACK_HOSTS = ("127.0.0.1", "localhost")`; all 9 tools declare `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`.
+- **Zero Hidden Outbound Calls**: 100% offline `stdio`; only explicit opt-in `git clone` in `smart-drive setup` accesses the network (skipped with `--no-clone`).
+
+</details>
+
+---
+
+## Search Syntax
+
+The SQLite FTS5 engine (`unicode61` + BM25) executes multi-criteria queries in <10ms:
 
 - **Free Text**: `smart-drive search "machine learning"`
 - **File Extension**: `smart-drive search "weights ext:gguf"`
-- **Size Filter**: `smart-drive search "dataset size:>100MB"` (or `size:<1MB`, `size:0`). `>` and `<` leave the bound out, `>=` and `<=` include it; units are binary (1KB = 1024 bytes). A filter that cannot be read (`size:>abc`, `size:>10 MB`) is reported as a warning (stderr in the CLI, `warnings` in MCP) instead of being ignored silently.
+- **Size Filter**: `smart-drive search "dataset size:>100MB"` (`size:<1MB`, `size:0`). `>`/`<` exclude the bound, `>=`/`<=` include it; binary units (`1KB = 1024` bytes). Unreadable filters (`size:>abc`, `size:>10 MB`) emit a warning (CLI stderr, MCP `warnings`) instead of being ignored silently.
 - **Taxonomy Category**: `smart-drive search "llama cat:ai_models"`
 - **Directory Constraint**: `smart-drive search "assignment dir:FPTU"`
+- **Learning Kind**: `smart-drive search --kind slide "vòng lặp"` (or `kind:fact`, `--kind capture`, `--kind lesson`)
 - **Compound Query**: `smart-drive search "exam ext:pdf size:>1MB dir:DBI202"`
 
 ---
 
----
+## Learning Materials (Aurora Slides and Polaris)
 
-## Works with Aurora Slides and Polaris
-
-SmartDrive-OS seamlessly integrates with [Aurora Slides MCP](https://github.com/DuongNAD/aurora-slides-mcp) and [Polaris MCP](https://github.com/DuongNAD/polaris-mcp) as first-class educational and research ecosystems:
-
-### Ecosystem
-
-All projects by DuongNAD:
+SmartDrive-OS integrates with [Aurora Slides MCP](https://github.com/DuongNAD/aurora-slides-mcp) and [Polaris MCP](https://github.com/DuongNAD/polaris-mcp) across the DuongNAD learning ecosystem:
 
 | Project | Role | Repository |
 | :--- | :--- | :--- |
@@ -446,234 +270,140 @@ All projects by DuongNAD:
 | **Constellation** | MCP registration, health checks and shared contracts | [constellation-mcp](https://github.com/DuongNAD/constellation-mcp) |
 | **SmartDrive-OS** | SSD governance, index and learning search | [smart-drive-os](https://github.com/DuongNAD/smart-drive-os) |
 
-### Connections
+SmartDrive-OS serves Polaris (learning search), Sirius, and Rigel (file discovery), receives post-write updates (`smart-drive update <dir> --quiet`) from Aurora ($\ge$ 0.6.2), Polaris ($\ge$ 0.3.2), and Mira, and enforces the `personal-data` ignore rules of [Constellation's contracts](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts).
 
-- **SmartDrive-OS**: its index serves Polaris (learning search), Sirius and Rigel (file discovery) and receives post-write updates from Polaris and Mira; it owns the learning-stack ignore patterns of the `personal-data` contract.
-
-The learning-unit markers and the post-write hook (`smart-drive update <dir> --quiet`) are defined canonically in [Constellation's contracts](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts). `smart-drive mcp register` registers SmartDrive itself; `smart-drive setup` fetches the whole ecosystem and registers it in every agent through Constellation (`constellation register --dry-run`, then `constellation register`, is the same step by hand).
-
-### 1. Learning-Aware Knowledge Indexing
-SmartDrive-OS parses and chunks slide presentations, course curricula, research notes, and study materials into high-density searchable document chunks (`doc_chunks`) with sub-10ms BM25 ranking:
+<details>
+<summary>Indexed learning artifact kinds & Atomic Learning-Unit Protection</summary>
 
 | Kind | Target Artifact | Extracted Content |
 |---|---|---|
-| `slide` | `deck.json` (Aurora Slides) | Slide titles, bullets, speaker notes, and key takeaways |
-| `lesson` | `course.json` (Aurora Courses) | Lesson syllabus, objectives, prerequisites, and modules |
-| `fact` | `polaris/facts.json` (Polaris) | Atomic facts, statements, concepts, and confidence scores |
-| `source` | `polaris/sources.json` (Polaris) | Bibliographic citations, URLs, author notes, and digests |
-| `capture` | `polaris/captures/` (Polaris) | Extracted excerpts, highlights, study pages, and quotes |
-| `outline` | `polaris/roadmap.json` (Polaris) | Topic outlines, study milestones, and prerequisite DAGs |
-| `research` | `polaris/research/*.md` (Polaris) | Deep research syntheses, literature summaries, and analyses |
-| `error` | `polaris/errorlog.md` (Polaris) | Bug retrospectives, conceptual misconceptions, and fixes |
+| `slide` | `deck.json` (Aurora Slides) | Slide titles, bullets, speaker notes, key takeaways |
+| `lesson` | `course.json` (Aurora Courses) | Lesson syllabus, objectives, prerequisites, modules |
+| `module` | `polaris/roadmap.json` (Polaris) | Roadmap modules, milestones and prerequisites |
+| `fact` | `polaris/facts.json` (Polaris) | Atomic facts, statements, concepts, confidence scores |
+| `source` | `polaris/sources.json` (Polaris) | Bibliographic citations, URLs, author notes, digests |
+| `capture` | `polaris/captures/` (Polaris) | Extracted excerpts, highlights, study pages, quotes |
+| `outline` | `polaris/lessons/*.outline.md` (Polaris) | Lesson outlines (headings) |
+| `research` | `polaris/research/*.md` (Polaris) | Deep research syntheses, literature summaries, analyses |
+| `error` | `polaris/errorlog.md` (Polaris) | Bug retrospectives, misconceptions, fixes |
 | `learning` | All learning artifacts | Consolidated search across all educational kinds |
 
-### 2. Multi-Criteria Learning Search Examples
-Filter queries specifically by knowledge kind:
-```bash
-# Search slides for a programming concept
-smart-drive search --kind slide "vòng lặp"
+Aurora deck/course folders and Polaris subject dirs (`polaris/brief.json`) are pinned as atomic **Learning Units** (`pinned: Aurora course/deck or Polaris subject`): AutoZoner never splits/moves them, Cleaner and Duplicate Detector never delete their files, and legacy `polaris/.cache/**` files are cleaned as Tier-2 dev-cache junk (*"Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)"*).
 
-# Search verified facts about React
-smart-drive search kind:fact react
-
-# Search study captures referencing specific pages
-smart-drive search --kind capture "p. 3"
-
-# Search lessons by keyword
-smart-drive search --kind lesson "recursion"
-```
-
-### 3. Atomic Learning-Unit Protection
-Aurora deck folders (with relative asset references like `../../../03_Materials_Code/x.py`), course structures, and Polaris subject directories (`polaris/brief.json`) are recognized as inviolable **Learning Units**:
-- **Movers & AutoZoner**: Pinned in place (`pinned: Aurora course/deck or Polaris subject`). Subfolders and lesson files are never split or relocated.
-- **Cleaners & SecurityGuard**: Strictly protected. All images, lesson code, `progress.jsonl`, captures, and metadata JSON files cannot be deleted.
-- **Duplicate Detection**: Files inside learning units are treated as canonical keepers and never offered for deletion.
-- **Cache Cleaning**: Legacy `polaris/.cache/**` small JSON files are classified as **Tier-2 dev-cache junk** (description: *"Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)"*), allowing safe reclamation without affecting course data.
-- **Post-Write Hooks**: Aurora ($\ge$ 0.6.2) and Polaris ($\ge$ 0.3.2) automatically trigger `smart-drive update <dir> --quiet` after writing content, ensuring zero-overhead real-time index synchronization.
+</details>
 
 ---
 
-## Safe Junk Cleaner & 3-Tier Protection Hierarchy
+## Gitignore Governance
 
-SmartDrive-OS categorizes purgeable files into 3 safe tiers:
+`smart-drive gitignore` audits and applies stack-aware `.gitignore` rules across Git repos on the drive (<5ms shallow detection for Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models, Learning). It maintains an idempotent block between `# >>> smart-drive managed (do not edit inside) >>>` and `# <<< smart-drive managed <<<`, preserving user rules and CRLF/LF line endings:
+- **exFAT Cluster Slack Defense**: Ignores `**/.agents/*` (500+ scratch files waste >260 MB on 512 KB clusters; `.agents/skills/`, `.agents/workflows/`, `.agents/rules/` stay tracked), `.claude/settings.local.json`, `__pycache__/`, `.pytest_cache/`, `node_modules/`, `target/`/`dist/`/`bin/`/`obj/`.
+- **Constellation `personal-data` Protection**: Locks down `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/`, `.polaris/`, and `.sirius/`, alerting if tracked in public or unconfigured remotes.
 
-1. **Tier 1 (Safe OS Metadata Junk)**:
-   - macOS `.DS_Store`, `._*` AppleDouble resource forks.
-   - Windows `Thumbs.db`, `desktop.ini`, `ehthumbs.db`.
-   - `.Spotlight-V100`, `.Trashes`.
-2. **Tier 2 (Developer Build & Caches)**:
-   - Python `__pycache__`, `*.pyc`, `*.pyo`, `.pytest_cache`.
-   - Node `node_modules/.cache`.
-   - Rust `target/debug/build`.
-   - Polaris legacy API cache: `polaris/.cache/**` (*"Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)"*).
-3. **Tier 3 (Transient & Logs)**:
-   - `*.log`, `*.tmp`, `*.bak`, crash dumps.
-
-> **Inviolable Whitelist Security**: Root manifests (`AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `README.md`, `PRIVACY.md`), setup scripts (`Setup_*.bat`, `Setup_*.command`), the 6 primary taxonomy directories, Windows system folders (`WindowsApps`, `Program Files`), games (`SteamLibrary`, `Riot Games`, `LDPlayer`), active database services (`Microsoft SQL Server 2022`), and the `smart-drive-os` codebase are **permanently whitelisted** and cannot be deleted or relocated by the cleaner.
-
----
-
-## Gitignore Governance & Personal Data Protection
-
-### What it does
-`smart-drive gitignore` audits and applies standard, stack-aware `.gitignore` rules for every Git repository on your drive. It detects project frameworks (Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models, and Learning) and manages a clean, idempotent block between `# >>> smart-drive managed (do not edit inside) >>>` and `# <<< smart-drive managed <<<`. All user rules outside the block are preserved, and original line endings (CRLF or LF) are strictly maintained.
-
-### Why on exFAT?
-On 512KB-cluster exFAT volumes, small files waste enormous amounts of disk space due to cluster slack. For example, AI agent scratch directories (`.agents/`) can easily accumulate 500+ micro-files. A 2.4 MB `.agents/` folder actually allocates **over 260 MB** of physical SSD capacity! In addition, `node_modules/`, `__pycache__/`, virtual environments, and build artifacts create hundreds of thousands of micro-files that cause severe I/O thrashing and high latency.
-
-### Personal Learning Data Protection
-Public learning repositories can inadvertently leak personal study metrics, memory collections, and quiz attempts. SmartDrive enforces Constellation's canonical `personal-data` contract across all learning repositories:
-- `.vega/` (Anki/SuperMemo-style spaced retrieval database)
-- `**/progress.jsonl` (Aurora learning progress logs)
-- `aurora-progress-*.jsonl` (session deck progress)
-- `orion-attempts.jsonl` (interactive lab attempts)
-- `**/polaris/.cache/` (API query caches)
-- `**/polaris/captures/` (raw learning captures)
-- `.polaris/` (learner profile)
-- `.sirius/` (Sirius execution journal)
-
-During `audit`, repositories with public remote hosts (GitHub, GitLab, Bitbucket) or unconfigured remotes are immediately flagged with an alert if personal learning data is tracked.
-
-### Precision Ownership & Third-Party Clone Exclusion
-Repositories are automatically categorized into three distinct ownership classes:
-- **`own`**: Remote origin owner matches configured owner (`--owner`, `SMART_DRIVE_GIT_OWNER`, git config `smartdrive.owner`, or drive-wide consensus).
-- **`third-party`**: Upstream clones located in `open_source/`, `vendor/`, `third_party/`, or with differing remote owners. Their upstream build and distribution files (`dist/`, `build/`) are respected and excluded from junk warnings.
-- **`local`**: Offline or air-gapped repositories without configured remote endpoints.
-
-Audit focuses by default on `own` and `local` repositories, separating third-party clones into their own section. Use `--all` to inspect all repositories in the primary listing.
-
-### Live GitHub Visibility & Missing Remote Precision
-When the GitHub CLI (`gh`) is authenticated, SmartDrive-OS queries repository visibility (`public`, `private`, `internal`, `missing`) with short timeouts and per-run caching. Verified private repositories omit public exposure warnings, verified public repositories receive precise alerts, and deleted, renamed, or inaccessible repositories are classified as `missing` ("remote not found on GitHub") without false public alarms.
-
-### Intentional Build Outputs & Keep Lists
-Tracked files are recognized as intentional build outputs (never counted as junk and never untracked) when:
-1. Referenced by the nearest `package.json` (`bin`, `main`, `module`, `types`, or `exports` fields, including nested exports objects; normalising `./`);
-2. Explicitly re-included by a negation in the repository's own `.gitignore` (e.g. `!dist/bundle.mjs`);
-3. Present in a keep list: git config `smartdrive.keep` (multi-value patterns) or `--keep <pattern>` (repeatable flag on `audit` and `apply`).
-
-When a recommended pattern (such as `dist/`) would ignore an intentional file, the managed block emits `<dir>/*` followed by `!<file>` lines if every intentional file sits directly in that directory (allowing git to re-include the bundle); otherwise it safely omits that pattern for the repo to prevent breaking clone-and-run workflows.
-
-### High-Severity Tracked Secrets Auditing
-Accidentally tracked credentials (`.env`, `.env.*`, `*.pem`, `*.key`, `credentials*.json`) are surfaced in a high-severity alert showing **variable and key names only** (strictly zero secret values exposed) along with key rotation advice. Safe untracking (`apply --yes --untrack`) stages their removal from the git index while keeping working files intact on disk.
-
-### Safe Untracking (`--untrack`)
-If junk or personal data was mistakenly committed to git, `smart-drive gitignore apply <repo> --yes --untrack` stages the removal via `git rm -r --cached`. **Working files on disk are never deleted**, intentional build outputs are preserved, no commits are made automatically, and untracking is safely **refused** if the repository has uncommitted staged changes.
-
-### CLI Examples
 ```bash
-# 1. Audit all repositories on the drive for missing patterns and tracked junk:
-smart-drive gitignore audit
-
-# 2. Output audit report in structured JSON:
-smart-drive gitignore audit --json
-
-# 3. Audit including third-party vendor clones in the main report:
-smart-drive gitignore audit --all
-
-# 4. Audit with an explicit GitHub/GitLab owner override:
-smart-drive gitignore audit --owner myorg
-
-# 5. Audit a specific project repository:
-smart-drive gitignore audit D:\teamwork_projects\my_project
-
-# 6. Preview .gitignore changes (dry run):
-smart-drive gitignore apply D:\teamwork_projects\my_project
-
-# 7. Apply managed block to disk and untrack mistakenly committed junk:
+smart-drive gitignore audit                                 # audit own & local repos (--all includes third-party)
+smart-drive gitignore apply D:\teamwork_projects\my_project # dry-run preview
 smart-drive gitignore apply D:\teamwork_projects\my_project --yes --untrack
 ```
 
----
+<details>
+<summary>Ownership classes, GitHub CLI visibility, intentional build outputs, secrets & safe untracking</summary>
 
-## Model Context Protocol (MCP) Server & AI Coding Agent Integration
+- **Ownership Classes**: `own` (matches `--owner`, `SMART_DRIVE_GIT_OWNER`, `smartdrive.owner`, or drive consensus), `third-party` (`open_source/`, `vendor/`, `third_party/`, or external owner—upstream `dist/`/`build/` respected), and `local` (no remote).
+- **Live GitHub Visibility (`gh`)**: Queries `public`, `private`, `internal`, or `missing` ("remote not found on GitHub") with per-run caching so private/deleted remotes never trigger false public-leak alarms.
+- **Intentional Build Outputs & Keep Lists**: Files in `package.json` (`bin`, `main`, `module`, `types`, `exports`), `.gitignore` negations (`!dist/bundle.mjs`), or `smartdrive.keep` / `--keep <pattern>` are never flagged or untracked. Direct intentional files in `dist/` emit `<dir>/*` plus `!<file>` lines (or omit the pattern if nested).
+- **High-Severity Secrets & Safe Untracking**: Tracked `.env`, `.env.*`, `*.pem`, `*.key`, and `credentials*.json` alert with **variable/key names only** (no secret values). `--untrack` runs `git rm -r --cached` (keeping disk files) and refuses when uncommitted staged changes exist.
 
-SmartDrive-OS provides native MCP server support, exposing 9 specialized tools to AI Agents:
-
-1. `ssd_search`: Instant FTS5 search returning compact tokens (<2,000 tokens per query). *(read-only)*
-2. `ssd_audit`: Storage breakdown and cluster slack waste analytics with compact formatting. *(read-only)*
-3. `ssd_clean`: Whitelist-protected safe junk cleaner with dry-run support. *(destructive)*
-4. `ssd_find_duplicates`: 3-phase SHA-256 duplicate file detection with pagination and preview capping. *(read-only)*
-5. `ssd_update_index`: Fast incremental index synchronization (<2s). *(idempotent)*
-6. `ssd_check_safety`: exFAT compatibility validator (audits 9 Win32 forbidden chars, 22 DOS stems, and symlinks). *(read-only)*
-7. `ssd_status`: SSD mount root status, shield health, and taxonomy status. *(read-only)*
-8. `ssd_auto_organize`: Autonomous drive auto-zoning and anti-slack relocation with AcademicClassifier. *(destructive)*
-9. `ssd_gitignore`: Stack-aware `.gitignore` governance, personal data defense, secrets audit, and safe untracking. *(idempotent)*
-
-### 1-Click Multi-Agent Registration
-Register all installed AI assistants instantly:
-```bash
-smart-drive mcp register --all
-```
-
-Run from a source checkout (no `pip install`), each registered entry also sets `PYTHONPATH` to the checkout, so clients can start the server from any working directory. A pip-installed copy needs no extra setting.
-
-Pre-packaged configuration templates are also maintained in `configs/`:
-- `configs/.mcp.json` — Local project / workspace root
-- `configs/mcp_config.json` — Google Antigravity 2.0 (`~/.gemini/antigravity/mcp_config.json`)
-- `configs/claude_desktop_config.json` — Claude Desktop & Claude Code (`~/.claude.json`)
-- `configs/cursor_mcp.json` — Cursor IDE / OpenAI Codex (`~/.cursor/mcp.json`)
-- `configs/windsurf_mcp.json` — Windsurf IDE (`~/.codeium/windsurf/mcp_config.json`)
-
-### M8ven MCP Directory & Trust Index Certified (Grade A 100/100)
-SmartDrive-OS is officially certified and indexed on the [M8ven MCP Directory](https://m8ven.ai/mcp/duongnad-smart-drive-os) with a **Grade A (100/100) Trust Score**:
-- **Verification Token**: `duongnad-smart-drive-os-1kxkwu`
-- **100% Static AST-Resolvable Handler Isolation**: Tools are mapped via class-level `SmartDriveMCPServer.TOOL_HANDLERS` and dispatched deterministically without dynamic code execution or hidden reflection.
-- **Constant-Time Authentication Handshake**: Token verification powered by standard library `hmac.compare_digest` with JSON-RPC `auth/handshake` method. Supports `--auth-token` and `--require-auth` CLI parameters, `SMART_DRIVE_MCP_AUTH_TOKEN` environment variable, while defaulting to zero-friction stdio execution for local AI assistants.
-- **In-Memory Rate Limiting**: Built-in thread-safe `SlidingWindowRateLimiter` preventing agent DoS loops with millisecond-accurate `Retry-After` headers and JSON-RPC `-32000` error codes.
-- **Strict Input Boundary Sanitizers**: Parameter validation enforcing safe path resolution (`_resolve_safe_path`), preventing path traversal (`../`), null-byte injection (`\0`), and cross-drive jumping.
-- **Tool Hint Annotations & Schema Parity**: All 9 tools declare explicit boolean hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) meeting Anthropic Claude, OpenAI Actions, and M8ven trust standards.
-- **Zero Hidden Outbound Calls**: Certified 100% offline, local-first stdio execution with zero external telemetry, zero tracking packages, and zero data leakage. The single network access is the explicit, opt-in `git clone` that `smart-drive setup` runs when you invoke it (skipped with `--no-clone`).
+</details>
 
 ---
 
-## Testing & Verification Record (1019 Tests, 100% Pass Rate)
+## Safe Junk Cleaner
 
-SmartDrive-OS is tested across **1019 automated unit, integration, stress, and adversarial test cases** using **100% pure standard library `unittest`**:
+Purgeable files are grouped into 3 tiers with a mandatory dry-run default (`--apply` required to delete):
+1. **Tier 1 (Safe OS Metadata)**: macOS `.DS_Store`, `._*` AppleDouble, `.Spotlight-V100`, `.Trashes`; Windows `Thumbs.db`, `desktop.ini`, `ehthumbs.db`.
+2. **Tier 2 (Developer Caches)**: Python `__pycache__`, `*.pyc`, `*.pyo`, `.pytest_cache`; Node `node_modules/.cache`; Rust `target/debug/build`; legacy `polaris/.cache/**`.
+3. **Tier 3 (Transient & Logs)**: `*.log`, `*.tmp`, `*.bak`, crash dumps.
+
+> **Inviolable Whitelist**: Root manifests (`AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `README.md`, `PRIVACY.md`), setup scripts (`Setup_*.bat`, `Setup_*.command`), the 6 taxonomies, Windows folders (`WindowsApps`, `Program Files`), games (`SteamLibrary`, `Riot Games`, `LDPlayer`), active SQL Server databases (`Microsoft SQL Server 2022`), and `smart-drive-os` are permanently protected.
+
+---
+
+## Snapshots and Backup
+
+- **SHA-256 Snapshots (`smart-drive snapshot`)**: Streaming 64 KB-chunk ($O(1)$ memory) point-in-time manifests in `.smart_drive/snapshots/<name>.json` to detect bit rot or tampering.
+- **Incremental Backup (`smart-drive backup`)**: Copies modified/new files while excluding OS junk. Default coverage: `02_Learning_Knowledge`, `03_Development_Projects`, `05_Dev_Toolbox` (override with `--partitions`); hidden dirs (`.git`, `.github`, `.vscode`) are skipped unless `--include-hidden` is passed, and every run lists what was not covered.
+- **Duplicates (`smart-drive dup`) & Git Clones (`smart-drive repos`)**: 3-phase SHA-256 duplicate finder (hard links counted once) and read-only Git clone auditor checking SSD-vs-machine **mirrors** (`commit`, `push`, `pull`, `fetch to compare`) and same-drive **duplicates** (newest commit to keep, redundant same-branch copies, or `git worktree` with `--relative-paths` on git 2.48+; dirty/unpushed/stashed clones are blocked from removal).
+
+---
+
+## Workstation Hybrid and C-Drive Offload
+
+`FilesystemAdapter` and `DriveDetectorBackend` adapt between **exFAT 512 KB** (slack guard, anti-symlink rules, Spotlight/FSEvents shields) and **NTFS 4 KB** (4,096-byte math, `fsutil` TRIM check, `C:` cache offload). `smart-drive offload` migrates heavy caches (HuggingFace, Ollama, PyTorch, Docker WSL2, pip, uv, npm, Conda, Gradle, Cargo) from `C:` to `D:\04_System_Offload_Caches\<name>` in a **7-phase transactional workflow** with rollback safety and unprivileged NTFS Directory Junctions (`mklink /J`). See [README_INTERNAL.md](README_INTERNAL.md).
+
+<details>
+<summary>AcademicClassifier (FPTU), Non-Code Routing & AutoZoner Self-Defense</summary>
+
+- **AcademicClassifier (FPTU)**: Extracts course codes (`DBI202`, `WED201c`, `SWE202c`, `PRN211`, `PRJ301`, `OSG`), detects exams/labs (`PE`, `de thi`, `on luyen`, `lab1_sp26`, `sp26`, `fa25`, `su25`), zones into `02_Learning_Knowledge/FPTU/Ky_1/` .. `Ky_7/`, and repairs ZIP mojibake (`h?c k? 3 fptu` $\rightarrow$ `Hoc_Ky_3_fptu`, `n luy?n pe dbi202` $\rightarrow$ `On_Luyen_pe_dbi202`, `k 1 fptu` $\rightarrow$ `Ky_1_fptu`, `dich truyen` $\rightarrow$ `Dich_Truyen`).
+- **Non-Code Routing**: `dich truyen` $\rightarrow$ `02_Learning_Knowledge/Personal_Books/dich truyen`, `lenovo` $\rightarrow$ `05_Dev_Toolbox/OEM_Drivers/LENOVO`, `sql2022` $\rightarrow$ `05_Dev_Toolbox/Installers/SQL2022`.
+- **AutoZoner Self-Defense**: Anchors `_CURRENT_FILE` through `_SMART_DRIVE_REPO_DIR` and ancestors so `smart-drive-os` never moves itself; pre-filters Windows folders (`WindowsApps`, `Program Files`, `Program Files (x86)`, `$Recycle.Bin`, `System Volume Information`, `WpSystem`, `DeliveryOptimization`, `WUDownloadCache`), games (`SteamLibrary`, `Riot Games`, `LDPlayer`, `fo4`, `32837`, `Downloads`), and active SQL Server (`DBI202_VuPT\MSSQL16.MSSQLSERVER`, `MSSQLSERVER`, `MSSQL`).
+
+</details>
+
+---
+
+## Launchers
+
+All 20 portable launchers reside in both the repo root and `launchers/` (zero Git required):
+
+| Workflow | Windows CMD | PowerShell | macOS App | Linux/POSIX | Purpose |
+|---|---|---|---|---|---|
+| **Drive Setup** | `Setup_SSD.bat` | `Setup_SSD.ps1` | `Setup_SSD.command` | `Setup_SSD.sh` | Interactive 1-touch initialization & profile selector |
+| **Quick Search** | `Quick_Search.bat` | `Quick_Search.ps1` | `Quick_Search.command` | `Quick_Search.sh` | Instant interactive SQLite FTS5 search prompt |
+| **Quick Clean** | `Quick_Clean.bat` | `Quick_Clean.ps1` | `Quick_Clean.command` | `Quick_Clean.sh` | Dry-run junk preview followed by confirmed Tier 1 purge |
+| **Quick Audit** | `Quick_Audit.bat` | `Quick_Audit.ps1` | `Quick_Audit.command` | `Quick_Audit.sh` | Instant storage breakdown and 512 KB cluster slack audit |
+| **Interactive Menu** | `SmartDrive.bat` | `SmartDrive.ps1` | `SmartDrive.command` | `SmartDrive.sh` | Full interactive TUI menu (including `[8]` Relink Agents) |
+
+`smart-drive self-path-check` checks the running Python environment (venv, pyenv, user scripts) and prints the PowerShell `SetEnvironmentVariable`, `~/.bashrc`/`~/.zshrc` export, or `pyenv rehash` command if `smart-drive` is not on `PATH`.
+
+---
+
+## Profiles
+
+| Profile | Target Architecture | Included Taxonomies & Subdirectories |
+|---|---|---|
+| **`workstation-hybrid`** *(Recommended)* | Secondary drive (`D:`, `E:`) with games, apps, coursework | `01_AI_Models`, `02_Learning_Knowledge` (`FPTU/`, `Personal_Books/`, `Notes/`), `03_Development_Projects` (`active/`, `archive/`), `04_System_Workspaces`, `05_Dev_Toolbox` (`OEM_Drivers/`, `Installers/`, `scripts/`), `06_Archives_Storage` |
+| **`internal-developer-vault`** | Internal NVMe/SATA SSD for offloaded `C:` caches | `01_AI_Models`, `02_Development_Workspaces`, `03_Data_Vault`, `04_System_Offload_Caches` (`huggingface/`, `ollama/`, `pip/`, `uv/`), `05_Dev_Toolbox`, `06_Archives_Storage` |
+| **`ai-developer`** | External SSD for LLMs, fine-tuning, AI agents | `01_AI_Models` (`checkpoints/`, `gguf/`, `safetensors/`, `datasets/`), `02_Learning_Knowledge`, `03_Development_Projects` (`ai_agents/`), `04_System_Workspaces`, `05_Dev_Toolbox`, `06_Archives_Storage` |
+| **`data-science`** | Data engineering, pipelines, EDA notebooks | `01_AI_Models`, `02_Learning_Knowledge`, `03_Development_Projects` (`notebooks/`, `data_raw/`, `pipelines/`), `04_System_Workspaces`, `05_Dev_Toolbox`, `06_Archives_Storage` |
+| **`general-workspace`** *(Default)* | Universal code, docs, notes, utilities | Standard 6 taxonomies with `Notes/`, `References/`, `active/`, `archive/`, `scripts/` |
+
+---
+
+## Testing
+
+1,100+ automated tests run in CI on Windows, macOS and Linux with Python 3.9 and 3.13 using `unittest`:
 
 ```bash
-# Run full test suite with standard library unittest:
 python -m unittest discover tests -v
 ```
 
-### Verified Test Results:
-```text
-----------------------------------------------------------------------
-Ran 1019 tests in 60.1s
-
-OK (skipped=79)
-```
-
-- **Pass Rate**: **100.0%** (933 passed, 79 platform-skipped on non-Windows/sandbox, 0 failures, 0 errors).
-- **Gitignore Governance Coverage**: Precision ownership classification (`own`, `third-party`, `local`), intentional build output preservation (`package.json` bin/main/module/types/exports), `.gitignore` negation re-inclusion, multi-value keep lists (`smartdrive.keep` and `--keep`), directory pattern selective re-inclusion (`<dir>/*` with `!<file>`) and omission safety for nested outputs, third-party junk suppression, live `gh` visibility auditing with missing remote resolution (`visibility: missing`), high-severity tracked secrets auditing (variable names only), stack detection across 9 ecosystems, CRLF line ending preservation, idempotent re-application, dry-run safety, junk & personal data detection, and staged change protection.
-- **Learning Unit Coverage**: Atomic protection for Aurora courses, standalone decks, Polaris subjects, and cluster slack hotspot reporting.
-- **Adversarial Filesystem Coverage**: Cluster sizes from 512B to 32MB, boundary conditions (0B, 1B, 512KB-1B, 512KB, 512KB+1B), and large-scale stress tests.
-- **Inviolable Defense Coverage**: Complete verification of repository self-defense, Windows system folders, games, and active SQL Server database protection.
-- **AcademicClassifier Coverage**: Full course regex matching, mojibake repair, and semester routing.
+Coverage spans gitignore governance (ownership, intentional build outputs, negations, keep lists, `gh` visibility, secret variable names, CRLF preservation, staged-change guard), atomic learning units, agent path relinking (MSIX Claude desktop, `--find`, `--wait`), cluster geometry (512 B–32 MB), self-defense, and `AcademicClassifier`.
 
 ---
 
 ## Privacy, Security & Data Isolation
 
-SmartDrive-OS is engineered from the ground up with a strict **local-first, zero-trust** architecture:
+SmartDrive-OS is engineered with a **local-first, zero-trust** architecture:
+- **100% Local-Only Operations**: All scanning, SQLite FTS5 indexing, and SHA-256 snapshotting run exclusively on local storage.
+- **Zero Telemetry & Zero PII Logging**: No analytics, network beacons, or harvesting of file contents/secrets; only basic metadata is stored in `.smart_drive/index.db`.
+- **Air-Gap Ready & Defensive Safeguards**: Zero external pip dependencies (`dependencies = []`), local `stdio` MCP transport, offline `setup --no-clone`, mandatory dry-run cleanup defaults, and an inviolable whitelist (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`).
 
-- **100% Local-Only Operations**: All filesystem scanning, SQLite FTS5 search indexing, and SHA-256 snapshotting occur exclusively on your local storage. No data is ever transmitted over the network.
-- **Zero Telemetry & Phone-Home**: Zero analytics, zero usage trackers, and zero background network beacons.
-- **Zero PII Logging**: File contents, credentials, and source code secrets are never parsed or harvested; only basic filesystem metadata is stored in local `.smart_drive/index.db`.
-- **Air-Gap Ready**: Zero external pip dependencies (`dependencies = []`). The MCP Server operates solely over local `stdio`, and nothing in SmartDrive-OS listens on a network port. `smart-drive setup --no-clone` stays fully offline.
-- **Defensive Safeguards**: Inviolable whitelist protecting critical files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`), mandatory dry-run defaults for cleanup, and strict input boundary validation.
-
-For full architectural details, security models, and compliance specifications, please read our authoritative [PRIVACY.md](PRIVACY.md).
+For full details and compliance specifications, read [PRIVACY.md](PRIVACY.md).
 
 ---
 
 ## Contributing & License
 
-### Contributing
-SmartDrive-OS is an open-source project and welcomes all community contributions!
-- 🌟 **Star & Fork** the repository on GitHub: [DuongNAD/smart-drive-os](https://github.com/DuongNAD/smart-drive-os)
-- 🐛 Report bugs or suggest new features via [GitHub Issues](https://github.com/DuongNAD/smart-drive-os/issues)
-- 🔀 Submit improvements via [Pull Requests](https://github.com/DuongNAD/smart-drive-os/pulls)
-- 📖 Read our full contribution guidelines in [CONTRIBUTING.md](CONTRIBUTING.md)
-
-### License
-This project is open-source software licensed under the permissive **MIT License** — see the [LICENSE](LICENSE) file for details. You are free to use, modify, distribute, and integrate it into personal and commercial projects without restrictions.
+- 🌟 **Star & Fork** on GitHub: [DuongNAD/smart-drive-os](https://github.com/DuongNAD/smart-drive-os) · 🐛 [GitHub Issues](https://github.com/DuongNAD/smart-drive-os/issues) · 🔀 [Pull Requests](https://github.com/DuongNAD/smart-drive-os/pulls) · 📖 [CONTRIBUTING.md](CONTRIBUTING.md)
+- 📄 Licensed under the **MIT License** — see [LICENSE](LICENSE).

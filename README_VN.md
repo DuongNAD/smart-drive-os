@@ -2,432 +2,261 @@
 
 # SmartDrive-OS — Hướng Dẫn Sử Dụng (Tiếng Việt)
 
-*Vành đai Sao Thổ tựa như những làn lưu trữ ngăn nắp: quản trị chuẩn xác và quy hoạch trật tự cho toàn bộ ổ đĩa.*
+*Vành đai Sao Thổ tựa như những làn lưu trữ ngăn nắp: mỗi tệp tin đúng làn của mình trên toàn bộ ổ đĩa.*
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
-[![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](#)
+[![Zero Pip Dependencies](https://img.shields.io/badge/dependencies-0%20external%20pip-success.svg)](pyproject.toml)
 [![Privacy: 100% Cục bộ](https://img.shields.io/badge/Privacy-100%25%20C%E1%BB%A5c%20b%E1%BB%99-success?style=flat-square&logo=shield)](PRIVACY.md)
-[![Kiến trúc: Workstation Hybrid](https://img.shields.io/badge/ki%E1%BA%BFn%20tr%C3%BAc-Workstation%20Hybrid%20Native-blueviolet.svg)](#)
-[![Hệ thống tệp: exFAT 512KB Guard](https://img.shields.io/badge/h%E1%BB%87%20th%E1%BB%91ng%20t%E1%BB%87p-exFAT%20512KB%20Guard-orange.svg)](#)
-[![Hệ thống tệp: NTFS 4KB Native](https://img.shields.io/badge/h%E1%BB%87%20th%E1%BB%91ng%20t%E1%BB%87p-NTFS%204KB%20Native-cyan.svg)](#)
-[![Giao thức MCP: JSON-RPC 2.0](https://img.shields.io/badge/MCP-JSON--RPC%202.0%20stdio-purple.svg)](https://modelcontextprotocol.io/)
-[![Kiểm định Bảo mật MCP: Hạng A (100/100)](https://img.shields.io/badge/MCP%20Audit-H%E1%BA%A1ng%20A%20(100%2F100)-brightgreen.svg)](#)
-[![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Kiểm thử: 1019/1019 Vượt qua (100%)](https://img.shields.io/badge/ki%E1%BB%83m%20th%E1%BB%AD-1019%2F1019%20passed%20(100%25)-brightgreen.svg)](#)
-[![20 Launcher Portable](https://img.shields.io/badge/launchers-20%20t%E1%BB%87p%20kh%E1%BB%9Fi%20ch%E1%BA%A1y-blue.svg)](#)
+[![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
 [![Phiên bản: v1.3.1](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.3.1-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.3.1)
 [![Giấy phép: MIT](https://img.shields.io/badge/Gi%E1%BA%A5y%20ph%C3%A9p-MIT-yellow.svg)](LICENSE)
 
-> **Hệ điều hành Quản trị Dữ liệu Tự hành Máy trạm (Workstation Hybrid), Hệ thống Snapshot Toàn vẹn Dữ liệu SHA-256 và Công cụ Tìm kiếm Siêu tốc SQLite FTS5 (<10ms) dành cho Ổ cứng Di động Ngoài (exFAT), Ổ phụ Gắn trong (NTFS) và các Trợ lý Lập trình AI.**
->
-> 🌐 **English Documentation**: Full GitHub repository documentation is available at [README.md](README.md)
->
-> 🚀 **Kiến trúc Ổ phụ Gắn trong & Di chuyển Cache Ổ C:**: Xem chi tiết hướng dẫn quy hoạch ổ phụ NVMe/SATA (`D:`, `E:`), giải phóng hàng chục GB ổ C: qua NTFS Directory Junctions (`mklink /J`) và giám sát SSD TRIM: [README_INTERNAL.md](README_INTERNAL.md)
+SmartDrive-OS là bộ quản trị ổ đĩa và tìm kiếm tức thì (<10ms) bằng SQLite FTS5 cho ổ SSD di động (exFAT cluster 512 KB) và ổ phụ gắn trong máy trạm (NTFS cluster 4 KB). Dự án dành cho lập trình viên, sinh viên đại học (đặc biệt FPTU) và các trợ lý lập trình AI (Claude Code, Claude Desktop, Antigravity, Cursor, Codex, Windsurf) để tự quy hoạch thư mục không làm gãy đường dẫn agent, chuẩn hóa `.gitignore`, dời cache ổ `C:` và kiểm chứng tệp bằng SHA-256. Hệ thống chạy 100% cục bộ bằng thư viện chuẩn Python 3.9+ (`dependencies = []`), không thu thập dữ liệu.
+
+> 🌐 **English**: [README.md](README.md) · 🚀 **Hướng dẫn Ổ phụ Gắn trong (NTFS) & Dời Cache Ổ C:**: [README_INTERNAL.md](README_INTERNAL.md)
 
 ---
 
-## Mục lục
+## Mục Lục
 
-1. [Vấn đề cốt lõi: "Cạm bẫy" Hình học Ổ đĩa Kép](#1-vấn-đề-cốt-lõi-cạm-bẫy-hình-học-ổ-đĩa-kép)
-   - [Cạm bẫy Cluster Slack 512KB trên exFAT](#cạm-bẫy-cluster-slack-512kb-trên-exfat)
-   - [Thách thức Ổ phụ Gắn trong Máy trạm (NTFS 4KB)](#thách-thức-ổ-phụ-gắn-trong-máy-trạm-ntfs-4kb)
-   - [Bảng So sánh Trực quan: Ổ ngoài exFAT vs. Ổ trong NTFS](#bảng-so-sánh-trực-quan-ổ-ngoài-exfat-vs-ổ-trong-ntfs)
-2. [Kiến trúc Tổng thể Workstation Hybrid](#2-kiến-trúc-tổng-thể-workstation-hybrid)
-3. [Các Tính Năng & Đột Phá Nổi Bật](#3-các-tính-năng--đột-phá-nổi-bật)
-   - [1. Kiến trúc Workstation Hybrid & Tự Thích ứng Hình học Ổ cứng](#1-kiến-trúc-workstation-hybrid--tự-thích-ứng-hình-học-ổ-cứng)
-   - [2. AcademicClassifier & Bản địa hóa Môn học Đại học Việt Nam (FPTU)](#2-academicclassifier--bản-địa-hóa-môn-học-đại-học-việt-nam-fptu)
-   - [3. Tự động Phân luồng Sách Cá Nhân, Trình điều khiển OEM & Bộ Cài đặt](#3-tự-động-phân-luồng-sách-cá-nhân-trình-điều-khiển-oem--bộ-cài-đặt)
-   - [4. Cơ chế Tự Bảo Vệ Bất Biến & Vùng An toàn Ứng dụng / Game / Database](#4-cơ-chế-tự-bảo-vệ-bất-biến--vùng-an-toàn-ứng-dụng--game--database)
-   - [5. Tiện ích Kiểm tra Biến Môi trường & PATH (`self-path-check`)](#5-tiện-ích-kiểm-tra-biến-môi-trường--path-self-path-check)
-   - [6. Máy chủ MCP Server Hạng A (100/100) & Tối ưu Token cho AI Coding Agents](#6-máy-chủ-mcp-server-hạng-a-100100--tối-ưu-token-cho-ai-coding-agents)
-   - [7. Bộ 20 Launcher Portable Độc lập Đa Nền tảng](#7-bộ-20-launcher-portable-độc-lập-đa-nền-tảng)
-   - [8. Động cơ Di chuyển Cache Ổ C: & NTFS Directory Junctions (`smart-drive offload`)](#8-động-cơ-di-chuyển-cache-ổ-c--ntfs-directory-junctions-smart-drive-offload)
-   - [9. Động cơ Snapshot SHA-256 Dạng Dòng & Sao lưu Tăng số](#9-động-cơ-snapshot-sha-256-dạng-dòng--sao-lưu-tăng-số)
-   - [10. Cam kết 100% Zero External Pip Dependencies](#10-cam-kết-100-zero-external-pip-dependencies)
-   - [11. Clone trùng lặp & Bản đối chiếu trên SSD di động (`smart-drive repos`)](#11-clone-trùng-lặp--bản-đối-chiếu-trên-ssd-di-động-smart-drive-repos)
-   - [12. Quản lý .gitignore & Bảo vệ Dữ liệu Cá nhân (`smart-drive gitignore`)](#12-quản-lý-gitignore--bảo-vệ-dữ-liệu-cá-nhân-smart-drive-gitignore)
-   - [13. Dời Thư Mục Mà Coding Agent Vẫn Chạy Đúng (`smart-drive relink`)](#13-dời-thư-mục-mà-coding-agent-vẫn-chạy-đúng-smart-drive-relink)
-4. [Khởi Động Nhanh Trong 3 Bước](#4-khởi-động-nhanh-trong-3-bước)
-5. [5 Cấu Hình Mẫu Chuyên Biệt (Preset Profiles)](#5-5-cấu-hình-mẫu-chuyên-biệt-preset-profiles)
-6. [Hướng Dẫn Sử Dụng Bộ Khởi Chạy 1-Chạm (20 Launchers)](#6-hướng-dẫn-sử-dụng-bộ-khởi-chạy-1-chạm-20-launchers)
-7. [Bảng Tra Cứu Toàn Diện Lệnh CLI](#7-bảng-tra-cứu-toàn-diện-lệnh-cli)
-8. [Cú Pháp Tìm Kiếm Nâng Cao](#8-cú-pháp-tìm-kiếm-nâng-cao)
-9. [Kết Hợp Với Aurora Slides Và Polaris](#9-kết-hợp-với-aurora-slides-và-polaris)
-10. [Cơ Chế Dọn Rác An Toàn 3 Tầng & Danh Sách Bảo Vệ Whitelist](#10-cơ-chế-dọn-rác-an-toàn-3-tầng--danh-sách-bảo-vệ-whitelist)
-11. [Quản Lý .gitignore & Bảo Vệ Dữ Liệu Cá Nhân](#11-quản-lý-gitignore--bảo-vệ-dữ-liệu-cá-nhân)
-12. [Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình](#12-tích-hợp-máy-chủ-mcp-với-các-trợ-lý-ai-lập-trình)
-13. [Báo Cáo Kiểm Thử Tự Động (992 Bài Test, Pass 100%)](#13-báo-cáo-kiểm-thử-tự-động-992-bài-test-pass-100)
-14. [Bảo Mật & Quyền Riêng Tư Dữ Liệu](#14-bảo-mật--quyền-riêng-tư-dữ-liệu)
-15. [Đóng Góp Mã Nguồn & Giấy Phép](#15-đóng-góp-mã-nguồn--giấy-phép)
+- [Khởi Động Nhanh](#khởi-động-nhanh)
+- [Sử Dụng Hằng Ngày](#sử-dụng-hằng-ngày)
+- [Vì Sao Ổ exFAT Cần Công Cụ Này](#vì-sao-ổ-exfat-cần-công-cụ-này)
+- [Tổng Quan Tính Năng](#tổng-quan-tính-năng)
+  - [Bảng Tra Cứu Lệnh CLI](#bảng-tra-cứu-lệnh-cli)
+  - [Dời Thư Mục Và Giữ Coding Agent Hoạt Động](#dời-thư-mục-và-giữ-coding-agent-hoạt-động)
+  - [Máy Chủ MCP & Trợ Lý Lập Trình AI](#máy-chủ-mcp--trợ-lý-lập-trình-ai)
+  - [Cú Pháp Tìm Kiếm](#cú-pháp-tìm-kiếm)
+  - [Tài Liệu Học Tập (Aurora Slides Và Polaris)](#tài-liệu-học-tập-aurora-slides-và-polaris)
+  - [Quản Trị Gitignore](#quản-trị-gitignore)
+  - [Dọn Rác An Toàn](#dọn-rác-an-toàn)
+  - [Snapshot Và Sao Lưu](#snapshot-và-sao-lưu)
+  - [Workstation Hybrid Và Di Chuyển Cache Ổ C](#workstation-hybrid-và-di-chuyển-cache-ổ-c)
+  - [Bộ Khởi Chạy 1-Chạm (Launchers)](#bộ-khởi-chạy-1-chạm-launchers)
+  - [Cấu Hình Mẫu (Profiles)](#cấu-hình-mẫu-profiles)
+- [Kiểm Thử](#kiểm-thử)
+- [Bảo Mật & Quyền Riêng Tư Dữ Liệu](#bảo-mật--quyền-riêng-tư-dữ-liệu)
+- [Đóng Góp Mã Nguồn & Giấy Phép](#đóng-góp-mã-nguồn--giấy-phép)
 
 ---
 
-## 1. Vấn đề cốt lõi: "Cạm bẫy" Hình học Ổ đĩa Kép
+## Khởi Động Nhanh
 
-Lập trình viên, kỹ sư AI và sinh viên kỹ thuật thường sử dụng kết hợp hai loại không gian lưu trữ với đặc tính phần cứng hoàn toàn trái ngược nhau:
+### 1. Cài đặt (hoặc chạy trực tiếp không cần cài)
+```bash
+pip install -e .              # cài lệnh `smart-drive` từ bản clone
+python -m smart_drive <lệnh>  # hoặc chạy trực tiếp trong dự án
+smart-drive self-path-check   # kiểm tra PATH và in lệnh cấu hình 1-chạm
+```
 
-### Cạm bẫy Cluster Slack 512KB trên exFAT
+### 2. Khởi tạo ổ đĩa
+Chạy `Setup_SSD.bat` / `Setup_SSD.ps1` (Windows), `Setup_SSD.command` (macOS), `./Setup_SSD.sh` (Linux) hoặc `smart-drive init --profile <tên>` (xem [Cấu Hình Mẫu (Profiles)](#cấu-hình-mẫu-profiles)):
+- `workstation-hybrid`: ổ phụ gắn trong (`D:`, `E:`) dùng chung cho game, ứng dụng Windows và bài học.
+- `internal-developer-vault`: ổ phụ NVMe/SATA nhận các cache AI và lập trình chuyển từ ổ `C:`.
+- `ai-developer`: ổ SSD di động chứa mô hình LLM, checkpoint, dataset và AI agent.
+- `data-science`: kỹ thuật dữ liệu, pipeline xử lý bảng biểu và Jupyter Notebook.
+- `general-workspace` *(mặc định)*: cấu trúc chuẩn cho mã nguồn, lưu trữ, ghi chú học tập và tiện ích.
+```bash
+python -m smart_drive init --profile workstation-hybrid
+python -m smart_drive init --profile ai-developer
+```
 
-Các dòng ổ cứng SSD di động dung lượng cao (tiêu biểu như **Kingston XS2000 2TB**) khi xuất xưởng hoặc định dạng theo chuẩn **exFAT** thường thiết lập kích thước cụm phân bổ mặc định lên đến **512 KB (524.288 bytes)**. Kích thước này rất tốt cho video 4K/8K, nhưng lại là thảm họa đối với các thư mục dự án phần mềm gồm hàng nghìn file mã nguồn nhỏ:
+### 3. Cài đặt hệ sinh thái MCP (một lệnh)
+Tải Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius và Mira vào `~/.smart-drive/mcp` (ngoài ổ exFAT), đăng ký cùng SmartDrive vào các coding agent đã cài (Claude Code, Antigravity, Cursor, Codex) và kiểm tra sức khỏe. Không hỏi tương tác, chạy lại an toàn:
+```bash
+python3 -m smart_drive setup  # macOS / Linux (Windows: python -m smart_drive setup)
+```
+Cần Node.js >= 22.4 và git. `--dry-run` xem trước; `--check --json` báo trạng thái (mã thoát `3` = cần cài đặt); `--no-clone` ngoại tuyến; `--agents claude,cursor` giới hạn agent. Máy chủ đã đăng ký được dùng lại, không clone lần hai (`mcp-agy` tách riêng: venv riêng, Python >= 3.10, API key).
 
-$$\text{Dung lượng Vật lý} = \left\lceil \frac{\text{Kích thước File}}{524.288} \right\rceil \times 524.288 \text{ bytes}$$
+### 4. Đăng ký riêng máy chủ MCP của SmartDrive
+```bash
+smart-drive mcp register --all  # Antigravity, Claude, Cursor, Codex, Windsurf, .mcp.json
+```
 
-$$\text{Dung lượng Lãng phí (Slack)} = \text{Dung lượng Vật lý} - \text{Dung lượng Danh nghĩa}$$
+---
 
-| Dung lượng danh nghĩa file | Dung lượng vật lý chiếm dụng | Dung lượng lãng phí (Slack) | Tỷ lệ lãng phí |
-|---|---|---|---|
-| **0 bytes** | 0 bytes (ghi vào bảng thư mục) | 0 bytes | 0.0% |
-| **1 byte** | **524.288 bytes** (512 KB) | **524.287 bytes** | **99.9998%** |
-| **10 KB** (code / config) | **524.288 bytes** (512 KB) | **514.048 bytes** | **98.05%** |
-| **100 KB** (JSON / docs) | **524.288 bytes** (512 KB) | **421.888 bytes** | **80.47%** |
-| **524.289 bytes** (512 KB + 1B) | **1.048.576 bytes** (1.024 KB) | **524.287 bytes** | **50.00%** |
+## Sử Dụng Hằng Ngày
 
-- **Thiệt hại thực tế**: Một dự án chứa **10.000 file nhỏ** với tổng dung lượng chỉ **15 MB** sẽ nuốt chửng tới **5.12 GB** dung lượng vật lý thực tế trên SSD exFAT — **lãng phí hơn 99%** ổ đĩa!
-- Đồng thời, các tiến trình lập chỉ mục ngầm của hệ điều hành (macOS Spotlight `mds`, Windows Search) liên tục ghi tệp metadata rác (`.DS_Store`, `Thumbs.db`, `.fseventsd`), gây nóng ổ đĩa, hao pin và giảm tuổi thọ chip nhớ SSD.
+**Tìm kiếm (<10ms)** — Truy vấn chỉ mục SQLite FTS5 xếp hạng BM25 thay vì quét đĩa đệ quy (`find`, `grep`, `dir /s`):
+```bash
+smart-drive search "llama cat:ai_models"
+smart-drive search "exam ext:pdf size:>1MB dir:DBI202"
+smart-drive search --kind slide "vòng lặp"
+```
 
-### Thách thức Ổ phụ Gắn trong Máy trạm (NTFS 4KB)
+**Tự động quy hoạch (`organize`)** — Đưa thư mục rời ở gốc ổ đĩa vào 6 phân vùng chuẩn, phân luồng môn FPTU và giảm cluster slack:
+```bash
+smart-drive organize --dry-run
+smart-drive organize --apply
+```
 
-Ngược lại, trên máy trạm (PC/Laptop) có ổ phụ gắn trong NVMe/SATA (`D:`, `E:`) định dạng **NTFS 4KB**, người dùng gặp phải bài toán hoàn toàn khác:
-- Ổ hệ thống (`C:`) liên tục bị đầy bởi các thư mục cache khổng lồ (HuggingFace models, Ollama weights, Docker WSL2, pip, uv, npm, Gradle cache) với dung lượng từ 50GB đến hàng trăm GB.
-- Di chuyển thủ công sẽ làm gãy đường dẫn của phần mềm, còn tạo symlink thông thường (`mklink /D`) lại đòi hỏi quyền Administrator hoặc Developer Mode.
-- Ổ phụ `D:` thường dùng chung cho cả game (`SteamLibrary`, `Riot Games`, `LDPlayer`), ứng dụng Windows (`WindowsApps`, `Program Files`), cơ sở dữ liệu đang hoạt động (`Microsoft SQL Server 2022`) và tài liệu học tập của sinh viên. Các công cụ dọn dẹp mù quáng nếu can thiệp vào các thư mục này sẽ làm hỏng dữ liệu hoặc làm sập database.
+**Dời thư mục không gãy coding agent** — `organize --apply` và `classify --apply` tự cập nhật đường dẫn agent. Sau khi tự dời thư mục tay (hoặc qua mục `[8]` trong menu `SmartDrive`), chạy:
+```bash
+smart-drive relink --find --apply --wait
+smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an" --wait
+```
 
-### Bảng So sánh Trực quan: Ổ ngoài exFAT vs. Ổ trong NTFS
+**Dọn rác an toàn (`clean`)** — Xem trước và xóa rác metadata hệ điều hành, cache biên dịch hoặc log (mặc định `--dry-run`):
+```bash
+smart-drive clean
+smart-drive clean --apply --tier 1
+```
+
+**Kiểm tra sức khỏe (`sentinel`)** — Kiểm tra điểm gắn ổ đĩa, hệ tệp, khiên chặn rác (tự phục hồi), chỉ mục FTS5 và Git:
+```bash
+smart-drive sentinel
+smart-drive health
+```
+
+**Snapshot và sao lưu** — Tạo bản kê khai SHA-256 dạng dòng chống bit rot và sao lưu gia tăng:
+```bash
+smart-drive snapshot create truoc_khi_nop
+smart-drive snapshot verify truoc_khi_nop
+smart-drive backup --target E:\Backups\SSD_Mirror --dry-run
+```
+
+---
+
+## Vì Sao Ổ exFAT Cần Công Cụ Này
+
+Các ổ SSD di động dung lượng lớn (như Kingston XS2000 2 TB) định dạng **exFAT** có kích thước cụm (**cluster size**) mặc định **512 KB (524.288 bytes)**:
+- Dung lượng vật lý là $\lceil \text{Kích thước File} / 524.288 \rceil \times 524.288\text{ B}$ (0 B $\rightarrow$ 0 B; 1 B $\rightarrow$ 512 KB / phí 99,9998%; 10 KB $\rightarrow$ 512 KB / phí 98,05%; 100 KB $\rightarrow$ 512 KB / phí 80,47%; 512 KB + 1 B $\rightarrow$ 1.024 KB / phí 50%).
+- Một dự án gồm **10.000 tệp nhỏ** (15 MB danh nghĩa) chiếm hơn **5,12 GB** trên exFAT (lãng phí >99% vì cluster slack).
+- Trình lập chỉ mục của hệ điều hành (macOS Spotlight `mds`, Windows Search) liên tục ghi metadata ẩn (`.DS_Store`, `Thumbs.db`, `.fseventsd`), gây mòn chip nhớ và hao pin.
+- Trên ổ phụ gắn trong (`D:`, `E:` NTFS 4 KB), ổ `C:` nhanh đầy bởi 50–200 GB cache AI/lập trình, còn ổ `D:` chứa ứng dụng Windows, game và SQL Server đang chạy cần bảo vệ tuyệt đối.
 
 | Tiêu chí | Ổ Di động Ngoài (exFAT) | Ổ Phụ Gắn trong (NTFS) |
 |---|---|---|
 | **Điểm gắn thông thường** | `/Volumes/KINGSTON` hoặc `E:\` | `D:\` hoặc `E:\` (Ổ đĩa cố định) |
 | **Kích thước Cluster** | **512 KB** (524.288 bytes) | **4 KB** (4.096 bytes) |
-| **Vấn đề cốt lõi** | Lãng phí cluster slack cực lớn trên file nhỏ | Ổ C: cạn kiệt dung lượng do cache AI & Dev |
-| **Hỗ trợ Symlink** | ❌ Không hỗ trợ (gây lỗi đa nền tảng) | ⚡ Hỗ trợ qua NTFS Directory Junctions (`mklink /J`) |
+| **Vấn đề cốt lõi** | Lãng phí cluster slack cực lớn trên file nhỏ | Ổ C: cạn dung lượng do cache AI & Dev |
+| **Hỗ trợ Symlink** | ❌ Không hỗ trợ (gây lỗi đa nền tảng) | ⚡ Hỗ trợ qua NTFS Junctions (`mklink /J`) |
 | **Chiến lược tối ưu** | Đóng gói file vi mô, khiên chống quét rác | Di chuyển cache 7 bước, bảo vệ dịch vụ đang chạy |
 | **Đối tượng bảo vệ** | Manifests gốc, scripts khởi chạy, 6 taxonomy | Ứng dụng Windows, Game libraries, Database SQL Server |
 
 ---
 
-## 2. Kiến trúc Tổng thể Workstation Hybrid
+## Tổng Quan Tính Năng
 
-SmartDrive-OS thống nhất mọi thao tác trên cả hai loại ổ đĩa với kiến trúc thuần Python Standard Library 100%:
-
-```
-+---------------------------------------------------------------------------------------------------------+
-|                                    Giao diện Người dùng & AI Agents                                     |
-|   +-----------------------+   +-----------------------+   +---------------------+                       |
-|   |  20 Launchers Tự hành |   |   Python CLI & TUI    |   |  Trợ lý Lập trình AI|                       |
-|   | (.bat/.ps1/.cmd/.sh)  |   | (smart-drive CLI/TUI) |   | (Antigravity/Claude)|                       |
-|   +-----------+-----------+   +-----------+-----------+   +----------+----------+                       |
-+---------------|---------------------------|--------------------------|----------------------------------+
-                |                           |                          |
-                +---------------------------+                          | JSON-RPC 2.0 stdio
-                                            |                          v
-                                            v             +-----------------------------------------------+
-+---------------------------------------------------------|        Máy chủ MCP Server Hạng A (100/100)    |
-|                                                         |  - 100% Phân tích tĩnh AST tách biệt handler |
-|                   Nhân Điều Hành SmartDrive-OS          |  - Định dạng JSON nén có phân trang tối ưu    |
-|                                                         |  - Xác thực Token Handshake HMAC bất biến     |
-|  +--------------------------------+  +------------------+  - Giao tiếp stdio, không mở cổng mạng        |
-|  | Drive Initializer              |  | Storage Auditor  +-----------------------------------------------+
-|  | - 5 Cấu hình mẫu chuyên biệt   |  | - Thích ứng hình học (512KB exFAT vs 4KB NTFS)                   |
-|  | - Cài khiên chống quét rác    |  | - Đo lường chính xác Cluster Slack và dung lượng lãng phí        |
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  | AcademicClassifier & Bản địa   |  | AutoZoner & Cơ chế Tự Bảo Vệ Bất Biến                            |
-|  | - Bóc tách mã môn học FPTU     |  | - Neo chặt thư mục mã nguồn chạy (_SMART_DRIVE_REPO_DIR)         |
-|  | - Phục hồi lỗi font Mojibake   |  | - Bảo vệ ứng dụng Windows (WindowsApps, Program Files)           |
-|  | - Gom nhóm học kỳ (Ky_1-7)     |  | - Bảo vệ Game (SteamLibrary, Riot Games, LDPlayer)               |
-|  | - Phân loại Sách & Driver OEM  |  | - Bảo vệ Database đang chạy (Microsoft SQL Server 2022)          |
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  | Động cơ Dọn Rác An Toàn        |  | Động cơ Di Chuyển Cache Ổ C: & NTFS Junctions                    |
-|  | - Phân loại rác 3 tầng rõ ràng |  | - Quy trình chuyển giao 7 bước với cơ chế hoàn tác Rollback      |
-|  | - Mặc định Dry-Run an toàn     |  | - Điểm nối phần cứng mklink /J không cần quyền Admin             |
-|  | - Khiên Whitelist bất khả xâm  |  | - Mục tiêu: HuggingFace, Ollama, PyTorch, Docker, Pip, Npm, v.v. |
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  +--------------------------------+  +------------------------------------------------------------------+
-|  | Tìm kiếm Tức thì SQLite FTS5   |  | Động cơ Snapshot SHA-256 Dạng Dòng & Sao lưu                     |
-|  | - Phân tích từ tố unicode61    |  | - Băm SHA-256 khối 64KB với bộ nhớ O(1) chống suy thoái tệp      |
-|  | - Phản hồi đa tiêu chí <10ms   |  | - Bản kê khai điểm phục hồi & Kiểm toán tính toàn vẹn            |
-|  +--------------------------------+  +------------------------------------------------------------------+
-+---------------------------------------------------------------------------------------------------------+
-                                            |
-                   +------------------------+------------------------+
-                   |                                                 |
-                   v                                                 v
-+-------------------------------------------------+ +-----------------------------------------------------+
-| Ổ 1: Ổ Di Động Ngoài (exFAT 512KB)              | | Ổ 2: Ổ Phụ Gắn Trong Máy Trạm (NTFS 4KB)            |
-|  01_AI_Models/        02_Learning_Knowledge/    | |  01_AI_Models/        02_Learning_Knowledge/ (FPTU) |
-|  03_Development_Proj/ 04_System_Workspaces/     | |  03_Development_Proj/ 04_System_Workspaces/         |
-|  05_Dev_Toolbox/      06_Archives_Storage/      | |  05_Dev_Toolbox/      06_Archives_Storage/          |
-|  .metadata_never_index .fseventsd/no_log        | |  [BẢO VỆ]: WindowsApps, Program Files, SteamLibrary |
-|  .smart_drive/index.db (Chỉ mục tìm kiếm FTS5)  | |  Riot Games, LDPlayer, SQL2022, Downloads, fo4      |
-|  .smart_drive/snapshots/<manifest>.json         | |  [DATABASE]: DBI202_VuPT\MSSQL16.MSSQLSERVER        |
-+-------------------------------------------------+ +-----------------------------------------------------+
-```
+| Nhóm tính năng | Tóm tắt một dòng | Lệnh chính | Mục chi tiết |
+|---|---|---|---|
+| **CLI Hợp Nhất & Kiểm Toán** | 22 lệnh cho khởi tạo, chỉ mục FTS5, đo cluster slack 512 KB và quản trị ổ đĩa | `smart-drive audit` | [Bảng Tra Cứu Lệnh CLI](#bảng-tra-cứu-lệnh-cli) |
+| **Relink Đường Dẫn Agent** | Giữ coding agent, session, lịch sử, git worktree và `.venv` hoạt động sau khi dời thư mục | `smart-drive relink --find --apply --wait` | [Dời Thư Mục Và Giữ Coding Agent Hoạt Động](#dời-thư-mục-và-giữ-coding-agent-hoạt-động) |
+| **Máy Chủ MCP & Setup** | 9 công cụ JSON-RPC 2.0 stdio (M8ven Hạng A 100/100) và trình cài hệ sinh thái 1 lệnh | `python -m smart_drive setup` | [Máy Chủ MCP & Trợ Lý Lập Trình AI](#máy-chủ-mcp--trợ-lý-lập-trình-ai) |
+| **Tìm Kiếm FTS5 <10ms** | Tìm kiếm SQLite FTS5 `unicode61` BM25 theo từ khóa, đuôi tệp, dung lượng nhị phân, thư mục | `smart-drive search "<truy_vấn>"` | [Cú Pháp Tìm Kiếm](#cú-pháp-tìm-kiếm) |
+| **Tài Liệu Học Tập** | Đánh chỉ mục Aurora Slides & Polaris (`slide`, `fact`, `capture`) và ghim bảo vệ nguyên khối | `smart-drive search --kind slide "<q>"` | [Tài Liệu Học Tập](#tài-liệu-học-tập-aurora-slides-và-polaris) |
+| **Quản Trị Gitignore** | Khối `.gitignore` theo stack, bảo vệ hợp đồng `personal-data`, kiểm toán secret và rò rỉ | `smart-drive gitignore audit` | [Quản Trị Gitignore](#quản-trị-gitignore) |
+| **Dọn Rác An Toàn 3 Tầng** | Dọn rác ưu tiên chạy thử (`--dry-run`) kèm whitelist bảo vệ tệp gốc, game, DB | `smart-drive clean` | [Dọn Rác An Toàn](#dọn-rác-an-toàn) |
+| **Snapshot, Sao Lưu & Repos** | Băm SHA-256 chống bit rot, sao lưu gia tăng, phát hiện tệp trùng và kiểm toán clone Git | `smart-drive snapshot create` | [Snapshot Và Sao Lưu](#snapshot-và-sao-lưu) |
+| **Workstation Hybrid & Offload** | Tự thích ứng exFAT/NTFS, `AcademicClassifier` (FPTU), tự bảo vệ và dời cache ổ `C:` | `smart-drive offload --scan` | [Workstation Hybrid Và Di Chuyển Cache Ổ C](#workstation-hybrid-và-di-chuyển-cache-ổ-c) |
+| **20 Launcher Portable** | 20 tệp khởi chạy 1-chạm `.bat`, `.ps1`, `.command`, `.sh` không cần Git kèm `self-path-check` | `SmartDrive.bat` / `./SmartDrive.sh` | [Bộ Khởi Chạy 1-Chạm (Launchers)](#bộ-khởi-chạy-1-chạm-launchers) |
+| **5 Cấu Hình Mẫu** | Bố cục thư mục cho máy trạm lai, kho cache ổ C:, kỹ sư AI, khoa học dữ liệu và đa năng | `smart-drive init --profile <tên>` | [Cấu Hình Mẫu (Profiles)](#cấu-hình-mẫu-profiles) |
 
 ---
 
-## 3. Các Tính Năng & Đột Phá Nổi Bật
+## Bảng Tra Cứu Lệnh CLI
 
-### 1. Kiến trúc Workstation Hybrid & Tự Thích ứng Hình học Ổ cứng
-SmartDrive-OS tự động nhận diện phần cứng và cấu trúc phân vùng thông qua `FilesystemAdapter` và `DriveDetectorBackend`:
-- **Ổ đĩa exFAT (Cluster 512KB)**: Kích hoạt bộ kiểm soát **exFAT 512KB Cluster Slack Guard**, thực thi nghiêm ngặt lệnh cấm symlink, tự động gieo các khiên chặn Spotlight và FSEvents (`.metadata_never_index`, `.fseventsd/no_log`), và khuyến nghị đóng gói các tệp siêu nhỏ.
-- **Ổ đĩa NTFS (Cluster 4KB)**: Tự động điều chỉnh công thức tính cluster slack về kích thước 4.096 bytes tiêu chuẩn, cho phép tạo các liên kết phần cứng NTFS Directory Junctions (`mklink /J`), kiểm tra sức khỏe lệnh TRIM hệ thống (`fsutil behavior query DisableDeleteNotify`), và kích hoạt tính năng chuyển dọn cache từ ổ C:.
-
-### 2. AcademicClassifier & Bản địa hóa Môn học Đại học Việt Nam (FPTU)
-Được phát triển đặc biệt cho sinh viên đại học kỹ thuật, giảng viên và lập trình viên Việt Nam (với khả năng am hiểu tường tận chương trình đào tạo của **Đại học FPT / FPTU**):
-- **Bóc tách mã môn học qua Regex chuyên sâu**: Tự động nhận diện chính xác các mã môn học chuẩn (`DBI202`, `WED201c`, `SWE202c`, `PRN211`, `PRJ301`, `OSG`, v.v.).
-- **Nhận diện tài liệu học tập & thi cử**: Nhận diện các thư mục luyện thi Practical Exam (`PE`, `de thi`, `on luyen`, `pe_dbi202`), bài thực hành lab (`lab1_sp26`, `testjava`), và các kỳ học (`sp26`, `fa25`, `su25`).
-- **Tự động gom nhóm học kỳ**: Tự động quy hoạch tài liệu vào đúng cấu trúc học kỳ chuẩn `02_Learning_Knowledge/FPTU/Ky_1/` đến `Ky_7/`.
-- **Khôi phục và chuẩn hóa lỗi font tiếng Việt Mojibake**: Tự động nhận diện và sửa chữa các tên thư mục bị hỏng font (dấu chấm hỏi `?`) do giải nén tệp zip cũ hoặc phần mềm nén không tương thích UTF-8:
-  - `h?c k? 3 fptu` $\rightarrow$ `Hoc_Ky_3_fptu`
-  - `n luy?n pe dbi202` $\rightarrow$ `On_Luyen_pe_dbi202`
-  - `k 1 fptu` $\rightarrow$ `Ky_1_fptu`
-  - `dich truyen` $\rightarrow$ `Dich_Truyen`
-
-### 3. Tự động Phân luồng Sách Cá Nhân, Trình điều khiển OEM & Bộ Cài đặt
-Hệ thống tự động nhận diện và quy hoạch các thư mục phi mã nguồn thường thấy trên máy cá nhân:
-- `dich truyen` (truyện dịch, sách đọc cá nhân) $\rightarrow$ `02_Learning_Knowledge/Personal_Books/dich truyen`
-- `lenovo` (driver cứu hộ và phần mềm OEM) $\rightarrow$ `05_Dev_Toolbox/OEM_Drivers/LENOVO`
-- `sql2022` (gói cài đặt cơ sở dữ liệu) $\rightarrow$ `05_Dev_Toolbox/Installers/SQL2022`
-
-### 4. Cơ chế Tự Bảo Vệ Bất Biến & Vùng An toàn Ứng dụng / Game / Database
-Để loại trừ 100% rủi ro khi chạy lệnh tự động sắp xếp trên thư mục gốc của ổ cứng máy trạm, SmartDrive-OS được trang bị **lá chắn bảo vệ đa tầng**:
-- **Tự bảo vệ mã nguồn dự án**: AutoZoner ghi nhớ chính xác đường dẫn tệp thực thi (`_CURRENT_FILE`), module lõi (`_SMART_DRIVE_CORE_DIR`), thư mục gói (`_SMART_DRIVE_PKG_DIR`), thư mục gốc repo (`_SMART_DRIVE_REPO_DIR`) và toàn bộ các thư mục cha. Hàm `classify_item()` đảm bảo `smart-drive-os` **tuyệt đối không bao giờ bị di chuyển, xóa hay đổi tên**.
-- **Bảo vệ ứng dụng hệ thống Windows**: Tự động đưa vào danh sách loại trừ các thư mục nhạy cảm của Windows (`WindowsApps`, `Program Files`, `Program Files (x86)`, `$Recycle.Bin`, `System Volume Information`, `WpSystem`, `DeliveryOptimization`, `WUDownloadCache`).
-- **Bảo vệ kho game và giả lập**: Tuyệt đối không can thiệp vào các thư mục game đồ sộ (`SteamLibrary`, `Riot Games`, `LDPlayer`, `fo4`, `32837`, `Downloads`).
-- **Bảo vệ dịch vụ Database đang chạy**: Bảo vệ đặc biệt cơ sở dữ liệu Microsoft SQL Server 2022 và các tệp dữ liệu LDF/MDF (`DBI202_VuPT\MSSQL16.MSSQLSERVER`, `MSSQLSERVER`, `MSSQL`).
-- **Quét tệp êm ái (Quiet Scanning)**: Các thư mục bị loại trừ được lọc ngay từ tầng duyệt danh mục, không phát sinh syscall thừa và ghi nhận nhật ký quyền truy cập ở cấp độ `DEBUG` không gây phiền nhiễu cho người dùng.
-
-### 5. Tiện ích Kiểm tra Biến Môi trường & PATH (`self-path-check`)
-Hỗ trợ kiểm tra và hướng dẫn thiết lập nhanh môi trường dòng lệnh:
-```bash
-smart-drive self-path-check
-```
-- Kiểm tra biến môi trường `PATH` và xác minh xem script thực thi `smart-drive` đã có thể gọi trực tiếp từ terminal hay chưa.
-- **Tìm lệnh đúng nơi pip đã đặt**: tìm trong môi trường của chính Python đang chạy (venv, một phiên bản pyenv, ...) rồi mới đến thư mục cài theo người dùng, và chỉ gợi ý thêm vào PATH thư mục thực sự chứa lệnh. Nếu gói chưa được cài cho Python đó, tiện ích nói rõ và in sẵn lệnh `pip install`. Người dùng pyenv được hướng dẫn chạy `pyenv rehash`.
-- **Cấu hình 1-chạm cho Windows PowerShell**: Nếu chưa có trong PATH, tiện ích cung cấp sẵn câu lệnh PowerShell để người dùng dán vào là xong:
-  ```powershell
-  [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:APPDATA\Python\Python311\Scripts", "User")
-  ```
-- **Cấu hình cho macOS/Linux**: Cung cấp sẵn lệnh bổ sung vào `~/.bashrc` hoặc `~/.zshrc`.
-- **Cơ chế dự phòng không cần cấu hình**: Sau khi đã cài gói, có thể gọi mọi tính năng từ bất kỳ đâu mà không cần cấu hình PATH thông qua cú pháp sau (với mã nguồn chưa cài thì chỉ chạy được bên trong thư mục dự án):
-  ```bash
-  python -m smart_drive <lệnh>
-  ```
-
-### 6. Máy chủ MCP Server Hạng A (100/100) & Tối ưu Token cho AI Coding Agents
-Tích hợp máy chủ MCP stdio chuẩn JSON-RPC 2.0 cấp doanh nghiệp:
-- **Đạt điểm tuyệt đối Hạng A (100/100)**: Vượt qua toàn diện các bài kiểm toán bảo mật của MCP Registry / Inspector không có cảnh báo.
-- **Cách ly Handler độc lập phân tích tĩnh AST**: Toàn bộ công cụ được định tuyến qua bảng ánh xạ rõ ràng và chuỗi kiểm tra tĩnh, cho phép các công cụ phân tích bảo mật kiểm toán độc lập 100% mã nguồn.
-- **Định dạng JSON nén tối ưu Token kèm phân trang**: Bổ sung các trường phân trang (`limit`, `offset`, `total_groups`, `returned_group_count`, `has_more`, `next_offset`). Danh sách tệp trùng lặp được giới hạn tối đa 10 tệp xem trước cho mỗi nhóm (`truncated_files_count`) nhằm chống tràn cửa sổ ngữ cảnh (Context Window) của các mô hình AI.
-- **8 Công cụ Chuyên dụng**: `ssd_search`, `ssd_audit`, `ssd_clean`, `ssd_find_duplicates`, `ssd_update_index`, `ssd_check_safety`, `ssd_status`, `ssd_auto_organize`.
-- **Đăng ký 1-click cho tất cả trợ lý AI**:
-  ```bash
-  smart-drive mcp register --all
-  # Hoặc:
-  smart-drive mcp-config --all
-  ```
-  Tự động nhận diện và đăng ký cấu hình cho **Google Antigravity 2.0**, **Claude Code & Claude Desktop**, **Cursor IDE / OpenAI Codex**, **Windsurf**, và tệp cấu hình cục bộ `.mcp.json`.
-- **Xác thực Handshake thời gian bất biến**: Sử dụng thuật toán chuẩn `hmac.compare_digest` với cờ lệnh `--auth-token` và `--require-auth`.
-- **Khóa chặt Socket trên Loopback**: Từ chối tuyệt đối việc mở kết nối ra mạng ngoài (`0.0.0.0`), chỉ chấp nhận `127.0.0.1` và `localhost`.
-
-### 7. Bộ 20 Launcher Portable Độc lập Đa Nền tảng
-Không cần cài Git, không phụ thuộc tài khoản. Cung cấp 5 luồng tác vụ với 4 định dạng kịch bản chạy nhanh:
-
-| Luồng Tác vụ | Windows CMD (`.bat`) | Windows PowerShell (`.ps1`) | macOS App (`.command`) | Linux/POSIX (`.sh`) |
-|---|---|---|---|---|
-| **Khởi tạo Ổ đĩa** | `Setup_SSD.bat` | `Setup_SSD.ps1` | `Setup_SSD.command` | `Setup_SSD.sh` |
-| **Tìm kiếm Nhanh** | `Quick_Search.bat` | `Quick_Search.ps1` | `Quick_Search.command` | `Quick_Search.sh` |
-| **Dọn rác Nhanh** | `Quick_Clean.bat` | `Quick_Clean.ps1` | `Quick_Clean.command` | `Quick_Clean.sh` |
-| **Kiểm toán Dung lượng** | `Quick_Audit.bat` | `Quick_Audit.ps1` | `Quick_Audit.command` | `Quick_Audit.sh` |
-| **Menu Tương tác Toàn năng**| `SmartDrive.bat` | `SmartDrive.ps1` | `SmartDrive.command` | `SmartDrive.sh` |
-
-Tất cả 20 tệp khởi chạy có sẵn ở cả thư mục gốc của ổ cứng và thư mục `launchers/` để dùng ngay bằng thao tác nhấp đúp chuột.
-
-### 8. Động cơ Di chuyển Cache Ổ C: & NTFS Directory Junctions (`smart-drive offload`)
-- **Quy trình chuyển giao 7 bước an toàn**: Tự động phát hiện và chuyển các cache khổng lồ (HuggingFace, Ollama, PyTorch, Docker WSL2, pip, uv, npm, Conda, Gradle, Cargo) từ `C:` sang ổ phụ (`D:\04_System_Offload_Caches\<tên>`).
-- **Điểm nối phần cứng NTFS Directory Junctions (`mklink /J`)**: Tạo liên kết trong suốt mà không cần quyền Admin hay Developer Mode.
-- **Cơ chế hoàn tác Rollback tức thì**: Tự động phục hồi nguyên trạng nếu có bất kỳ bước nào gặp lỗi gián đoạn.
-
-### 9. Động cơ Snapshot SHA-256 Dạng Dòng & Sao lưu Tăng số
-- **Băm SHA-256 theo khối 64KB**: Thuật toán tính toán với bộ nhớ hằng số $O(1)$, kiểm tra chính xác hiện tượng suy thoái dữ liệu (bit rot) và tệp bị sửa đổi.
-- **Bản kê khai trạng thái điểm phục hồi**: Lưu trữ trạng thái vào `.smart_drive/snapshots/<tên>.json`.
-- **Sao lưu tăng số thông minh**: Tự động nhận diện và chỉ sao chép các tệp mới hoặc có thay đổi sang ổ đích, tự động loại trừ file rác.
-- **Báo cáo phạm vi trung thực**: Snapshot và sao lưu mặc định phủ `02_Learning_Knowledge`, `03_Development_Projects` và `05_Dev_Toolbox` (chọn phân vùng khác bằng `--partitions`) và bỏ qua các thư mục ẩn như `.git`, `.github`, `.vscode` (thêm lại bằng `--include-hidden`). Mỗi lần chạy đều liệt kê phần chưa được phủ, nên không bao giờ có khoảng trống âm thầm.
-
-### 10. Cam kết 100% Zero External Pip Dependencies
-- Tệp `pyproject.toml` khai báo tường minh: `dependencies = []`.
-- Toàn bộ tính năng được xây dựng trên thư viện chuẩn Python 3.9+ (`sqlite3`, `hashlib`, `hmac`, `json`, `urllib`, `shutil`, `pathlib`, `ctypes`, `subprocess`, `argparse`).
-- Cài đặt và hoạt động ngay trên mọi hệ máy tính mà không lo xung đột gói thư viện.
-
-### 11. Clone trùng lặp & Bản đối chiếu trên SSD di động (`smart-drive repos`)
-Mỗi dự án nên có một bản trên SSD di động và một bản trên mỗi máy mà SSD được cắm vào. `smart-drive repos` quét SSD, thư mục người dùng và các ổ không phải ổ hệ thống (hoặc các thư mục bạn chỉ định), rồi phân loại từng clone theo dự án và nơi lưu:
-- **Bản đối chiếu** (cùng dự án trên SSD và trên máy này) là bình thường. Báo cáo chỉ cho biết hai bên có khớp nhau không và mỗi bên cần làm gì: `commit`, `push`, `pull` hoặc `fetch to compare`.
-- **Bản trùng** (cùng dự án hai lần trên SSD, hoặc hai lần trên các ổ của máy này) được đề xuất phương án: giữ clone nào (commit mới nhất), bản nào thừa (cùng nhánh), bản nào nên chuyển thành `git worktree` của clone được giữ (khác nhánh), kèm lệnh cụ thể. Với git 2.48 trở lên, lệnh dùng `--relative-paths` để worktree trên SSD vẫn chạy khi đổi ký tự ổ hoặc cắm vào macOS.
-- **Bản bị chặn** (có tệp chưa commit, stash, commit chưa push, worktree liên kết, hoặc không có remote) không bao giờ được đề xuất xoá.
-- Worktree liên kết là một phần của clone, không bị tính là bản trùng; worktree đã mất thư mục được liệt kê kèm lệnh `git worktree prune`.
-- Chỉ đọc: không fetch, không ghi, không xoá gì. Không quét thư mục thư viện, thư mục build và thư mục ẩn. `--json` trả về toàn bộ báo cáo cho AI agent.
-
-### 12. Quản lý .gitignore & Bảo vệ Dữ liệu Cá nhân (`smart-drive gitignore`)
-Thiết lập và quản trị chuẩn hóa tệp `.gitignore` trên toàn bộ các kho mã Git trong ổ đĩa mà không cần quét đệ quy chậm chạp:
-- **Tự động nhận diện công nghệ (Stack-Aware)**: Tự động phát hiện các stack công nghệ của repo (Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models và Learning) dựa trên các dấu hiệu ở thư mục gốc và thư mục con tầng nông (<5ms).
-- **Phòng thủ lãng phí Cluster Slack trên exFAT**: Tự động loại trừ các tệp vi mô gây lãng phí nghiêm trọng trên cluster 512KB exFAT — chẳng hạn thư mục nháp của AI agent (`**/.agents/*`, thường chứa hàng trăm file nhỏ làm lãng phí hàng trăm megabytes dung lượng thực; riêng `.agents/skills/`, `.agents/workflows/` và `.agents/rules/` là cấu hình agent nên vẫn được track), cấu hình cục bộ `.claude/settings.local.json`, cache môi trường (`__pycache__/`, `.pytest_cache/`, `node_modules/`), sản phẩm biên dịch (`target/`, `dist/`, `bin/`, `obj/`) và metadata hệ điều hành.
-- **Bảo vệ chuẩn hợp đồng "Personal-Data" của Constellation**: Đối với các kho tài liệu học tập (Aurora slides, đề cương Polaris, bộ nhớ ôn tập Vega, nhật ký thực thi Sirius), tự động khóa chặt lịch sử học tập cá nhân: `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/`, `.polaris/` (hồ sơ người học) và `.sirius/` (nhật ký thực thi).
-- **Phát hiện nguy cơ rò rỉ trên Repo công khai**: Kiểm tra URL remote (không gọi mạng) để cảnh báo tức thì khi dữ liệu học tập cá nhân bị theo dõi trong repo có remote công khai (GitHub, GitLab, Bitbucket) hoặc remote chưa xác định.
-- **Hủy theo dõi an toàn (`--untrack`)**: Chạy lệnh `git rm -r --cached` cho các tệp khớp mà không làm mất tệp làm việc thực tế trên đĩa và từ chối thực hiện nếu repo đang có thay đổi đã staged.
-
-### 13. Dời Thư Mục Mà Coding Agent Vẫn Chạy Đúng (`smart-drive relink`)
-Các coding agent nhớ từng dự án và từng máy chủ MCP bằng đường dẫn tuyệt đối, còn exFAT không thể để lại liên kết ở chỗ cũ. Vì vậy mỗi khi `organize` hoặc `classify` dời một thư mục, SmartDrive tự viết lại các đường dẫn đó:
-- **Cấu hình agent**: Claude Code (`~/.claude.json`), Claude desktop (cấu hình, session, worktree), Codex (`config.toml`), Gemini CLI, Antigravity, Cursor, Windsurf, manifest của Constellation và `.mcp.json` của ổ. Mỗi file giữ nguyên định dạng và được sao lưu thành `<file>.bak.smart-drive` trước khi sửa; cài đặt quyền không bao giờ bị đụng tới.
-- **Lịch sử và repository**: lịch sử và memory của Claude Code chuyển sang thư mục dự án mới, git worktree được sửa, và các gói cài kiểu editable trong `.venv` của dự án được trỏ sang chỗ mới.
-- **Nhật ký**: mỗi đợt dời được ghi vào `.smart_drive/moves.jsonl` để có thể áp dụng lại sau.
-
-Cách chạy:
-```bash
-smart-drive organize --dry-run                               # xem trước thư mục sẽ dời và agent nào được cập nhật
-smart-drive organize --apply                                 # dời thư mục rồi cập nhật đường dẫn cho agent
-smart-drive relink                                           # áp dụng lại đợt dời gần nhất (vd. sau khi tắt một agent)
-smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an" --dry-run    # thư mục bạn tự dời tay: xem trước
-smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an"              # ...rồi áp dụng
-smart-drive relink --find                                    # liệt kê đường dẫn cũ của agent và nơi thư mục đã chuyển tới
-smart-drive relink --find --apply --wait                     # cập nhật các mục chắc chắn, chờ các agent đang mở đóng lại
-```
-Mục `[8]` trong menu của bộ khởi chạy `SmartDrive` cũng thực hiện việc này chỉ với vài thao tác phím. Tắt Claude desktop, Claude Code và Codex trước khi relink (agent đang mở có thể ghi lại cấu hình cũ), xong thì mở lại. Nếu một lệnh trong `.venv` của dự án đã dời vẫn trỏ về chỗ cũ, chạy `uv sync --reinstall` trong dự án đó.
-
----
-
-## 4. Khởi Động Nhanh Trong 3 Bước
-
-### Bước 1: Kiểm tra môi trường
-Chạy kiểm tra môi trường và biến đường dẫn:
-```bash
-python -m smart_drive self-path-check
-```
-
-Hoặc cài đặt chế độ phát triển (nếu muốn dùng lệnh `smart-drive` toàn cục):
-```bash
-pip install -e .
-```
-
-### Bước 2: Khởi tạo ổ đĩa 1-chạm
-Khởi tạo cấu trúc thư mục chuẩn, cài khiên bảo vệ và tạo cơ sở dữ liệu tìm kiếm FTS5 bằng thao tác nhấp đúp hoặc dòng lệnh:
-
-- **Windows**: Nhấp đúp vào `Setup_SSD.bat` hoặc chạy `Setup_SSD.ps1`
-- **macOS**: Nhấp đúp vào `Setup_SSD.command`
-- **Linux**: Chạy `./Setup_SSD.sh`
-- **Dòng lệnh CLI**:
-  ```bash
-  # Dành cho ổ phụ gắn trong (D:, E:) có bài học sinh viên & game:
-  python -m smart_drive init --profile workstation-hybrid
-
-  # Hoặc dành cho ổ cứng ngoài di động chứa mô hình AI:
-  python -m smart_drive init --profile ai-developer
-  ```
-
-### Bước 3: Đăng ký AI Agent
-Đăng ký SmartDrive-OS làm máy chủ MCP cho toàn bộ các trợ lý lập trình AI chỉ với 1 lệnh duy nhất:
-```bash
-smart-drive mcp register --all
-```
-
-### Bước 4: Cài đặt hệ sinh thái MCP (một lệnh)
-Tải Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira rồi đăng ký chúng, cùng với SmartDrive, vào mọi trợ lý lập trình đã cài trên máy (Windows, macOS và Linux). Đây là lệnh coding agent nên chạy ngay sau khi clone dự án: không hỏi gì, chạy lại nhiều lần vẫn an toàn.
-```bash
-python3 -m smart_drive setup     # macOS / Linux  (Windows: python -m smart_drive setup)
-```
-- Cần Node.js >= 22.4 và git. Các máy chủ được clone vào `~/.smart-drive/mcp` (không đặt lên ổ exFAT) và đăng ký qua Constellation vào Claude Code, Antigravity, Cursor và Codex.
-- `--dry-run` để xem trước, `--check --json` để đọc trạng thái (mã thoát `3` nghĩa là còn cần cài đặt), `--no-clone` không đụng tới mạng, `--agents claude,cursor` giới hạn nơi đăng ký.
-- Máy chủ đã được đăng ký sẵn trên máy sẽ được dùng lại, không clone lần hai. `mcp-agy` không nằm trong lệnh này: nó cần venv riêng, Python >= 3.10 và API key.
-
----
-
-## 5. 5 Cấu Hình Mẫu Chuyên Biệt (Preset Profiles)
-
-| Cấu hình mẫu | Đối tượng mục tiêu | Cấu trúc phân vùng & Thư mục con |
-|---|---|---|
-| **`workstation-hybrid`** *(Khuyên dùng cho PC có ổ D:)* | Ổ phụ gắn trong (`D:`, `E:`) chứa lẫn game, ứng dụng Windows và bài học sinh viên | `01_AI_Models`, `02_Learning_Knowledge` (`FPTU/`, `Personal_Books/`, `Notes/`), `03_Development_Projects` (`active/`, `archive/`), `04_System_Workspaces`, `05_Dev_Toolbox` (`OEM_Drivers/`, `Installers/`, `scripts/`), `06_Archives_Storage` |
-| **`internal-developer-vault`** | Ổ phụ NVMe/SATA chuyên dụng làm kho lưu trữ cache chuyển từ C: và dữ liệu AI | `01_AI_Models`, `02_Development_Workspaces`, `03_Data_Vault`, `04_System_Offload_Caches` (`huggingface/`, `ollama/`, `pip/`, `uv/`), `05_Dev_Toolbox`, `06_Archives_Storage` |
-| **`ai-developer`** | Ổ di động SSD tốc độ cao chuyên chứa mô hình LLM, checkpoint và AI agent | `01_AI_Models` (`checkpoints/`, `gguf/`, `safetensors/`, `datasets/`), `02_Learning_Knowledge`, `03_Development_Projects` (`ai_agents/`), `04_System_Workspaces`, `05_Dev_Toolbox`, `06_Archives_Storage` |
-| **`data-science`** | Kỹ sư dữ liệu, phân tích pipeline và sổ tay Jupyter Notebook | `01_AI_Models`, `02_Learning_Knowledge`, `03_Development_Projects` (`notebooks/`, `data_raw/`, `pipelines/`), `04_System_Workspaces`, `05_Dev_Toolbox`, `06_Archives_Storage` |
-| **`general-workspace`** *(Mặc định)* | Cấu trúc tiêu chuẩn cho lập trình tổng hợp, ghi chú và tài liệu học tập | 6 nhóm thư mục chuẩn kèm các thư mục con `Notes/`, `References/`, `active/`, `archive/`, `scripts/` |
-
----
-
-## 6. Hướng Dẫn Sử Dụng Bộ Khởi Chạy 1-Chạm (20 Launchers)
-
-Hệ thống cung cấp sẵn 20 kịch bản khởi chạy không cần cài đặt Git:
-
-```
-smart-drive-os/
-├── launchers/
-│   ├── Setup_SSD.bat        Quick_Search.bat        Quick_Clean.bat        Quick_Audit.bat        SmartDrive.bat
-│   ├── Setup_SSD.ps1        Quick_Search.ps1        Quick_Clean.ps1        Quick_Audit.ps1        SmartDrive.ps1
-│   ├── Setup_SSD.command    Quick_Search.command    Quick_Clean.command    Quick_Audit.command    SmartDrive.command
-│   └── Setup_SSD.sh         Quick_Search.sh         Quick_Clean.sh         Quick_Audit.sh         SmartDrive.sh
-```
-
-- **`Setup_SSD`**: Trình hướng dẫn tương tác cài đặt ổ đĩa và chọn cấu hình mẫu.
-- **`Quick_Search`**: Cửa sổ tìm kiếm nhanh FTS5 tương tác tức thì.
-- **`Quick_Clean`**: Quét mô phỏng file rác và xác nhận dọn dẹp an toàn tầng Tier 1.
-- **`Quick_Audit`**: Kiểm toán thống kê dung lượng và đo lường cluster slack.
-- **`SmartDrive`**: Menu TUI đầy đủ tính năng cho người dùng thích thao tác phím số.
-
----
-
-## 7. Bảng Tra Cứu Toàn Diện Lệnh CLI
-
-Mọi câu lệnh đều có thể gọi qua `smart-drive <lệnh>` hoặc `python -m smart_drive <lệnh>`:
+Mọi lệnh chạy qua `smart-drive <lệnh>` hoặc `python -m smart_drive <lệnh>`:
 
 | Lệnh | Tham số chính | Mô tả chức năng |
 |---|---|---|
-| `self-path-check` | *(không có)* | Kiểm tra đường dẫn PATH của hệ thống và đưa ra câu lệnh PowerShell cấu hình 1-chạm. |
-| `init` | `--profile <tên>`, `--root <đường_dẫn>`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo 6 nhóm thư mục, cài khiên và gieo cơ sở dữ liệu FTS5. |
-| `status` | `--root <đường_dẫn>`, `--json` | Kiểm tra tình trạng điểm gắn ổ đĩa, hệ tệp được nhận diện, cấu trúc hình học, khiên bảo vệ và phân vùng. |
-| `audit` | `--root <đường_dẫn>`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán chi tiết dung lượng và tỷ lệ lãng phí cluster slack, mô hình hoá theo cụm exFAT 512 KB; báo cáo nêu hệ tệp được nhận diện và cho biết khi nào mô hình đó không áp dụng (APFS, NTFS, ext4 ...). Dữ liệu có nhiều hard link chỉ được tính một lần và các đường dẫn thừa được nêu riêng ("Hard Links Not Counted"); symlink được bỏ qua và đếm. |
-| `clean` | `--dry-run` *(mặc định)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Dọn rác hệ thống với cơ chế bắt buộc chạy thử trước và bảo vệ whitelist bất biến. Với `--apply`, lệnh trả mã `1` nếu có mục xoá thất bại (mục bị lá chắn an toàn từ chối được báo riêng, không tính là thất bại). |
-| `search` | `<từ_khóa>`, `--ext <đuôi>`, `--size <kích_thước>`, `--category <nhóm>`, `--limit <n>`, `--json` | Tìm kiếm siêu tốc (<10ms) bằng SQLite FTS5 kết hợp thuật toán xếp hạng BM25. |
-| `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Tự động phân loại file tự do, định tuyến môn học FPTU bằng AcademicClassifier, giảm lãng phí slack và tự cập nhật đường dẫn cho các coding agent khi dời thư mục. |
-| `relink` | `[OLD NEW]`, `--root <đường_dẫn>`, `--dry-run`, `--json` | Cập nhật lại đường dẫn dự án và máy chủ MCP trong cấu hình các coding agent, chuyển lịch sử Claude Code và sửa git worktree sau khi dời thư mục. |
-| `sentinel` | `--root <đường_dẫn>`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng (hệ tệp được nhận diện, trạng thái git), phục hồi khiên bảo vệ bị thiếu (alias: `agent-check`). |
-| `mcp` | `[{serve,register}]`, `--root <đường_dẫn>`, `--all`, `--auth-token <token>`, `--require-auth` | Khởi chạy máy chủ MCP stdio (`serve`) hoặc đăng ký cấu hình cho các AI agent (`register`). |
-| `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Tự động đăng ký máy chủ MCP vào các tệp cấu hình của các IDE và AI Agent. |
-| `setup` | `--check`, `--dry-run`, `--json`, `--agents <danh_sách>`, `--only <danh_sách>`, `--dest <thư_mục>`, `--no-clone`, `--no-health`, `--repair` | Một lệnh: tải hệ sinh thái MCP (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira), đăng ký vào các trợ lý lập trình đã cài (Claude Code, Antigravity, Cursor, Codex) rồi kiểm tra sức khỏe. `--check` thoát với mã `3` nghĩa là còn cần cài đặt. |
-| `snapshot create` | `[tên]`, `--partitions <danh_sách>`, `--include-hidden`, `--root <đường_dẫn>`, `--json` | Tạo bản ghi nhận trạng thái kèm băm SHA-256 dạng dòng cho các phân vùng chỉ định. |
-| `snapshot list` | `--root <đường_dẫn>`, `--json` | Liệt kê toàn bộ các bản snapshot đã lưu kèm dung lượng và số lượng tệp tin. |
-| `snapshot verify` | `<tên>`, `--no-untracked`, `--root <đường_dẫn>`, `--json` | Kiểm toán tính toàn vẹn dữ liệu so với bản snapshot để phát hiện tệp bị sửa đổi hoặc suy thoái (bit rot). |
-| `backup` | `--target <đích>`, `--dry-run`, `--hash`, `--partitions <danh_sách>`, `--include-hidden`, `--json` | Sao lưu tăng số thông minh, chỉ sao chép các tệp mới hoặc có thay đổi sang ổ đích. |
-| `classify` | `[đường_dẫn]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Nhận diện sâu magic bytes và cấu trúc tệp để phân loại mô hình AI, dataset, tài liệu, dự án. Không bao giờ đi theo hay di chuyển symlink/junction, và không đọc hay ghi tại nơi phải đi qua chúng. |
-| `offload` | `--scan`, `--move <tên>`, `--target <ổ>`, `--revert <tên>`, `--dry-run`, `--json` | Quét và di chuyển các cache khổng lồ sang ổ phụ (NTFS junction trên Windows, symbolic link trên macOS/Linux). |
-| `health` | `[ổ_đĩa]`, `--root <đường_dẫn>`, `--json` | Kiểm tra sức khỏe ổ cứng SSD, trạng thái TRIM (Windows), cluster geometry và dung lượng trống. Nhận ký tự ổ đĩa trên Windows hoặc đường dẫn ổ (`/Volumes/MySSD`) trên macOS/Linux. |
-| `dup` | `--root <đường_dẫn>`, `--json` | Tìm kiếm tệp tin trùng lặp qua 3 giai đoạn SHA-256 kèm thống kê dung lượng slack thu hồi được. Nhiều tên cho cùng một dữ liệu (hard link) được coi là một tệp, không bao giờ được đề xuất như bản sao để xoá. |
-| `repos` | `[đường_dẫn...]`, `--root <ssd>`, `--portable <đường_dẫn>`, `--max-depth <n>`, `--json` | Báo cáo chỉ đọc về các clone git: bản trùng của cùng dự án ở cùng một nơi (kèm đề xuất giữ / xoá / chuyển thành worktree) và trạng thái đồng bộ giữa bản trên SSD và bản trên máy. |
-| `gitignore audit` | `[repo]`, `--root <đường_dẫn>`, `--json` | Kiểm toán các repository git để tìm mẫu .gitignore còn thiếu, rác bị commit nhầm (.agents, pycache) và dữ liệu học tập cá nhân bị lộ trong repo công khai. |
-| `gitignore apply` | `<repo>`, `--yes`, `--untrack`, `--json` | Áp dụng khối .gitignore do SmartDrive quản lý theo stack (mặc định dry-run; `--yes` để ghi file; `--untrack` để xóa file rác khỏi chỉ mục git). |
-| `index` | `--root <đường_dẫn>`, `--db <đường_dẫn>`, `--batch <n>` | Lập chỉ mục toàn bộ ổ đĩa với SQLite FTS5 (tốc độ >15.000 tệp/giây). |
-| `update` | `--root <đường_dẫn>`, `--db <đường_dẫn>`, `--json` | Đồng bộ chỉ mục tìm kiếm tăng số siêu nhanh với độ phức tạp $O(1)$ (<2 giây). |
+| `self-path-check` | *(không có)* | Kiểm tra `PATH` hệ thống và in câu lệnh cấu hình 1-chạm. |
+| `init` | `--profile <tên>`, `--root <đd>`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo 6 nhóm thư mục, cài khiên bảo vệ và gieo chỉ mục FTS5. |
+| `status` | `--root <đd>`, `--json` | Kiểm tra điểm gắn ổ đĩa, hệ tệp nhận diện, cấu trúc hình học, khiên bảo vệ và phân vùng. |
+| `audit` | `--root <đd>`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán dung lượng và cluster slack theo mô hình exFAT 512 KB; nêu hệ tệp nhận diện và báo khi mô hình không áp dụng (APFS, NTFS, ext4 ...). Hard link tính một lần ("Hard Links Not Counted"); symlink bỏ qua và đếm. |
+| `clean` | `--dry-run` *(mặc định)*, `--apply`, `--tier {1,2,3}`, `--log`, `--json` | Dọn rác bắt buộc chạy thử kèm whitelist. Với `--apply`, trả mã `1` nếu xóa thất bại (mục bị lá chắn an toàn từ chối được báo riêng, không tính là lỗi). |
+| `search` | `<truy_vấn>`, `--ext <đuôi>`, `--size <cỡ>`, `--category <nhóm>`, `--kind <loại>`, `--limit <n>`, `--json` | Tìm kiếm siêu tốc (<10ms) bằng SQLite FTS5 kết hợp xếp hạng BM25. |
+| `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Tự phân loại file rời, định tuyến môn FPTU bằng AcademicClassifier, giảm slack và cập nhật đường dẫn agent khi dời thư mục. |
+| `relink` | `[OLD NEW]`, `--find`, `--apply`, `--wait [PHÚT]`, `--root <đd>`, `--dry-run`, `--json` | Cập nhật đường dẫn dự án và MCP trong cấu hình agent, chuyển lịch sử Claude Code và sửa git worktree sau khi dời thư mục. |
+| `sentinel` | `--root <đd>`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng (hệ tệp nhận diện, trạng thái git), phục hồi khiên bảo vệ thiếu (alias: `agent-check`). |
+| `mcp` | `[{serve,register}]`, `--root <đd>`, `--all`, `--auth-token <token>`, `--require-auth` | Khởi chạy máy chủ MCP stdio (`serve`) hoặc đăng ký cấu hình cho AI agent (`register`). |
+| `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Tự đăng ký máy chủ MCP vào tệp cấu hình của IDE và AI Agent. |
+| `setup` | `--check`, `--dry-run`, `--json`, `--agents <ds>`, `--only <ds>`, `--dest <đd>`, `--no-clone`, `--no-health`, `--repair` | Tải hệ sinh thái MCP (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira), đăng ký vào coding agent đã cài (Claude Code, Antigravity, Cursor, Codex) và kiểm tra sức khỏe. `--check` thoát mã `3` = cần cài đặt. |
+| `snapshot create` | `[tên]`, `--partitions <ds>`, `--include-hidden`, `--root <đd>`, `--json` | Tạo bản ghi trạng thái kèm băm SHA-256 dạng dòng (khối 64KB) cho phân vùng chỉ định. |
+| `snapshot list` | `--root <đd>`, `--json` | Liệt kê các bản snapshot đã lưu kèm dung lượng và số lượng tệp. |
+| `snapshot verify` | `<tên>`, `--no-untracked`, `--root <đd>`, `--json` | Kiểm toán toàn vẹn dữ liệu so với snapshot để phát hiện tệp bị sửa hoặc bit rot. |
+| `backup` | `--target <đích>`, `--dry-run`, `--hash`, `--partitions <ds>`, `--include-hidden`, `--json` | Sao lưu gia tăng, chỉ chép tệp mới hoặc thay đổi sang ổ đích. |
+| `classify` | `[đd]`, `--suggest`, `--dry-run`, `--apply`, `--no-recursive`, `--json` | Nhận diện sâu magic bytes và cấu trúc tệp cho mô hình AI, dataset, tài liệu, dự án. Không đi theo/dời symlink hay junction, hoặc đọc/ghi xuyên qua chúng. |
+| `offload` | `--scan`, `--move <tên>`, `--target <ổ>`, `--revert <tên>`, `--dry-run`, `--json` | Quét và dời cache lớn sang ổ phụ (NTFS junction trên Windows, symlink trên macOS/Linux). |
+| `health` | `[ổ_đĩa]`, `--root <đd>`, `--json` | Kiểm tra sức khỏe SSD, TRIM (Windows), cluster geometry và dung lượng (ký tự ổ đĩa trên Windows hoặc `/Volumes/MySSD` trên macOS/Linux). |
+| `dup` | `--root <đd>`, `--json` | Tìm tệp trùng 3 giai đoạn SHA-256 kèm dung lượng slack thu hồi. Hard link cùng dữ liệu tính là một tệp, không đề xuất xóa. |
+| `repos` | `[đd...]`, `--root <ssd>`, `--portable <đd>`, `--max-depth <n>`, `--json` | Báo cáo chỉ đọc về các clone git: bản trùng cùng nơi (giữ / xóa / chuyển thành worktree) và trạng thái đồng bộ bản SSD–máy tính. |
+| `gitignore audit` | `[repo]`, `--root <đd>`, `--all`, `--owner <tên>`, `--keep <mẫu>`, `--json` | Kiểm toán repo git tìm mẫu `.gitignore` thiếu, rác bị commit (`.agents`, pycache) và dữ liệu học tập cá nhân lộ trong repo công khai. |
+| `gitignore apply` | `<repo>`, `--yes`, `--untrack`, `--keep <mẫu>`, `--json` | Áp dụng khối `.gitignore` theo stack (mặc định dry-run; `--yes` ghi file; `--untrack` gỡ file rác khỏi chỉ mục git). |
+| `index` | `--root <đd>`, `--db <đd>`, `--batch <n>` | Lập chỉ mục toàn bộ ổ đĩa với SQLite FTS5 (>15.000 tệp/giây). |
+| `update` | `[đd]`, `--root <đd>`, `--db <đd>`, `--quiet`, `--json` | Đồng bộ chỉ mục tìm kiếm gia tăng siêu nhanh $O(1)$ (<2 giây). |
 
 ---
 
-## 8. Cú Pháp Tìm Kiếm Nâng Cao
+## Dời Thư Mục Và Giữ Coding Agent Hoạt Động
 
-Công cụ SQLite FTS5 xử lý truy vấn phức tạp dưới 10 milliseconds:
+Các coding agent nhớ dự án và máy chủ MCP bằng đường dẫn tuyệt đối, còn exFAT không để lại liên kết ở chỗ cũ. Khi `organize` hoặc `classify` dời thư mục, SmartDrive tự viết lại các đường dẫn đó:
+- **Cấu hình agent**: Claude Code (`~/.claude.json`), Claude desktop (cấu hình, session, worktree, kể cả bản Microsoft Store MSIX), Codex (`config.toml`), Gemini CLI, Antigravity, Cursor, Windsurf, manifest của Constellation và `.mcp.json` của ổ đĩa. Mỗi tệp giữ nguyên định dạng và sao lưu thành `<file>.bak.smart-drive`; cài đặt quyền không bị đụng tới.
+- **Lịch sử và repository**: lịch sử và memory của Claude Code chuyển sang thư mục dự án mới, git worktree được sửa, và gói editable trong `.venv` trỏ sang chỗ mới.
+- **Nhật ký**: mỗi đợt dời ghi vào `.smart_drive/moves.jsonl` để áp dụng lại khi cần.
+
+Cách chạy:
+```bash
+smart-drive organize --dry-run # xem trước thư mục dời và agent được cập nhật
+smart-drive organize --apply   # dời thư mục rồi cập nhật đường dẫn cho agent
+smart-drive relink             # áp dụng lại đợt dời gần nhất (sau khi tắt agent)
+smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an" --dry-run # thư mục tự dời tay: xem trước
+smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an"           # ...rồi áp dụng
+smart-drive relink --find                # liệt kê đường dẫn cũ của agent và nơi thư mục đã tới
+smart-drive relink --find --apply --wait # cập nhật mục chắc chắn sau khi agent đang mở đóng
+```
+Mục `[8]` trong menu `SmartDrive` làm việc này với vài phím bấm. Đóng Claude desktop, Claude Code và Codex trước khi relink (agent đang mở có thể ghi đè cấu hình cũ khi thoát), hoặc thêm `--wait` để SmartDrive chờ chúng đóng rồi mới ghi tệp. Nếu lệnh trong `.venv` đã dời vẫn trỏ về chỗ cũ, chạy `uv sync --reinstall` trong dự án đó.
+
+---
+
+## Máy Chủ MCP & Trợ Lý Lập Trình AI
+
+SmartDrive-OS cung cấp máy chủ MCP chuẩn JSON-RPC 2.0 qua `stdio` với **9 công cụ**:
+
+1. `ssd_search`: Tìm kiếm FTS5 tức thì trả về token rút gọn (<2.000 tokens/truy vấn). *(chỉ đọc)*
+2. `ssd_audit`: Thống kê dung lượng và phân tích lãng phí cluster slack có chế độ nén gọn. *(chỉ đọc)*
+3. `ssd_clean`: Dọn rác an toàn có bảo vệ whitelist và hỗ trợ dry-run. *(xóa rác)*
+4. `ssd_find_duplicates`: Tìm file trùng qua 3 giai đoạn SHA-256 có phân trang và giới hạn xem trước. *(chỉ đọc)*
+5. `ssd_update_index`: Đồng bộ chỉ mục tìm kiếm gia tăng (<2s). *(idempotent)*
+6. `ssd_check_safety`: Kiểm tra tương thích exFAT (9 ký tự cấm Win32, 22 từ khóa DOS và symlink). *(chỉ đọc)*
+7. `ssd_status`: Kiểm tra trạng thái gắn kết SSD, khiên bảo vệ và phân vùng. *(chỉ đọc)*
+8. `ssd_auto_organize`: Tự phân luồng và gom file giảm lãng phí slack kết hợp `AcademicClassifier`. *(sắp xếp/xóa rác)*
+9. `ssd_gitignore`: Kiểm toán và áp dụng khối `.gitignore` theo stack, bảo vệ dữ liệu cá nhân, kiểm toán secret và untrack an toàn. *(idempotent)*
+
+Đăng ký bằng `smart-drive mcp register --all` (hoặc `smart-drive mcp-config --all`). Khi chạy từ mã nguồn (chưa `pip install`), mỗi mục tự kèm `PYTHONPATH` trỏ về dự án. Mẫu trong `configs/`: `.mcp.json` (workspace), `mcp_config.json` (Antigravity), `claude_desktop_config.json` (Claude Desktop & Code), `cursor_mcp.json` (Cursor / Codex), `windsurf_mcp.json` (Windsurf).
+
+<details>
+<summary>Chứng chỉ M8ven MCP Directory (Hạng A 100/100) & Tối ưu Token</summary>
+
+Được kiểm định trên [M8ven MCP Directory](https://m8ven.ai/mcp/duongnad-smart-drive-os) với **Điểm Tin Cậy Hạng A (100/100)** (mã: `duongnad-smart-drive-os-1kxkwu`):
+- **AST Handler Isolation**: Ánh xạ tĩnh qua `SmartDriveMCPServer.TOOL_HANDLERS`, không dùng `eval()` hay reflection động.
+- **JSON nén kèm phân trang**: Trường `limit`, `offset`, `total_groups`, `returned_group_count`, `has_more`, `next_offset` và giới hạn 10 tệp xem trước/nhóm trùng (`truncated_files_count`).
+- **Xác thực HMAC & Giới hạn tần suất**: `hmac.compare_digest` qua `auth/handshake` (`--auth-token`, `--require-auth`, `SMART_DRIVE_MCP_AUTH_TOKEN`) và `SlidingWindowRateLimiter` đa luồng (`-32000` kèm `Retry-After`).
+- **Cô lập đường dẫn, Loopback & Tool Hints**: `_resolve_safe_path` chặn `../`, `\0` và nhảy ổ đĩa; khóa `ALLOWED_LOOPBACK_HOSTS = ("127.0.0.1", "localhost")`; khai báo `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` cho cả 9 công cụ.
+- **Không kết nối ngầm**: 100% `stdio` cục bộ; mạng duy nhất là `git clone` tường minh khi chạy `smart-drive setup` (bỏ qua bằng `--no-clone`).
+
+</details>
+
+---
+
+## Cú Pháp Tìm Kiếm
+
+Công cụ SQLite FTS5 (`unicode61` + BM25) xử lý truy vấn đa tiêu chí dưới 10ms:
 
 - **Từ khóa tự do**: `smart-drive search "machine learning"`
-- **Lọc theo phần mở rộng**: `smart-drive search "weights ext:gguf"`
-- **Lọc theo dung lượng**: `smart-drive search "dataset size:>100MB"` (hoặc `size:<1MB`, `size:0`). `>` và `<` không tính chính giá trị đó, `>=` và `<=` thì có; đơn vị là nhị phân (1KB = 1024 byte). Bộ lọc không đọc được (`size:>abc`, `size:>10 MB`) sẽ hiện cảnh báo (stderr ở CLI, trường `warnings` ở MCP) thay vì bị bỏ qua âm thầm.
-- **Lọc theo thư mục**: `smart-drive search "de thi dir:FPTU"`
+- **Lọc phần mở rộng**: `smart-drive search "weights ext:gguf"`
+- **Lọc dung lượng**: `smart-drive search "dataset size:>100MB"` (`size:<1MB`, `size:0`). `>`/`<` không tính biên, `>=`/`<=` có tính; đơn vị nhị phân (`1KB = 1024` bytes). Bộ lọc sai cú pháp (`size:>abc`, `size:>10 MB`) phát cảnh báo (stderr ở CLI, `warnings` ở MCP) thay vì bỏ qua âm thầm.
+- **Lọc danh mục**: `smart-drive search "llama cat:ai_models"`
+- **Lọc thư mục**: `smart-drive search "de thi dir:FPTU"`
+- **Lọc loại học liệu**: `smart-drive search --kind slide "vòng lặp"` (hoặc `kind:fact`, `--kind capture`, `--kind lesson`)
 - **Truy vấn kết hợp**: `smart-drive search "exam ext:pdf size:>1MB dir:DBI202"`
 
 ---
 
-## 9. Kết Hợp Với Aurora Slides Và Polaris
+## Tài Liệu Học Tập (Aurora Slides Và Polaris)
 
-SmartDrive-OS tích hợp liền mạch với [Aurora Slides MCP](https://github.com/DuongNAD/aurora-slides-mcp) và [Polaris MCP](https://github.com/DuongNAD/polaris-mcp) như các hệ sinh thái học tập và nghiên cứu hạng nhất:
-
-### Hệ sinh thái
-
-Mọi dự án của DuongNAD:
+SmartDrive-OS tích hợp với [Aurora Slides MCP](https://github.com/DuongNAD/aurora-slides-mcp) và [Polaris MCP](https://github.com/DuongNAD/polaris-mcp) trong hệ sinh thái học tập DuongNAD:
 
 | Dự án | Vai trò | Kho mã |
 | :--- | :--- | :--- |
@@ -441,232 +270,140 @@ Mọi dự án của DuongNAD:
 | **Constellation** | Đăng ký MCP, kiểm tra sức khỏe, hợp đồng dữ liệu chung | [constellation-mcp](https://github.com/DuongNAD/constellation-mcp) |
 | **SmartDrive-OS** | Quản trị SSD, chỉ mục và tìm kiếm tài liệu học | [smart-drive-os](https://github.com/DuongNAD/smart-drive-os) |
 
-### Kết nối
+Chỉ mục SmartDrive-OS phục vụ Polaris (tìm kiếm học liệu), Sirius và Rigel (khám phá tệp), nhận đồng bộ tức thì (`smart-drive update <dir> --quiet`) từ Aurora ($\ge$ 0.6.2), Polaris ($\ge$ 0.3.2) và Mira, đồng thời thực thi mẫu `.gitignore` của hợp đồng `personal-data` trong [contracts của Constellation](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts).
 
-- **SmartDrive-OS**: chỉ mục của SmartDrive-OS phục vụ Polaris (tìm kiếm tài liệu học), Sirius và Rigel (tìm file), đồng thời nhận cập nhật sau khi ghi (post-write) từ Polaris và Mira; SmartDrive-OS quản lý các mẫu `.gitignore` của bộ công cụ học tập theo hợp đồng `personal-data`.
-
-Các dấu hiệu nhận diện learning unit và post-write hook (`smart-drive update <dir> --quiet`) được định nghĩa chuẩn tắc trong [contracts của Constellation](https://github.com/DuongNAD/constellation-mcp/tree/main/contracts). `smart-drive mcp register` đăng ký riêng SmartDrive; `smart-drive setup` tải toàn bộ hệ sinh thái và đăng ký vào mọi agent thông qua Constellation (làm tay thì dùng `constellation register --dry-run`, sau đó `constellation register`).
-
-### 1. Chỉ Mục Tri Thức Học Tập & Nghiên Cứu Chuyên Sâu
-SmartDrive-OS phân tích và bóc tách các bài thuyết trình slide, giáo trình môn học, ghi chú nghiên cứu và tài liệu học tập thành các đoạn văn bản có mật độ thông tin cao (`doc_chunks`) hỗ trợ xếp hạng BM25 tức thì (<10ms):
+<details>
+<summary>Bảng phân loại học liệu được lập chỉ mục & Bảo vệ Learning-Unit nguyên khối</summary>
 
 | Phân Loại (`kind`) | Tệp Nguồn / Cấu Trúc | Nội Dung Trích Xuất & Lập Chỉ Mục |
 |---|---|---|
-| `slide` | `deck.json` (Aurora Slides) | Tiêu đề slide, gạch đầu dòng, ghi chú người thuyết trình (speaker notes) và ý chính |
-| `lesson` | `course.json` (Aurora Courses) | Đề cương bài giảng, mục tiêu bài học, điều kiện tiên quyết và các mô-đun |
-| `fact` | `polaris/facts.json` (Polaris) | Các sự thật nguyên tử (atomic facts), phát biểu, khái niệm và điểm tin cậy |
-| `source` | `polaris/sources.json` (Polaris) | Trích dẫn thư mục, liên kết URL, ghi chú tác giả và bản tóm tắt |
-| `capture` | `polaris/captures/` (Polaris) | Đoạn trích, điểm nhấn tài liệu, trang học tập và trích dẫn trực tiếp |
-| `outline` | `polaris/roadmap.json` (Polaris) | Đề cương chủ đề, lộ trình học tập và đồ thị DAG môn học tiên quyết |
-| `research` | `polaris/research/*.md` (Polaris) | Tổng hợp nghiên cứu chuyên sâu, tóm tắt y văn và phân tích học thuật |
-| `error` | `polaris/errorlog.md` (Polaris) | Nhật ký lỗi sai, nhận thức sai lầm thường gặp và giải pháp khắc phục |
-| `learning` | Toàn bộ dữ liệu học tập | Tìm kiếm tổng hợp trên tất cả các phân loại tri thức giáo dục |
+| `slide` | `deck.json` (Aurora Slides) | Tiêu đề slide, gạch đầu dòng, ghi chú thuyết trình và ý chính |
+| `lesson` | `course.json` (Aurora Courses) | Đề cương bài giảng, mục tiêu bài học, điều kiện tiên quyết, mô-đun |
+| `module` | `polaris/roadmap.json` (Polaris) | Mô-đun trong lộ trình, mốc học và môn tiên quyết |
+| `fact` | `polaris/facts.json` (Polaris) | Sự thật nguyên tử (atomic facts), phát biểu, khái niệm, điểm tin cậy |
+| `source` | `polaris/sources.json` (Polaris) | Trích dẫn thư mục, URL, ghi chú tác giả và bản tóm tắt |
+| `capture` | `polaris/captures/` (Polaris) | Đoạn trích, điểm nhấn tài liệu, trang học tập và trích dẫn |
+| `outline` | `polaris/lessons/*.outline.md` (Polaris) | Đề cương bài học (các đề mục) |
+| `research` | `polaris/research/*.md` (Polaris) | Tổng hợp nghiên cứu, tóm tắt tài liệu và phân tích học thuật |
+| `error` | `polaris/errorlog.md` (Polaris) | Nhật ký lỗi sai, nhận thức sai lầm và cách khắc phục |
+| `learning` | Toàn bộ dữ liệu học tập | Tìm kiếm tổng hợp trên tất cả phân loại tri thức giáo dục |
 
-### 2. Ví Dụ Tìm Kiếm Tri Thức Đa Tiêu Chí
-Lọc truy vấn trực tiếp theo từng loại tri thức:
-```bash
-# Tìm kiếm slide chứa khái niệm lập trình
-smart-drive search --kind slide "vòng lặp"
+Thư mục bài giảng Aurora và môn học Polaris (`polaris/brief.json`) được ghim thành **Learning Unit** nguyên khối (`pinned: Aurora course/deck or Polaris subject`): AutoZoner không chia tách/di chuyển, trình dọn rác và tìm tệp trùng không xóa tệp bên trong, còn cache cũ `polaris/.cache/**` thu hồi ở Tier-2 (*"Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)"*).
 
-# Tìm kiếm các fact đã xác thực về React
-smart-drive search kind:fact react
-
-# Tìm các bản ghi chép trích dẫn số trang cụ thể
-smart-drive search --kind capture "p. 3"
-
-# Tìm kiếm bài học theo từ khóa
-smart-drive search --kind lesson "recursion"
-```
-
-### 3. Bảo Vệ Learning-Unit Nguyên Khối (Atomic Learning Units)
-Thư mục slide bài giảng Aurora (với các liên kết tài nguyên tương đối như `../../../03_Materials_Code/x.py`), cấu trúc khóa học và thư mục môn học Polaris (`polaris/brief.json`) được công nhận là các **Learning Unit** bất khả xâm phạm:
-- **Động cơ Phân luồng & AutoZoner**: Được ghim cố định tại vị trí (`pinned: Aurora course/deck or Polaris subject`). Thư mục con và tệp bài học không bao giờ bị chia cắt hoặc di chuyển.
-- **Trình Dọn Rác & SecurityGuard**: Được bảo vệ nghiêm ngặt. Toàn bộ hình ảnh, mã nguồn bài học, `progress.jsonl`, trích dẫn (captures) và metadata JSON không bao giờ bị xoá.
-- **Tìm Kiếm Tệp Trùng Lặp**: Tệp trong learning unit luôn được chọn làm bản gốc (canonical keeper) và không bao giờ bị đề xuất xoá.
-- **Dọn Rác Cache An Toàn**: Các tệp JSON cache cũ `polaris/.cache/**` được phân loại là **Tier-2 dev-cache junk** (mô tả: *"Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)"*), cho phép thu hồi dung lượng an toàn mà không ảnh hưởng tới dữ liệu khóa học.
-- **Hook Tự Động Sau Khi Ghi**: Aurora ($\ge$ 0.6.2) và Polaris ($\ge$ 0.3.2) tự động kích hoạt `smart-drive update <dir> --quiet` sau khi ghi tệp, đảm bảo chỉ mục luôn được đồng bộ thời gian thực với chi phí bằng không.
+</details>
 
 ---
 
-## 10. Cơ Chế Dọn Rác An Toàn 3 Tầng & Danh Sách Bảo Vệ Whitelist
+## Quản Trị Gitignore
 
-SmartDrive-OS phân tầng rác hệ thống thành 3 mức độ rõ ràng:
+`smart-drive gitignore` kiểm toán và áp dụng `.gitignore` theo stack cho các kho Git trên ổ đĩa (<5ms cho Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models, Learning). Hệ thống duy trì khối quản lý idempotent (chạy lại nhiều lần vẫn cho cùng kết quả) giữa `# >>> smart-drive managed (do not edit inside) >>>` và `# <<< smart-drive managed <<<`, bảo toàn quy tắc riêng và CRLF/LF:
+- **Phòng thủ Cluster Slack exFAT**: Loại trừ `**/.agents/*` (500+ tệp nháp chiếm >260 MB trên cluster 512 KB; `.agents/skills/`, `.agents/workflows/`, `.agents/rules/` vẫn giữ), `.claude/settings.local.json`, `__pycache__/`, `.pytest_cache/`, `node_modules/`, `target/`/`dist/`/`bin/`/`obj/`.
+- **Bảo vệ hợp đồng `personal-data` của Constellation**: Khóa `.vega/`, `**/progress.jsonl`, `aurora-progress-*.jsonl`, `orion-attempts.jsonl`, `**/polaris/.cache/`, `**/polaris/captures/`, `.polaris/` và `.sirius/`, cảnh báo nếu bị track trong repo công khai hoặc chưa có remote.
 
-1. **Tier 1 (Rác Metadata Hệ Điều Hành - An toàn 100%)**:
-   - macOS `.DS_Store`, `._*` AppleDouble resource forks.
-   - Windows `Thumbs.db`, `desktop.ini`, `ehthumbs.db`.
-   - `.Spotlight-V100`, `.Trashes`.
-2. **Tier 2 (Cache Trình Biên Dịch & Môi Trường Phát Triển)**:
-   - Python `__pycache__`, `*.pyc`, `*.pyo`, `.pytest_cache`.
-   - Node `node_modules/.cache`.
-   - Rust `target/debug/build`.
-   - Polaris legacy API cache: `polaris/.cache/**` (*"Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)"*).
-3. **Tier 3 (Tệp Tạm Thời & Nhật Ký Ghi Đè)**:
-   - `*.log`, `*.tmp`, `*.bak`, crash dumps.
-
-> **Lá chắn Whitelist Bất Khả Xâm Phạm**: Các tệp chỉ thị gốc (`AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `README.md`, `PRIVACY.md`), các kịch bản khởi chạy (`Setup_*.bat`, `Setup_*.command`), 6 thư mục phân vùng gốc, các thư mục hệ thống Windows (`WindowsApps`, `Program Files`), game (`SteamLibrary`, `Riot Games`, `LDPlayer`), database đang hoạt động (`Microsoft SQL Server 2022`) và chính mã nguồn `smart-drive-os` **được bảo vệ vĩnh viễn** và không bao giờ bị xóa hay di chuyển.
-
----
-
-## 11. Quản Lý .gitignore & Bảo Vệ Dữ Liệu Cá Nhân
-
-### Giới thiệu tính năng
-Lệnh `smart-drive gitignore` kiểm toán và áp dụng các quy tắc `.gitignore` chuẩn hóa, nhận biết stack công nghệ cho mọi kho mã Git trên ổ đĩa. Tính năng tự động nhận diện framework của dự án (Python, Node.js, Jupyter, Java, Rust, .NET, LaTeX, AI Models và Learning) và duy trì một khối chuẩn hóa, lũy thừa (idempotent) nằm giữa `# >>> smart-drive managed (do not edit inside) >>>` và `# <<< smart-drive managed <<<`. Mọi quy tắc do người dùng tự viết bên ngoài khối luôn được giữ nguyên trọn vẹn, và định dạng xuống dòng gốc (CRLF hoặc LF) được bảo tồn tuyệt đối.
-
-### Vì sao cần thiết trên exFAT?
-Trên các phân vùng exFAT với cluster 512KB, các tệp tin nhỏ gây lãng phí dung lượng đĩa cực kỳ lớn do cluster slack. Ví dụ, thư mục nháp của các AI agent (`.agents/`) có thể dễ dàng tích tụ hơn 500 tệp vi mô. Một thư mục `.agents/` chỉ nặng 2.4 MB trên thực tế sẽ chiếm dụng **hơn 260 MB** dung lượng vật lý của ổ SSD! Ngoài ra, `node_modules/`, `__pycache__/`, các môi trường ảo (venv) và sản phẩm biên dịch sinh ra hàng trăm nghìn tệp vi mô gây thắt cổ chai I/O và độ trễ truy xuất rất cao.
-
-### Bảo vệ Dữ liệu Học tập Cá nhân
-Các kho lưu trữ tài liệu học tập công khai có thể vô tình làm rò rỉ chỉ số học tập cá nhân, bộ nhớ ghi nhớ và kết quả làm bài tập trắc nghiệm/lab. SmartDrive thực thi nghiêm ngặt hợp đồng `personal-data` chuẩn tắc của Constellation trên mọi repo học tập:
-- `.vega/` (Cơ sở dữ liệu lặp lại ngắt quãng kiểu Anki/SuperMemo)
-- `**/progress.jsonl` (Nhật ký tiến độ học tập Aurora)
-- `aurora-progress-*.jsonl` (Tiến độ bài học dạng phiên)
-- `orion-attempts.jsonl` (Lịch sử làm bài lab tương tác)
-- `**/polaris/.cache/` (Cache truy vấn API)
-- `**/polaris/captures/` (Dữ liệu trích dẫn học tập thô)
-- `.polaris/` (Hồ sơ người học)
-- `.sirius/` (Nhật ký thực thi Sirius)
-
-Trong quá trình `audit`, các kho mã có máy chủ remote công khai (GitHub, GitLab, Bitbucket) hoặc remote chưa xác định sẽ lập tức nhận cảnh báo nếu dữ liệu học tập cá nhân đang bị theo dõi (tracked).
-
-### Phân Loại Quyền Sở Hữu & Tách Biệt Repo Bên Thứ Ba (v1.3.1)
-Các kho mã được tự động phân loại chính xác thành 3 nhóm quyền sở hữu:
-- **`own`**: Remote origin khớp với chủ sở hữu đã cấu hình (`--owner`, `SMART_DRIVE_GIT_OWNER`, git config `smartdrive.owner`, hoặc chủ sở hữu phổ biến nhất trên ổ đĩa).
-- **`third-party`**: Các clone mã nguồn mở nằm trong `open_source/`, `vendor/`, `third_party/`, hoặc thuộc về tác giả khác. Quyết định theo dõi thư mục build/dist của tác giả gốc được tôn trọng tuyệt đối và không bị cảnh báo rác giả.
-- **`local`**: Các repo cục bộ / nội bộ không có remote origin.
-
-Mặc định, lệnh `audit` tập trung vào các repo `own` và `local`, tách riêng danh sách repo `third-party`. Sử dụng tùy chọn `--all` để hiển thị toàn bộ trong bảng chính.
-
-### Kiểm Tra Visibility & Xử Lý Remote Bị Xóa Qua GitHub CLI (`gh`)
-Khi công cụ GitHub CLI (`gh`) được cài đặt và xác thực, SmartDrive-OS sẽ truy vấn trạng thái hiển thị (`public`, `private`, `internal`, `missing`) của repo với timeout ngắn và bộ nhớ đệm cache theo phiên chạy. Các repo private đã xác thực sẽ không bị cảnh báo nguy cơ lộ dữ liệu công khai. Khi remote không tồn tại trên GitHub (bị xóa, đổi tên hoặc không có quyền truy cập), visibility được xác định là `missing` ("remote not found on GitHub") và loại trừ hoàn toàn các cảnh báo rò rỉ công khai giả.
-
-### Bảo Toàn Sản Phẩm Build Chủ Đích & Danh Sách Keep
-Các tệp đã commit được công nhận là sản phẩm build có chủ đích (không bao giờ tính là rác và không bao giờ bị untrack) khi:
-1. Được tham chiếu bởi tệp `package.json` gần nhất (các trường `bin`, `main`, `module`, `types`, hoặc `exports` kể cả các đối tượng lồng nhau; chuẩn hóa `./`);
-2. Được tái bao gồm bằng quy tắc phủ định negation trong `.gitignore` riêng của repo (ví dụ: `!dist/bundle.mjs`);
-3. Nằm trong danh sách giữ lại: git config `smartdrive.keep` (nhiều giá trị pattern) hoặc cờ `--keep <pattern>` (lặp lại được khi `audit` và `apply`).
-
-Khi một pattern khuyến nghị (như `dist/`) có thể bỏ qua tệp build chủ đích, khối quản trị sẽ tự động sử dụng `<dir>/*` kèm theo các dòng `!<file>` nếu mọi tệp chủ đích đều nằm trực tiếp trong thư mục đó (cho phép git tái bao gồm bundle); ngược lại sẽ an toàn bỏ qua pattern đó cho repo để tránh làm hỏng cơ chế clone-and-run.
-
-### Kiểm Toán Tệp Bí Mật Nguy Cấp Cao (Chỉ Hiện Tên Biến)
-Các tệp cấu hình và chứng chỉ nhạy cảm bị track nhầm (`.env`, `.env.*`, `*.pem`, `*.key`, `credentials*.json`) được tách thành mục cảnh báo **High Severity**, chỉ hiển thị **duy nhất tên biến / key** (tuyệt đối không bao giờ hiển thị giá trị bí mật) kèm lời khuyên thu hồi / rotate secret ngay lập tức. Tính năng `apply --yes --untrack` sẽ tự động hủy theo dõi chúng khỏi git index mà vẫn giữ nguyên tệp trên đĩa.
-
-### Hủy theo dõi an toàn (`--untrack`)
-Nếu tệp rác hoặc dữ liệu cá nhân vô tình bị commit vào git từ trước, lệnh `smart-drive gitignore apply <repo> --yes --untrack` sẽ tự động loại bỏ chúng khỏi chỉ mục thông qua `git rm -r --cached`. **Tệp làm việc thực tế trên đĩa không bao giờ bị xóa**, các sản phẩm build có chủ đích luôn được bảo toàn, hệ thống không tự động tạo commit mới, và thao tác untrack sẽ an toàn **từ chối thực hiện** nếu kho mã đang có các thay đổi chưa commit đã đưa vào staged.
-
-### Ví dụ Dòng Lệnh CLI
 ```bash
-# 1. Kiểm toán toàn bộ repository trên ổ đĩa để tìm pattern thiếu và file rác bị track:
-smart-drive gitignore audit
-
-# 2. Xuất báo cáo kiểm toán dưới dạng JSON cấu trúc:
-smart-drive gitignore audit --json
-
-# 3. Kiểm toán bao gồm cả các clone mã nguồn bên thứ ba trong bảng chính:
-smart-drive gitignore audit --all
-
-# 4. Kiểm toán với chủ sở hữu chỉ định cụ thể:
-smart-drive gitignore audit --owner myorg
-
-# 5. Kiểm toán một repo dự án cụ thể:
-smart-drive gitignore audit D:\teamwork_projects\my_project
-
-# 6. Xem trước các thay đổi .gitignore (dry run):
-smart-drive gitignore apply D:\teamwork_projects\my_project
-
-# 7. Áp dụng khối quản lý vào tệp và hủy theo dõi file rác/secret đã commit nhầm:
+smart-drive gitignore audit                                 # kiểm toán repo own & local (--all gồm third-party)
+smart-drive gitignore apply D:\teamwork_projects\my_project # xem trước (dry-run)
 smart-drive gitignore apply D:\teamwork_projects\my_project --yes --untrack
 ```
 
+<details>
+<summary>Phân loại quyền sở hữu, kiểm tra visibility qua GitHub CLI, bảo toàn file build chủ đích, kiểm toán secret & untrack an toàn</summary>
+
+- **Phân loại quyền sở hữu**: Tự chia thành `own` (khớp `--owner`, `SMART_DRIVE_GIT_OWNER`, `smartdrive.owner` hoặc chủ sở hữu phổ biến nhất), `third-party` (`open_source/`, `vendor/`, `third_party/` hoặc khác chủ sở hữu—tôn trọng `dist/`/`build/` gốc) và `local` (không có remote).
+- **Kiểm tra Visibility qua GitHub CLI (`gh`)**: Truy vấn `public`, `private`, `internal` hoặc `missing` ("remote not found on GitHub") có cache theo phiên, tránh báo động giả trên repo private hoặc remote đã xóa.
+- **Bảo toàn file build chủ đích & Keep list**: Tệp trong `package.json` (`bin`, `main`, `module`, `types`, `exports`), phủ định (`!dist/bundle.mjs`) hoặc `smartdrive.keep` / `--keep <mẫu>` không bị báo rác hay untrack. Với tệp chủ đích trong `dist/`, khối quản lý sinh `<dir>/*` kèm `!<file>` (hoặc lược bỏ mẫu nếu lồng sâu).
+- **Kiểm toán secret & Untrack an toàn**: Phát hiện `.env`, `.env.*`, `*.pem`, `*.key`, `credentials*.json` bị track và **chỉ hiện tên biến / key** (không lộ giá trị). `--untrack` chạy `git rm -r --cached` (giữ tệp trên đĩa) và từ chối nếu có staged chưa commit.
+
+</details>
+
 ---
 
-## 12. Tích Hợp Máy Chủ MCP Với Các Trợ Lý AI Lập Trình
+## Dọn Rác An Toàn
 
-SmartDrive-OS hỗ trợ giao thức MCP tiêu chuẩn, cung cấp 9 công cụ chuyên dụng cho AI Agents:
+Tệp rác chia làm 3 tầng với mặc định chạy thử (`--dry-run`, cần `--apply` để xóa thật):
+1. **Tier 1 (Rác Metadata Hệ Điều Hành)**: macOS `.DS_Store`, `._*` AppleDouble, `.Spotlight-V100`, `.Trashes`; Windows `Thumbs.db`, `desktop.ini`, `ehthumbs.db`.
+2. **Tier 2 (Cache Biên Dịch & Phát Triển)**: Python `__pycache__`, `*.pyc`, `*.pyo`, `.pytest_cache`; Node `node_modules/.cache`; Rust `target/debug/build`; cache cũ `polaris/.cache/**`.
+3. **Tier 3 (Tệp Tạm & Nhật Ký)**: `*.log`, `*.tmp`, `*.bak`, crash dumps.
 
-1. `ssd_search`: Tìm kiếm FTS5 tức thì trả về token rút gọn (<2.000 tokens/lần truy vấn). *(chỉ đọc)*
-2. `ssd_audit`: Thống kê dung lượng và phân tích lãng phí cluster slack có chế độ nén gọn. *(chỉ đọc)*
-3. `ssd_clean`: Dọn rác an toàn có khiên bảo vệ whitelist và hỗ trợ dry-run. *(xóa rác)*
-4. `ssd_find_duplicates`: Tìm file trùng lặp qua 3 giai đoạn SHA-256 có phân trang và giới hạn xem trước. *(chỉ đọc)*
-5. `ssd_update_index`: Đồng bộ chỉ mục tìm kiếm tăng số (<2s). *(idempotent)*
-6. `ssd_check_safety`: Kiểm tra tính tương thích exFAT (quét 9 ký tự cấm Win32, 22 từ khóa DOS, và phát hiện symlink). *(chỉ đọc)*
-7. `ssd_status`: Kiểm tra trạng thái gắn kết SSD, khiên bảo vệ và phân vùng. *(chỉ đọc)*
-8. `ssd_auto_organize`: Tự động phân luồng và gom file giảm thiểu lãng phí slack kết hợp AcademicClassifier. *(sắp xếp/xóa rác)*
-9. `ssd_gitignore`: Kiểm toán và áp dụng khối .gitignore chuẩn hóa theo stack, ngăn rò rỉ dữ liệu cá nhân, kiểm toán secret và untrack an toàn. *(kiểm toán/cập nhật .gitignore)*
+> **Whitelist Bất Khả Xâm Phạm**: Tệp chỉ thị gốc (`AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `README.md`, `PRIVACY.md`), kịch bản khởi chạy (`Setup_*.bat`, `Setup_*.command`), 6 phân vùng gốc, thư mục Windows (`WindowsApps`, `Program Files`), game (`SteamLibrary`, `Riot Games`, `LDPlayer`), cơ sở dữ liệu đang chạy (`Microsoft SQL Server 2022`) và `smart-drive-os` được bảo vệ vĩnh viễn.
 
-### Đăng ký 1-Chạm Cho Tất Cả Trợ Lý AI
+---
+
+## Snapshot Và Sao Lưu
+
+- **Snapshot SHA-256 (`smart-drive snapshot`)**: Băm tệp theo khối 64 KB (bộ nhớ $O(1)$) vào `.smart_drive/snapshots/<tên>.json` để phát hiện suy thoái dữ liệu (bit rot) hoặc chỉnh sửa trái phép.
+- **Sao lưu gia tăng (`smart-drive backup`)**: Chỉ chép tệp mới/thay đổi và loại trừ rác hệ điều hành. Mặc định phủ `02_Learning_Knowledge`, `03_Development_Projects`, `05_Dev_Toolbox` (đổi bằng `--partitions`); bỏ qua thư mục ẩn (`.git`, `.github`, `.vscode`) trừ khi có `--include-hidden`, và luôn liệt kê phần chưa được phủ.
+- **Tệp trùng (`smart-drive dup`) & Clone Git (`smart-drive repos`)**: Quét 3 giai đoạn SHA-256 (hard link tính một lần) và kiểm toán chỉ đọc clone Git để kiểm tra **bản đối chiếu** SSD–máy tính (`commit`, `push`, `pull`, `fetch to compare`) cùng **bản trùng** cùng nơi (giữ bản mới nhất, xóa bản dư cùng nhánh, hoặc chuyển thành `git worktree` với `--relative-paths` trên git 2.48+; bản còn thay đổi chưa commit/push hoặc stash bị chặn xóa).
+
+---
+
+## Workstation Hybrid Và Di Chuyển Cache Ổ C
+
+`FilesystemAdapter` và `DriveDetectorBackend` tự thích ứng giữa **exFAT 512 KB** (lá chắn cluster slack, cấm symlink, khiên Spotlight/FSEvents) và **NTFS 4 KB** (tính cụm 4.096 bytes, kiểm tra TRIM qua `fsutil`, dời cache ổ `C:`). `smart-drive offload` chuyển cache lớn (HuggingFace, Ollama, PyTorch, Docker WSL2, pip, uv, npm, Conda, Gradle, Cargo) từ ổ `C:` sang `D:\04_System_Offload_Caches\<tên>` theo **quy trình giao dịch 7 bước** có rollback tự động và nối bằng NTFS Junction (`mklink /J`) không cần Admin. Xem [README_INTERNAL.md](README_INTERNAL.md).
+
+<details>
+<summary>AcademicClassifier (FPTU), Phân luồng Sách/Driver/Installer & Cơ chế Tự Bảo Vệ</summary>
+
+- **AcademicClassifier (FPTU)**: Bóc tách mã môn (`DBI202`, `WED201c`, `SWE202c`, `PRN211`, `PRJ301`, `OSG`), nhận diện đề thi/lab (`PE`, `de thi`, `on luyen`, `lab1_sp26`, `sp26`, `fa25`, `su25`), gom vào `02_Learning_Knowledge/FPTU/Ky_1/` .. `Ky_7/` và sửa mojibake (`h?c k? 3 fptu` $\rightarrow$ `Hoc_Ky_3_fptu`, `n luy?n pe dbi202` $\rightarrow$ `On_Luyen_pe_dbi202`, `k 1 fptu` $\rightarrow$ `Ky_1_fptu`, `dich truyen` $\rightarrow$ `Dich_Truyen`).
+- **Phân luồng phi mã nguồn**: `dich truyen` $\rightarrow$ `02_Learning_Knowledge/Personal_Books/dich truyen`, `lenovo` $\rightarrow$ `05_Dev_Toolbox/OEM_Drivers/LENOVO`, `sql2022` $\rightarrow$ `05_Dev_Toolbox/Installers/SQL2022`.
+- **Tự Bảo Vệ của AutoZoner**: Neo `_CURRENT_FILE` tới `_SMART_DRIVE_REPO_DIR` và thư mục cha để `smart-drive-os` không tự dời chính mình; bảo vệ thư mục Windows (`WindowsApps`, `Program Files`, `Program Files (x86)`, `$Recycle.Bin`, `System Volume Information`, `WpSystem`, `DeliveryOptimization`, `WUDownloadCache`), game (`SteamLibrary`, `Riot Games`, `LDPlayer`, `fo4`, `32837`, `Downloads`) và SQL Server (`DBI202_VuPT\MSSQL16.MSSQLSERVER`, `MSSQLSERVER`, `MSSQL`).
+
+</details>
+
+---
+
+## Bộ Khởi Chạy 1-Chạm (Launchers)
+
+20 kịch bản khởi chạy nằm ở gốc dự án và `launchers/` (không cần Git):
+
+| Luồng Tác vụ | Windows CMD | PowerShell | macOS App | Linux/POSIX | Công dụng |
+|---|---|---|---|---|---|
+| **Khởi tạo Ổ đĩa** | `Setup_SSD.bat` | `Setup_SSD.ps1` | `Setup_SSD.command` | `Setup_SSD.sh` | Hướng dẫn khởi tạo ổ đĩa và chọn profile |
+| **Tìm kiếm Nhanh** | `Quick_Search.bat` | `Quick_Search.ps1` | `Quick_Search.command` | `Quick_Search.sh` | Nhập từ khóa tìm kiếm tức thì bằng SQLite FTS5 |
+| **Dọn rác Nhanh** | `Quick_Clean.bat` | `Quick_Clean.ps1` | `Quick_Clean.command` | `Quick_Clean.sh` | Xem trước file rác (dry-run) rồi xác nhận dọn Tier 1 |
+| **Kiểm toán Dung lượng** | `Quick_Audit.bat` | `Quick_Audit.ps1` | `Quick_Audit.command` | `Quick_Audit.sh` | Thống kê dung lượng và đo lãng phí cluster slack 512 KB |
+| **Menu Tương tác** | `SmartDrive.bat` | `SmartDrive.ps1` | `SmartDrive.command` | `SmartDrive.sh` | Menu TUI đầy đủ (gồm mục `[8]` Relink Agents) |
+
+`smart-drive self-path-check` kiểm tra môi trường Python (venv, pyenv, user) và in lệnh PowerShell `SetEnvironmentVariable`, `export` cho `~/.bashrc`/`~/.zshrc` hoặc `pyenv rehash` nếu `smart-drive` chưa có trong `PATH`.
+
+---
+
+## Cấu Hình Mẫu (Profiles)
+
+| Cấu hình mẫu | Đối tượng mục tiêu | Cấu trúc phân vùng & Thư mục con |
+|---|---|---|
+| **`workstation-hybrid`** *(Khuyên dùng)* | Ổ phụ (`D:`, `E:`) chứa game, ứng dụng Windows, bài học | `01_AI_Models`, `02_Learning_Knowledge` (`FPTU/`, `Personal_Books/`, `Notes/`), `03_Development_Projects` (`active/`, `archive/`), `04_System_Workspaces`, `05_Dev_Toolbox` (`OEM_Drivers/`, `Installers/`, `scripts/`), `06_Archives_Storage` |
+| **`internal-developer-vault`** | Ổ phụ NVMe/SATA nhận cache chuyển từ C: | `01_AI_Models`, `02_Development_Workspaces`, `03_Data_Vault`, `04_System_Offload_Caches` (`huggingface/`, `ollama/`, `pip/`, `uv/`), `05_Dev_Toolbox`, `06_Archives_Storage` |
+| **`ai-developer`** | Ổ SSD di động cho LLM, checkpoint, AI agent | `01_AI_Models` (`checkpoints/`, `gguf/`, `safetensors/`, `datasets/`), `02_Learning_Knowledge`, `03_Development_Projects` (`ai_agents/`), `04_System_Workspaces`, `05_Dev_Toolbox`, `06_Archives_Storage` |
+| **`data-science`** | Kỹ sư dữ liệu, pipeline và Jupyter Notebook | `01_AI_Models`, `02_Learning_Knowledge`, `03_Development_Projects` (`notebooks/`, `data_raw/`, `pipelines/`), `04_System_Workspaces`, `05_Dev_Toolbox`, `06_Archives_Storage` |
+| **`general-workspace`** *(Mặc định)* | Lập trình tổng hợp, ghi chú, tài liệu học tập | 6 nhóm thư mục chuẩn kèm `Notes/`, `References/`, `active/`, `archive/`, `scripts/` |
+
+---
+
+## Kiểm Thử
+
+1,100+ bài kiểm thử tự động chạy trên CI với Windows, macOS và Linux (Python 3.9 và 3.13) bằng `unittest`:
+
 ```bash
-smart-drive mcp register --all
+python -m unittest discover tests -v
 ```
 
-Khi chạy từ mã nguồn (không `pip install`), mỗi cấu hình được ghi còn kèm `PYTHONPATH` trỏ vào thư mục dự án, nên ứng dụng khởi động được máy chủ từ bất kỳ thư mục làm việc nào. Bản đã cài bằng pip không cần thiết lập thêm.
-
-Các mẫu cấu hình dựng sẵn cũng được lưu trữ trong `configs/`:
-- `configs/.mcp.json` — Thư mục gốc dự án / workspace
-- `configs/mcp_config.json` — Google Antigravity 2.0 (`~/.gemini/antigravity/mcp_config.json`)
-- `configs/claude_desktop_config.json` — Claude Desktop & Claude Code (`~/.claude.json`)
-- `configs/cursor_mcp.json` — Cursor IDE / OpenAI Codex (`~/.cursor/mcp.json`)
-- `configs/windsurf_mcp.json` — Windsurf IDE (`~/.codeium/windsurf/mcp_config.json`)
-
-### Chứng Chỉ & Chỉ Số Tin Cậy M8ven MCP (Grade A 100/100)
-SmartDrive-OS được kiểm định độc lập và xếp hạng chính thức trên thư mục [M8ven MCP Directory](https://m8ven.ai/mcp/duongnad-smart-drive-os) với **Điểm Tin Cậy Tuyệt Đối Hạng A (100/100)**:
-- **Mã Xác Thực (Verification Token)**: `duongnad-smart-drive-os-1kxkwu`
-- **100% AST Handler Isolation**: Toàn bộ handler công cụ được phân giải tĩnh qua chuỗi `if-elif` và class-level handler map, tuyệt đối không dùng `eval()` hay reflection động gây rủi ro bảo mật.
-- **Xác Thực Handshake Thời Gian Hằng Số**: Hỗ trợ xác thực token an toàn chống timing attack qua `hmac.compare_digest` chuẩn JSON-RPC `auth/handshake`. Hỗ trợ các tham số `--auth-token`, `--require-auth` hoặc biến môi trường `SMART_DRIVE_MCP_AUTH_TOKEN`.
-- **Bộ Giới Hạn Tần Suất Trượt (Rate Limiter)**: Cơ chế `SlidingWindowRateLimiter` thread-safe ngăn ngừa agent gọi lặp vô tận (runaway loop), phản hồi mã lỗi chuẩn `-32000` kèm header `Retry-After` chính xác tới millisecond.
-- **Chặn Đứng Path Traversal & Escape**: Hàm `_resolve_safe_path` cô lập 100% các vector tấn công vượt cấp (`..`), null-byte (`\0`) và nhảy ổ đĩa.
-- **Tuân Thủ Chuẩn M8ven, Claude & OpenAI**: Khai báo minh bạch các thuộc tính an toàn `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` cho toàn bộ 9 công cụ.
-- **Không Gửi Dữ Liệu Ra Ngoài**: Đảm bảo 100% giao tiếp qua luồng `stdio` cục bộ, không mở port mạng, không chứa thư viện tracking/telemetry. Truy cập mạng duy nhất là lệnh `git clone` tường minh, do chính bạn chạy, của `smart-drive setup` (bỏ qua bằng `--no-clone`).
+Bộ kiểm thử bao phủ quản trị `.gitignore` (quyền sở hữu, file build chủ đích, phủ định `!`, danh sách `keep`, visibility qua `gh`, kiểm toán secret chỉ hiện tên biến, bảo toàn CRLF, chặn khi có staged changes), bảo vệ Learning Units, cập nhật đường dẫn agent (Claude desktop MSIX, `--find`, `--wait`), mô phỏng cluster (512 B–32 MB), tự bảo vệ và `AcademicClassifier`.
 
 ---
 
-## 13. Báo Cáo Kiểm Thử Tự Động (1019 Bài Test, Pass 100%)
+## Bảo Mật & Quyền Riêng Tư Dữ Liệu
 
-Hệ thống được bảo vệ và kiểm chứng bởi **1019 ca kiểm thử tự động** (unit tests, integration tests, stress tests, adversarial tests) chạy hoàn toàn trên thư viện chuẩn `unittest`:
+SmartDrive-OS tuân thủ nguyên tắc **Local-First & Quyền Riêng Tư Tối Đa**:
+- **Hoạt động 100% Cục bộ (Local-Only)**: Quét ổ đĩa, chỉ mục SQLite FTS5 và xác thực snapshot SHA-256 diễn ra trực tiếp trên máy của bạn.
+- **Zero Telemetry & Zero PII Logging**: Không thu thập hành vi, không kết nối ngầm, không đọc mã nguồn bí mật, token hay private key; chỉ lưu metadata tệp trong `.smart_drive/index.db`.
+- **Sẵn sàng cho Air-Gap & Khiên Bảo vệ**: Không có dependencies ngoài (`dependencies = []`), MCP qua `stdio`, `smart-drive setup --no-clone` ngoại tuyến, mặc định chạy thử khi dọn rác và bảo vệ vĩnh viễn tệp cốt lõi (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`).
 
-```bash
-# Chạy toàn bộ bài test bằng Python Standard Library unittest:
-py -3.11 -m unittest discover tests -v
-```
-
-### Kết Quả Kiểm Thử Thực Tế:
-```text
-Ran 1019 tests in 60.1s
-OK (skipped=79)
-```
-
-- **Tỷ lệ đậu**: **100.0%** (933 passed, 79 bài kiểm tra môi trường/sandbox bỏ qua theo thiết kế, 0 failures, 0 errors).
-- **Độ bao phủ Quản trị Gitignore**: Phân loại chính xác chủ sở hữu repo (`own`, `third-party`, `local`), bảo toàn tệp build có chủ đích (`package.json` bin/main/module/types/exports), tôn trọng quy tắc phủ định (`!`) trong `.gitignore`, danh sách giữ lại linh hoạt (`smartdrive.keep` và `--keep`), tái bao gồm chọn lọc mẫu thư mục (`<dir>/*` kèm `!<file>`) và lược bỏ mẫu an toàn khi tệp lồng sâu, truy vấn visibility qua `gh` CLI kèm xử lý remote không tồn tại (`missing`), kiểm toán secret chỉ hiển thị tên biến, kiểm chứng phát hiện stack đa ngôn ngữ, tạo và ghép khối .gitignore bảo toàn CRLF và dòng của người dùng, tính lũy thừa, kiểm toán rác bị track (.agents/, pycache), hợp đồng dữ liệu cá nhân Constellation, untrack an toàn và từ chối khi có staged changes.
-- **Độ bao phủ Learning Units**: Kiểm chứng nhận diện Aurora Courses/Decks, Polaris Subjects, bảo vệ dữ liệu học tập nguyên khối, ghim cố định AutoZoner, loại trừ trùng lặp và dọn rác phân tầng cho `polaris/.cache`.
-- **Độ bao phủ đối kháng**: Kiểm tra các kích thước cluster khắc nghiệt từ 512B đến 32MB, các giá trị biên (0B, 1B, 512KB-1B, 512KB, 512KB+1B) và kiểm toán ứng suất hàng triệu tệp tin.
-- **Độ bao phủ tự bảo vệ**: Kiểm chứng cơ chế tự bảo vệ repo, thư mục Windows Apps, thư mục Game và database SQL Server.
-- **Độ bao phủ AcademicClassifier**: Kiểm chứng trích xuất regex mã môn học, sửa lỗi font mojibake và quy hoạch học kỳ.
+Xem chi tiết tại [PRIVACY.md](PRIVACY.md).
 
 ---
 
-## 14. Bảo Mật & Quyền Riêng Tư Dữ Liệu
+## Đóng Góp Mã Nguồn & Giấy Phép
 
-SmartDrive-OS tuân thủ triệt để nguyên tắc **Local-First & Quyền Riêng Tư Tối Đa**:
-
-- **Hoạt động 100% Cục bộ (Local-Only)**: Toàn bộ quá trình quét ổ đĩa, đánh chỉ mục tìm kiếm SQLite FTS5 và xác thực snapshot SHA-256 đều diễn ra trực tiếp trên phần cứng của bạn. Tuyệt đối không gửi dữ liệu ra ngoài.
-- **Zero Telemetry**: Hoàn toàn không chứa mã thu thập hành vi, không gửi báo cáo sử dụng và không có kết nối ngầm.
-- **Zero PII Logging**: Tuyệt đối không đọc, bóc tách hay thu thập nội dung nhạy cảm (mã nguồn bí mật, token, private key); chỉ lưu metadata tệp tin cần thiết trong cơ sở dữ liệu nội bộ `.smart_drive/index.db`.
-- **Sẵn sàng cho môi trường Air-Gap**: Không có dependencies ngoài (`dependencies = []`). Máy chủ MCP giao tiếp thuần túy qua luồng `stdio`, và SmartDrive-OS không mở bất kỳ cổng mạng nào. `smart-drive setup --no-clone` luôn chạy ngoại tuyến.
-- **Khiên Bảo vệ Bất khả Xâm phạm**: Ngăn chặn hoàn toàn việc xóa nhầm các tệp cấu hình cốt lõi (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `README.md`, `PRIVACY.md`) và các ứng dụng hệ thống.
-
-Xem toàn văn cam kết bảo mật và quyền riêng tư tại [PRIVACY.md](PRIVACY.md).
-
----
-
-## 15. Đóng Góp Mã Nguồn & Giấy Phép
-
-### Đóng Góp Mã Nguồn
-SmartDrive-OS là dự án mã nguồn mở vì cộng đồng và luôn chào đón mọi sự đóng góp:
-- 🌟 **Star & Fork** repository trên GitHub: [DuongNAD/smart-drive-os](https://github.com/DuongNAD/smart-drive-os)
-- 🐛 Báo cáo lỗi hoặc đề xuất tính năng mới tại [GitHub Issues](https://github.com/DuongNAD/smart-drive-os/issues)
-- 🔀 Gửi mã nguồn cải tiến qua [Pull Requests](https://github.com/DuongNAD/smart-drive-os/pulls)
-- 📖 Xem quy chuẩn đóng góp chi tiết tại [CONTRIBUTING.md](CONTRIBUTING.md)
-
-### Giấy Phép
-Dự án được phân phối hoàn toàn miễn phí theo **Giấy phép MIT** — xem chi tiết tại tệp [LICENSE](LICENSE).  
-Bạn có toàn quyền sử dụng, chỉnh sửa, phân phối và tích hợp vào các dự án cá nhân hoặc thương mại mà không gặp bất kỳ rào cản pháp lý nào.
+- 🌟 **Star & Fork** trên GitHub: [DuongNAD/smart-drive-os](https://github.com/DuongNAD/smart-drive-os) · 🐛 [GitHub Issues](https://github.com/DuongNAD/smart-drive-os/issues) · 🔀 [Pull Requests](https://github.com/DuongNAD/smart-drive-os/pulls) · 📖 [CONTRIBUTING.md](CONTRIBUTING.md)
+- 📄 Phân phối theo **Giấy phép MIT** — xem [LICENSE](LICENSE).
