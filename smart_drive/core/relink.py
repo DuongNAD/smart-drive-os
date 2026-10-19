@@ -221,6 +221,11 @@ def _nfc(names: Sequence[str]) -> List[str]:
     return [unicodedata.normalize("NFC", n) for n in names]
 
 
+def _fold(name: str) -> str:
+    """One folder name for case- and Unicode-form-insensitive comparison."""
+    return unicodedata.normalize("NFC", name).casefold()
+
+
 def _key(anchor: str, names: Sequence[str]) -> Tuple[str, ...]:
     """Normalized comparison key for (anchor, names); Unicode NFC, case-insensitive on Windows and macOS."""
     if _CASE_INSENSITIVE:
@@ -1537,7 +1542,7 @@ def _has_all_subs(folder: Path, subs: Set[str]) -> bool:
     """Returns True if folder contains every directory name in subs (case-insensitive)."""
     if not subs:
         return True
-    present = {sub.name.casefold() for sub in _list_subdirs(folder)}
+    present = {_fold(sub.name) for sub in _list_subdirs(folder)}
     return subs.issubset(present)
 
 
@@ -1547,7 +1552,7 @@ def _holds_all(folder: Path, names: Set[str]) -> bool:
         return True
     try:
         with os.scandir(folder) as it:
-            present = {entry.name.casefold() for entry in it}
+            present = {_fold(entry.name) for entry in it}
     except OSError:
         return False
     return names.issubset(present)
@@ -1770,7 +1775,7 @@ def find_moved(
             mg["paths"] += 1
 
         if len(names) > len(m_names):
-            mg["direct_subs"].add(names[len(m_names)].casefold())
+            mg["direct_subs"].add(_fold(names[len(m_names)]))
 
     batches = _all_move_batches(root)
     results: List[MovedFolder] = []
@@ -1806,17 +1811,17 @@ def find_moved(
 
         # 2. same-name (at A/*/<name> and A/*/*/<name>, verified against direct_subs) and 3. renamed
         if resolved_kind is None:
-            target_cf = m_names[-1].casefold()
+            target_cf = _fold(m_names[-1])
             same_all: List[Path] = []
             a_children = _list_subdirs(a_path) if _is_dir(a_path) else []
             for c1 in a_children:
                 c1_children = _list_subdirs(c1)
                 for c2 in c1_children:
-                    if c2.name.casefold() == target_cf:
+                    if _fold(c2.name) == target_cf:
                         same_all.append(c2)
                     else:
                         for c3 in _list_subdirs(c2):
-                            if c3.name.casefold() == target_cf:
+                            if _fold(c3.name) == target_cf:
                                 same_all.append(c3)
 
             # What agents remember inside a moved MCP server or venv is often a file (main.py) or a hidden
