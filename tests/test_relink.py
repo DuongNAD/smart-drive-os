@@ -47,6 +47,20 @@ except ImportError:  # Python < 3.11
     tomllib = None  # type: ignore[assignment]
 
 
+class _Terminal(io.StringIO):
+    """stdin of a person at a terminal who types the given answers."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+class _CtrlC(_Terminal):
+    """stdin of a person at a terminal who presses Ctrl+C at the first question."""
+
+    def readline(self, size: int = -1) -> str:  # type: ignore[override]
+        raise KeyboardInterrupt
+
+
 class TestRelink(SmartDriveTestCase):
     """Comprehensive tests for PathMapper, agent config relinking, history, git worktrees, venvs, and CLI."""
 
@@ -1997,6 +2011,220 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(rc, 0, out_buf.getvalue())
         self.assertIn("No stale paths: every folder the coding agents remember exists.", out_buf.getvalue())
         self.assertNotIn("Nothing to relink", out_buf.getvalue())
+
+    def test_51_find_apply_ask_relinks_the_confirmed_matches_with_the_sure_ones(self) -> None:
+        drive = self.test_dir / "drive_ask"
+        sure_old, sure_new = drive / "sure_app", drive / "03_Development_Projects" / "sure_app"
+        demo_old, demo_new = drive / "demo", drive / "02_Code" / "demo"
+        box_old, box_new = drive / "old_box", drive / "renamed_box"
+        (sure_new / "src").mkdir(parents=True)
+        demo_new.mkdir(parents=True)
+        (box_new / "part1").mkdir(parents=True)
+        (box_new / "part2").mkdir(parents=True)
+        (drive / "03_Development_Projects" / "amb_app").mkdir(parents=True)
+        (drive / "05_Dev_Toolbox" / "amb_app").mkdir(parents=True)
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(
+            json.dumps({
+                "projects": {
+                    str(sure_old): {},
+                    str(sure_old / "src"): {},
+                    str(demo_old): {"allowedTools": ["Bash(npm test)"]},
+                    str(box_old / "part1"): {},
+                    str(box_old / "part2"): {},
+                    str(drive / "amb_app"): {},
+                    str(drive / "missing_app"): {},
+                },
+                "extra": ["D:BadRelPath"],
+            }),
+            encoding="utf-8",
+        )
+        history = self.fake_home / ".claude" / "projects"
+        (history / claude_slug(str(demo_old))).mkdir(parents=True)
+        (history / claude_slug(str(demo_old)) / "s-demo.jsonl").write_text("{}\n", encoding="utf-8")
+
+        out_buf = io.StringIO()
+        # y for the name-only demo, Enter (no) for the renamed box
+        with (
+            patch.dict(os.environ, self._cli_env()),
+            patch("sys.stdin", _Terminal("y\n\n")),
+            contextlib.redirect_stdout(out_buf),
+        ):
+            rc = cli_main(["relink", "--find", "--apply", "--ask", "--root", str(drive)])
+
+        out = out_buf.getvalue()
+        self.assertEqual(rc, 0, out)
+        # Only the ? matches with one candidate are asked about, in the order --find lists them
+        demo_prompt = f"  Relink {demo_old} -> {demo_new}? [y/N]: "
+        box_prompt = f"  Relink {box_old} -> {box_new}? [y/N]: "
+        self.assertEqual(out.count("[y/N]: "), 2, out)
+        self.assertLess(out.index(f"? {demo_old} -> {demo_new}  (only the name matches"), out.index(demo_prompt))
+        self.assertLess(out.index(demo_prompt), out.index(box_prompt))
+
+        projects = json.loads(claude_file.read_text(encoding="utf-8"))["projects"]
+        self.assertEqual(projects[str(demo_new)], {"allowedTools": ["Bash(npm test)"]})
+        self.assertNotIn(str(demo_old), projects)
+        self.assertIn(str(sure_new / "src"), projects)
+        self.assertNotIn(str(sure_old), projects)
+        # Declined, ambiguous and not-found folders stay as the agents remember them
+        for kept in (box_old / "part1", box_old / "part2", drive / "amb_app", drive / "missing_app"):
+            self.assertIn(str(kept), projects)
+        self.assertEqual([p.name for p in (history / claude_slug(str(demo_new))).iterdir()], ["s-demo.jsonl"])
+        self.assertFalse((history / claude_slug(str(demo_old))).exists())
+
+        # One relink, journaled as one batch like the sure matches, so a later run can re-apply it
+        with open(journal_path(str(drive)), encoding="utf-8") as journal:
+            self.assertEqual(len(journal.readlines()), 1)
+        latest = last_moves(str(drive))
+        assert latest is not None
+        self.assertEqual(latest["tool"], "relink")
+        self.assertEqual(set(latest["moves"]), {(str(sure_old), str(sure_new)), (str(demo_old), str(demo_new))})
+
+    def test_52_find_apply_ask_declined_or_cancelled_leaves_the_deleted_project_untouched(self) -> None:
+        drive = self.test_dir / "drive_ask_declined"
+        # The user deleted drive/demo; another project that happens to be named demo lives elsewhere
+        deleted, other = drive / "demo", drive / "02_Code" / "client" / "demo"
+        other.mkdir(parents=True)
+        projects = {
+            str(deleted): {"allowedTools": ["Bash(rm -rf build)"], "mcpServers": {"old-db": {"command": "node"}}},
+            str(other): {"allowedTools": [], "mcpServers": {}},
+        }
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(json.dumps({"projects": projects}), encoding="utf-8")
+        history = self.fake_home / ".claude" / "projects"
+        (history / claude_slug(str(deleted)) / "memory").mkdir(parents=True)
+        (history / claude_slug(str(deleted)) / "memory" / "MEMORY.md").write_text("deleted\n", encoding="utf-8")
+        (history / claude_slug(str(other))).mkdir(parents=True)
+        (history / claude_slug(str(other)) / "s-client.jsonl").write_text("{}\n", encoding="utf-8")
+        before = claude_file.read_bytes()
+
+        def assert_untouched() -> None:
+            self.assertEqual(claude_file.read_bytes(), before)
+            self.assertEqual([p.name for p in (history / claude_slug(str(other))).iterdir()], ["s-client.jsonl"])
+            self.assertTrue((history / claude_slug(str(deleted)) / "memory" / "MEMORY.md").is_file())
+            self.assertIsNone(last_moves(str(drive)))
+
+        # N, Enter, any other word, and the end of input (Ctrl+D) all answer no
+        for answer in ("N\n", "\n", "no\n", ""):
+            with self.subTest(answer=answer):
+                out_buf = io.StringIO()
+                with (
+                    patch.dict(os.environ, self._cli_env()),
+                    patch("sys.stdin", _Terminal(answer)),
+                    contextlib.redirect_stdout(out_buf),
+                ):
+                    rc = cli_main(["relink", "--find", "--apply", "--ask", "--root", str(drive)])
+
+                self.assertEqual(rc, 0, out_buf.getvalue())
+                self.assertIn(f"  Relink {deleted} -> {other}? [y/N]: ", out_buf.getvalue())
+                self.assertIn("Nothing to relink: no folder is marked ✓ or confirmed.", out_buf.getvalue())
+                assert_untouched()
+
+        # Ctrl+C at a question cancels the whole run, the ✓ folders included
+        (drive / "03_Development_Projects" / "sure_app" / "src").mkdir(parents=True)
+        projects.update({str(drive / "sure_app"): {}, str(drive / "sure_app" / "src"): {}})
+        claude_file.write_text(json.dumps({"projects": projects}), encoding="utf-8")
+        before = claude_file.read_bytes()
+        err_buf = io.StringIO()
+        with (
+            patch.dict(os.environ, self._cli_env()),
+            patch("sys.stdin", _CtrlC()),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err_buf),
+        ):
+            rc = cli_main(["relink", "--find", "--apply", "--ask", "--root", str(drive)])
+
+        self.assertEqual(rc, 130)
+        self.assertIn("relink: cancelled; no files were modified.", err_buf.getvalue())
+        assert_untouched()
+
+    def test_53_find_apply_ask_without_a_terminal_or_with_json_asks_nothing(self) -> None:
+        drive = self.test_dir / "drive_ask_no_tty"
+        (drive / "02_Code" / "demo").mkdir(parents=True)
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(json.dumps({"projects": {str(drive / "demo"): {}}}), encoding="utf-8")
+        before = claude_file.read_bytes()
+
+        def run(stdin: io.StringIO, *flags: str) -> str:
+            out_buf = io.StringIO()
+            with (
+                patch.dict(os.environ, self._cli_env()),
+                patch("sys.stdin", stdin),
+                contextlib.redirect_stdout(out_buf),
+            ):
+                rc = cli_main(["relink", "--find", "--apply", *flags, "--root", str(drive)])
+            self.assertEqual(rc, 0, out_buf.getvalue())
+            return out_buf.getvalue()
+
+        # stdin is a pipe (a script, a coding agent): no question, the same output as without --ask
+        piped = io.StringIO("y\n")
+        self.assertEqual(run(piped, "--ask"), run(io.StringIO()))
+        self.assertEqual(piped.tell(), 0)
+        # --json never asks either, so stdout stays one JSON document
+        terminal = _Terminal("y\n")
+        data = json.loads(run(terminal, "--ask", "--json"))
+        self.assertEqual([e["kind"] for e in data["entries"]], ["name-only"])
+        self.assertEqual(data["relink"]["agents"], {})
+        self.assertEqual(terminal.tell(), 0)
+
+        self.assertEqual(claude_file.read_bytes(), before)
+        self.assertIsNone(last_moves(str(drive)))
+
+    def test_54_ask_without_find_and_apply_exits_2(self) -> None:
+        drive = self.test_dir / "drive_ask_usage"
+        (drive / "new").mkdir(parents=True)
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(json.dumps({"projects": {str(drive / "old"): {}}}), encoding="utf-8")
+        before = claude_file.read_bytes()
+
+        for flags in (["--ask"], ["--find", "--ask"], ["--apply", "--ask"], [str(drive / "old"), str(drive / "new"), "--ask"]):
+            with self.subTest(flags=flags):
+                err_buf = io.StringIO()
+                with (
+                    patch.dict(os.environ, self._cli_env()),
+                    patch("sys.stdin", _Terminal("y\n")),
+                    contextlib.redirect_stdout(io.StringIO()),
+                    contextlib.redirect_stderr(err_buf),
+                ):
+                    rc = cli_main(["relink", *flags, "--root", str(drive)])
+
+                self.assertEqual(rc, 2)
+                self.assertIn("relink: --ask requires --find --apply.", err_buf.getvalue())
+
+        self.assertEqual(claude_file.read_bytes(), before)
+        self.assertIsNone(last_moves(str(drive)))
+
+    def test_55_find_apply_ask_waits_for_the_agents_a_confirmed_move_touches(self) -> None:
+        drive = self.test_dir / "drive_ask_wait"
+        moved = drive / "02_Code" / "demo"
+        moved.mkdir(parents=True)
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(json.dumps({"projects": {str(drive / "demo"): {}}}), encoding="utf-8")
+
+        checks: list[int] = []
+
+        def processes() -> set[str]:
+            # Claude Code is open at the first check and closed at the next one
+            checks.append(1)
+            return {"Claude.exe"} if len(checks) == 1 else set()
+
+        sleeps: list[float] = []
+        err_buf = io.StringIO()
+        with (
+            patch.dict(os.environ, self._cli_env()),
+            patch("smart_drive.core.relink._running_processes", side_effect=processes),
+            patch("smart_drive.cli.cmd_relink.time.sleep", side_effect=sleeps.append),
+            patch("sys.stdin", _Terminal("y\n")),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err_buf),
+        ):
+            rc = cli_main(["relink", "--find", "--apply", "--ask", "--wait", "--root", str(drive)])
+
+        self.assertEqual(rc, 0, err_buf.getvalue())
+        # No folder is ✓: relink waits for Claude Code only because the confirmed move touches it
+        self.assertIn("Waiting for Claude Code to close.", err_buf.getvalue())
+        self.assertEqual(sleeps, [2])
+        self.assertEqual(json.loads(claude_file.read_text(encoding="utf-8"))["projects"], {str(moved): {}})
 
 
 if __name__ == "__main__":

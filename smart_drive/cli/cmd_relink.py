@@ -98,6 +98,29 @@ def print_found(
         print(f"Skipped {total_skipped} path(s) on drives that are not connected: {drives_str}")
 
 
+def _stdin_is_terminal() -> bool:
+    """True when a person can answer questions on stdin."""
+    try:
+        return bool(sys.stdin is not None and sys.stdin.isatty())
+    except (AttributeError, ValueError, OSError):
+        return False
+
+
+def _confirm_moves(unsure: Sequence[Move]) -> List[Move]:
+    """Asks whether to relink each ? match; returns the moves answered y. End of input answers no to the rest."""
+    print("Answer y only for a ? folder you moved there yourself:")
+    confirmed: List[Move] = []
+    for old, new in unsure:
+        try:
+            answer = input(f"  Relink {old} -> {new}? [y/N]: ")
+        except EOFError:
+            print()
+            break
+        if answer.strip().lower() in ("y", "yes"):
+            confirmed.append((old, new))
+    return confirmed
+
+
 def _wait_for_busy_agents(moves: Sequence[Move], root: Optional[str], wait_minutes: float) -> bool:
     """Previews relink and waits for any busy coding agents to close. Returns False on timeout."""
     preview = relink(moves, root=root, dry_run=True)
@@ -139,7 +162,12 @@ def cmd_relink(args: argparse.Namespace) -> int:
     as_json: bool = bool(getattr(args, "json", False))
     find_mode: bool = bool(getattr(args, "find", False))
     apply_mode: bool = bool(getattr(args, "apply", False))
+    ask_mode: bool = bool(getattr(args, "ask", False))
     wait_minutes: Optional[float] = getattr(args, "wait", None)
+
+    if ask_mode and not (find_mode and apply_mode):
+        sys.stderr.write("relink: --ask requires --find --apply.\n")
+        return 2
 
     if find_mode:
         if old_arg is not None or new_arg is not None:
@@ -159,24 +187,38 @@ def cmd_relink(args: argparse.Namespace) -> int:
 
         entries = find_moved(root=root)
         report: Optional[RelinkReport] = None
-        sure_moves: List[Move] = []
+        moves: List[Move] = []
+        asked = False
 
         if not as_json:
             print_found(entries, show_apply_footer=not apply_mode)
 
         if apply_mode:
-            sure_moves = [
+            moves = [
                 (e.old, e.new)
                 for e in entries
                 if e.kind in ("journal", "same-name") and e.new is not None
             ]
-            if wait_minutes is not None and not dry_run and sure_moves:
-                if not _wait_for_busy_agents(sure_moves, root, wait_minutes):
-                    return 3
-            report = relink(sure_moves, root=root, dry_run=dry_run)
-            if sure_moves and root is not None and not dry_run:
+            unsure = [
+                (e.old, e.new)
+                for e in entries
+                if e.kind in ("name-only", "renamed") and e.new is not None
+            ]
+            asked = ask_mode and bool(unsure) and not as_json and _stdin_is_terminal()
+            if asked:
+                # Asked before --wait starts, so that it also waits for the agents the confirmed moves touch
                 try:
-                    record_moves(root, sure_moves, "relink")
+                    moves += _confirm_moves(unsure)
+                except KeyboardInterrupt:
+                    sys.stderr.write("\nrelink: cancelled; no files were modified.\n")
+                    return 130
+            if wait_minutes is not None and not dry_run and moves:
+                if not _wait_for_busy_agents(moves, root, wait_minutes):
+                    return 3
+            report = relink(moves, root=root, dry_run=dry_run)
+            if moves and root is not None and not dry_run:
+                try:
+                    record_moves(root, moves, "relink")
                 except OSError as err:
                     report.warnings.insert(0, f"Could not write move journal: {err}")
 
@@ -187,9 +229,10 @@ def cmd_relink(args: argparse.Namespace) -> int:
                 "skipped_unmounted": dict(getattr(entries, "skipped_unmounted", {})),
             }
             print(json.dumps(payload, indent=2, ensure_ascii=False))
-        elif report is not None and entries and not sure_moves:
+        elif report is not None and entries and not moves:
             # print_relink would say every path is up to date, under the stale folders listed above
-            print("  Nothing to relink: no folder is marked ✓.")
+            reason = "no folder is marked ✓ or confirmed" if asked else "no folder is marked ✓"
+            print(f"  Nothing to relink: {reason}.")
         elif report is not None:
             print_relink(report)
 
