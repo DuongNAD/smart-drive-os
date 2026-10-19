@@ -1467,6 +1467,47 @@ class TestRelink(SmartDriveTestCase):
             js_payload = json.loads(js_proc.stdout)
             self.assertEqual(js_payload["skipped_unmounted"], {unmounted_drive: 2})
 
+    def test_30_agent_files_deduplicates_in_linear_time_without_same_file(self) -> None:
+        roaming_claude = self.fake_appdata / "Claude"
+        msix_claude = (
+            self.fake_home
+            / "AppData"
+            / "Local"
+            / "Packages"
+            / "Claude_pzs8sxrjxfjjc"
+            / "LocalCache"
+            / "Roaming"
+            / "Claude"
+        )
+        roaming_claude.mkdir(parents=True, exist_ok=True)
+        msix_claude.mkdir(parents=True, exist_ok=True)
+
+        roaming_cfg = roaming_claude / "claude_desktop_config.json"
+        msix_cfg = msix_claude / "claude_desktop_config.json"
+        roaming_cfg.write_text("{}", encoding="utf-8")
+        os.link(roaming_cfg, msix_cfg)
+
+        sessions_dir = roaming_claude / "claude-code-sessions" / "acc" / "org"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        expected_sessions: list[Path] = []
+        for i in range(500):
+            sf = sessions_dir / f"local_{i:04d}.json"
+            sf.write_text("{}", encoding="utf-8")
+            expected_sessions.append(sf)
+
+        with (
+            patch.object(sys, "platform", "win32"),
+            patch("smart_drive.core.relink.same_file", side_effect=AssertionError("same_file must not be called")),
+            patch("smart_drive.core.root.same_file", side_effect=AssertionError("same_file must not be called")),
+        ):
+            files = agent_files(home=self.fake_home, app_data=self.fake_appdata)
+
+        paths = [af.path for af in files]
+        self.assertEqual(paths[0], roaming_cfg)
+        self.assertNotIn(msix_cfg, paths)
+        self.assertEqual(paths[1:], expected_sessions)
+        self.assertEqual(len(files), 501)
+
 
 if __name__ == "__main__":
     unittest.main()

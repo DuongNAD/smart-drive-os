@@ -29,6 +29,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -383,7 +384,7 @@ def _add_claude_desktop_files(claude_dir: Path, candidates: List[AgentFile]) -> 
     if _is_dir(sessions_dir):
         try:
             for session_file in sorted(sessions_dir.rglob("*.json")):
-                if _is_file(session_file) and not session_file.name.endswith(BACKUP_SUFFIX):
+                if not session_file.name.endswith(BACKUP_SUFFIX):
                     candidates.append(AgentFile(session_file, "Claude desktop", "json", False))
         except OSError:
             pass
@@ -434,12 +435,25 @@ def agent_files(
     if root:
         candidates.append(AgentFile(Path(root) / ".mcp.json", "SSD .mcp.json", "json", True))
 
+    seen_ids: Set[Tuple[Any, ...]] = set()
     deduped: List[AgentFile] = []
     for af in candidates:
-        if not _is_file(af.path):
+        try:
+            st = os.stat(af.path)
+        except (OSError, ValueError):
             continue
-        if any(same_file(af.path, kept.path) for kept in deduped):
+        if not stat.S_ISREG(st.st_mode):
             continue
+        if st.st_ino:
+            file_id: Tuple[Any, ...] = (st.st_dev, st.st_ino)
+        else:
+            try:
+                file_id = ("path", os.path.normcase(os.path.realpath(af.path)))
+            except (OSError, ValueError, RuntimeError):
+                continue
+        if file_id in seen_ids:
+            continue
+        seen_ids.add(file_id)
         deduped.append(af)
     return deduped
 
