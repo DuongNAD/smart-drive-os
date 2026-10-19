@@ -388,6 +388,8 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
             "types", "typing", "unicodedata", "unittest", "urllib", "uuid", "warnings", "weakref", "webbrowser",
             "xml", "zipfile", "zlib",
         }
+        # Standard library since Python 3.11, imported only where it exists (try/except ImportError)
+        stdlib_modules.add("tomllib")
 
         smart_drive_dir = PROJECT_ROOT / "smart_drive"
         self.assertTrue(smart_drive_dir.is_dir(), "smart_drive directory must exist")
