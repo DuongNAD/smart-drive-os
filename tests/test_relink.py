@@ -1153,7 +1153,7 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(sleeps, [2, 2])
         self.assertIn(
             "Waiting for Claude Code to close. Quit them now (Ctrl+C cancels)...",
-            out_buf.getvalue(),
+            err_buf.getvalue(),
         )
         updated_projects = json.loads(claude_file.read_text(encoding="utf-8"))["projects"]
         self.assertIn(str(new_dir), updated_projects)
@@ -1655,6 +1655,28 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(claude_slug("/a/Dự án"), "-a-D---n")
         self.assertEqual(len(claude_slug("/" + "a" * 197 + "\U0001F680")), 200)
         self.assertIsNone(claude_slug("/" + "a" * 198 + "\U0001F680"))
+
+    def test_38_json_output_stays_json_while_waiting(self) -> None:
+        drive = self.create_mock_drive()
+        (drive / "03_Development_Projects" / "json_app").mkdir(parents=True, exist_ok=True)
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(json.dumps({"projects": {str(drive / "json_app"): {}}}), encoding="utf-8")
+
+        out_buf, err_buf = io.StringIO(), io.StringIO()
+        with (
+            patch.dict(os.environ, self._cli_env()),
+            # preview check: running; first poll: closed; the relink itself: closed
+            patch("smart_drive.core.relink._running_processes", side_effect=[{"Claude.exe"}, set(), set()]),
+            patch("smart_drive.cli.cmd_relink.time.sleep"),
+            patch("smart_drive.cli.cmd_relink.time.monotonic", side_effect=[0.0, 2.0]),
+            contextlib.redirect_stdout(out_buf),
+            contextlib.redirect_stderr(err_buf),
+        ):
+            rc = cli_main(["relink", "--find", "--apply", "--wait", "--json", "--root", str(drive)])
+
+        self.assertEqual(rc, 0, err_buf.getvalue())
+        self.assertEqual(json.loads(out_buf.getvalue())["relink"]["agents"], {"Claude Code": 1})
+        self.assertIn("Waiting for Claude Code to close", err_buf.getvalue())
 
 
 if __name__ == "__main__":
