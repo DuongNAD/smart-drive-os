@@ -771,14 +771,25 @@ class TestVisibilityFromMockedGh(unittest.TestCase):
         clear_gh_cache()
 
     def test_check_gh_authenticated(self) -> None:
-        with patch("smart_drive.core.gitignore._run_gh") as mock_gh:
+        with patch("smart_drive.core.gitignore.shutil.which", return_value="/usr/bin/gh"), patch(
+            "smart_drive.core.gitignore._run_gh"
+        ) as mock_gh:
             mock_gh.return_value = (0, "Logged in to github.com account alice\n", "")
             self.assertTrue(check_gh_authenticated())
 
         clear_gh_cache()
-        with patch("smart_drive.core.gitignore._run_gh") as mock_gh:
+        with patch("smart_drive.core.gitignore.shutil.which", return_value="/usr/bin/gh"), patch(
+            "smart_drive.core.gitignore._run_gh"
+        ) as mock_gh:
             mock_gh.return_value = (1, "You are not logged in to any GitHub hosts.\n", "")
             self.assertFalse(check_gh_authenticated())
+
+    def test_check_gh_authenticated_without_gh_installed(self) -> None:
+        with patch("smart_drive.core.gitignore.shutil.which", return_value=None), patch(
+            "smart_drive.core.gitignore._run_gh"
+        ) as mock_gh:
+            self.assertFalse(check_gh_authenticated())
+            mock_gh.assert_not_called()
 
     def test_query_gh_visibility_public_private_internal(self) -> None:
         with patch("smart_drive.core.gitignore.check_gh_authenticated", return_value=True):
