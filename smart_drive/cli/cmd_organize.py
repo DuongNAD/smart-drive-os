@@ -13,7 +13,7 @@ from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.config import JunkTier
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine, SecurityGuard
-from smart_drive.core.relink import after_moves, relink
+from smart_drive.core.relink import after_moves, relink, running_agents
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
@@ -82,6 +82,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
             except Exception:
                 pass
 
+        busy_apps = relinked.busy_apps if relinked else sorted(running_agents())
         if getattr(args, "json", False):
             print(json.dumps({
                 "status": "applied",
@@ -89,6 +90,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
                 "clean": clean_summary,
                 "zoning": apply_res,
                 "protected_by_system": zoner.protected_by_system,
+                "busy_apps": busy_apps,
                 "relink": relinked.to_dict() if relinked else None,
                 "index_update": inc_res,
                 "anti_indexing_shields": shields,
@@ -115,6 +117,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
 
     # Dry-run mode
     preview = relink([(a.src_path, a.dest_path) for a in plan], root=root, dry_run=True) if plan else None
+    busy_apps = preview.busy_apps if preview else sorted(running_agents())
     if getattr(args, "json", False):
         print(json.dumps({
             "status": "dry_run",
@@ -122,6 +125,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
             "clean_preview": clean_summary,
             "planned_actions": [a.to_dict() for a in plan],
             "protected_by_system": zoner.protected_by_system,
+            "busy_apps": busy_apps,
             "relink_preview": preview.to_dict() if preview else None,
             "anti_indexing_shields": shields,
             "note": "Use --apply to execute relocation."
@@ -140,7 +144,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
             print(f"     Taxonomy: {action.target_taxonomy} ({action.reason})")
             print(f"     Destination: {action.dest_path}")
         print(f"\nTotal planned relocations: {len(plan)} items.")
-        if preview and preview.changed:
+        if preview and (preview.changed or preview.warnings or preview.errors or preview.busy_apps):
             print("Coding agents that will follow these moves:")
             print_relink(preview)
         print("Run with --apply to execute the relocation safely.")

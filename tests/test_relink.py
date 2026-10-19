@@ -2385,6 +2385,93 @@ class TestRelink(SmartDriveTestCase):
             "E:\\03_Development_Projects\\project\\legacy",
         )
 
+    def test_34_dry_run_shows_worktrees_venvs_editable_and_busy_apps(self) -> None:
+        from smart_drive.core.system_refs import SystemRefIndex
+
+        drive = self.create_mock_drive()
+        container = drive / "project"
+        repo_a = container / "repoA"
+        wt_dir = repo_a / ".git" / "worktrees" / "wt1"
+        wt_dir.mkdir(parents=True)
+        ext_wt = self.fake_home / ".codex" / "worktrees" / "wt1"
+        ext_wt.mkdir(parents=True)
+        (ext_wt / ".git").write_text(f"gitdir: {wt_dir}\n", encoding="utf-8")
+        (wt_dir / "gitdir").write_text(f"{ext_wt / '.git'}\n", encoding="utf-8")
+
+        repo_b = container / "repoB"
+        (repo_b / ".git").mkdir(parents=True)
+        venv_dir = repo_b / ".venv"
+        sp_dir = venv_dir / "Lib" / "site-packages" if sys.platform == "win32" else venv_dir / "lib" / "python3.11" / "site-packages"
+        sp_dir.mkdir(parents=True)
+        (venv_dir / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+        (sp_dir / "_b.pth").write_text(f"{repo_b / 'src'}\n", encoding="utf-8")
+
+        user_sp = self.fake_appdata / "Python" / "Python313" / "site-packages"
+        user_sp.mkdir(parents=True)
+        (user_sp / "__editable__.pkg.pth").write_text(f"{repo_a / 'src'}\n", encoding="utf-8")
+
+        expected_container = drive / "03_Development_Projects" / "project"
+        expected_repo_a = expected_container / "repoA"
+        expected_venv = expected_container / "repoB" / ".venv"
+
+        out_json = io.StringIO()
+        out_txt = io.StringIO()
+        with (
+            patch.dict(os.environ, self._cli_env()),
+            patch.object(SystemRefIndex, "collect", return_value=SystemRefIndex([])),
+            patch("smart_drive.core.relink._running_processes", return_value={"Antigravity.exe", "Code.exe"}),
+        ):
+            with contextlib.redirect_stdout(out_json):
+                rc_j = cli_main(["organize", "--root", str(drive), "--dry-run", "--json"])
+            with contextlib.redirect_stdout(out_txt):
+                rc_t = cli_main(["organize", "--root", str(drive), "--dry-run"])
+
+        self.assertEqual(rc_j, 0)
+        self.assertEqual(rc_t, 0)
+        payload = json.loads(out_json.getvalue())
+        self.assertEqual(payload["busy_apps"], ["Antigravity", "VS Code"])
+        self.assertEqual(payload["relink_preview"]["busy_apps"], ["Antigravity", "VS Code"])
+        self.assertIn(str(expected_repo_a), payload["relink_preview"]["worktrees"])
+        self.assertIn(str(expected_venv), payload["relink_preview"]["venvs"])
+        self.assertEqual(payload["relink_preview"]["agents"].get("Python venv"), 1)
+        self.assertEqual(payload["relink_preview"]["agents"].get("Python editable"), 1)
+
+        txt = out_txt.getvalue()
+        self.assertIn("Close these before --apply: Antigravity, VS Code", txt)
+        self.assertIn(f"git worktrees would be repaired: {expected_repo_a}", txt)
+        self.assertIn(f"Python venv would be updated: {expected_venv}", txt)
+        self.assertIn("Python editable: 1 path(s) would be updated", txt)
+
+        # Also verify undo dry-run and relink --dry-run after moving container to expected_container
+        os.rename(container, expected_container)
+        record_moves(str(drive), [(str(container), str(expected_container))], "organize")
+
+        out_relink_txt = io.StringIO()
+        out_undo_json = io.StringIO()
+        out_undo_txt = io.StringIO()
+        with (
+            patch.dict(os.environ, self._cli_env()),
+            patch("smart_drive.core.relink._running_processes", return_value={"Antigravity.exe"}),
+        ):
+            with contextlib.redirect_stdout(out_relink_txt):
+                rc_rel = cli_main(["relink", "--root", str(drive), "--dry-run"])
+            with contextlib.redirect_stdout(out_undo_json):
+                rc_uj = cli_main(["undo", "--root", str(drive), "--json"])
+            with contextlib.redirect_stdout(out_undo_txt):
+                rc_ut = cli_main(["undo", "--root", str(drive)])
+
+        self.assertEqual(rc_rel, 0)
+        self.assertIn("Close these before --apply: Antigravity", out_relink_txt.getvalue())
+        self.assertIn(f"git worktrees would be repaired: {expected_repo_a}", out_relink_txt.getvalue())
+
+        self.assertEqual(rc_uj, 0)
+        self.assertEqual(rc_ut, 0)
+        undo_payload = json.loads(out_undo_json.getvalue())
+        self.assertEqual(undo_payload["busy_apps"], ["Antigravity"])
+        self.assertIn(str(repo_a), undo_payload["relink_preview"]["worktrees"])
+        self.assertIn(str(venv_dir), undo_payload["relink_preview"]["venvs"])
+        self.assertIn("Close these before --apply: Antigravity", out_undo_txt.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
