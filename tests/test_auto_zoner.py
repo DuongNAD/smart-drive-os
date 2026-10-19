@@ -27,10 +27,30 @@ except (ImportError, ModuleNotFoundError):
     sys.path.insert(0, r"D:\teamwork_projects\smart_drive_manager")
     from core.auto_zoner import AutoZoner, ZoningAction
 
+from unittest.mock import patch
+from smart_drive.core.system_refs import SystemRefIndex
 from tests.helpers import SmartDriveTestCase
 
 
-class TestAutoZonerClassification(SmartDriveTestCase):
+class _IsolatedAutoZonerTestCase(SmartDriveTestCase):
+    """Base test case ensuring unit tests never scan the host Registry/Start Menu/Desktop."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._collect_patcher = patch(
+            "smart_drive.core.system_refs.SystemRefIndex.collect",
+            side_effect=AssertionError(
+                "SystemRefIndex.collect() must not be called in unit tests; inject system_refs=SystemRefIndex([])"
+            ),
+        )
+        self._collect_patcher.start()
+
+    def tearDown(self) -> None:
+        self._collect_patcher.stop()
+        super().tearDown()
+
+
+class TestAutoZonerClassification(_IsolatedAutoZonerTestCase):
     """Tier 1: Classification of loose files and directories into taxonomies."""
 
     def test_classify_loose_ai_model(self) -> None:
@@ -39,7 +59,7 @@ class TestAutoZonerClassification(SmartDriveTestCase):
         model_file = root / "unorganized_model.gguf"
         model_file.write_bytes(b"GGUF_TEST_DATA")
 
-        zoner = AutoZoner(str(root))
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
         res = zoner.classify_item(str(model_file))
         self.assertIsNotNone(res)
         taxonomy, target_subpath, reason = res
@@ -52,7 +72,7 @@ class TestAutoZonerClassification(SmartDriveTestCase):
         pdf_file = root / "lecture_notes.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 Mock PDF")
 
-        zoner = AutoZoner(str(root))
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
         res = zoner.classify_item(str(pdf_file))
         self.assertIsNotNone(res)
         taxonomy, target_subpath, reason = res
@@ -65,7 +85,7 @@ class TestAutoZonerClassification(SmartDriveTestCase):
         proj_dir.mkdir()
         (proj_dir / "package.json").write_text('{"name": "app"}', encoding="utf-8")
 
-        zoner = AutoZoner(str(root))
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
         res = zoner.classify_item(str(proj_dir))
         self.assertIsNotNone(res)
         taxonomy, target_subpath, reason = res
@@ -79,7 +99,7 @@ class TestAutoZonerClassification(SmartDriveTestCase):
         zip_file = root / "backup_data.zip"
         zip_file.write_bytes(b"PK\x03\x04")
 
-        zoner = AutoZoner(str(root))
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
         sh_res = zoner.classify_item(str(sh_file))
         self.assertEqual(sh_res[0], "05_Dev_Toolbox")
 
@@ -96,13 +116,13 @@ class TestAutoZonerClassification(SmartDriveTestCase):
         tax_dir = root / "01_AI_Models"
         tax_dir.mkdir()
 
-        zoner = AutoZoner(str(root))
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
         self.assertIsNone(zoner.classify_item(str(gemini)))
         self.assertIsNone(zoner.classify_item(str(agents)))
         self.assertIsNone(zoner.classify_item(str(tax_dir)))
 
 
-class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
+class TestAutoZonerPlanningAndExecution(_IsolatedAutoZonerTestCase):
     """Tier 1 & Tier 3: Plan generation, conflict resolution, and plan application."""
 
     def test_generate_plan_does_not_modify_disk(self) -> None:
@@ -111,7 +131,7 @@ class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
         loose = root / "loose_guide.pdf"
         loose.write_bytes(b"%PDF data")
 
-        zoner = AutoZoner(str(root))
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
         plan = zoner.generate_plan()
 
         self.assertEqual(len(plan), 1)
@@ -124,7 +144,7 @@ class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
         dest = root / "target.txt"
         dest.write_text("existing", encoding="utf-8")
 
-        zoner = AutoZoner(str(root))
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
         candidate = zoner.resolve_destination_conflict(str(dest))
         expected_suffix = str(root / "target_1.txt")
         self.assertEqual(candidate, expected_suffix)
@@ -135,7 +155,7 @@ class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
         loose = root / "loose_model.gguf"
         loose.write_bytes(b"GGUF_MODEL_DATA")
 
-        zoner = AutoZoner(str(root))
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
         plan = zoner.generate_plan()
         result = zoner.apply_plan(plan)
 
@@ -151,7 +171,7 @@ class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
     def test_ensure_anti_indexing_shields(self) -> None:
         """ensure_anti_indexing_shields creates .metadata_never_index and .fseventsd/no_log."""
         root = self.test_dir
-        zoner = AutoZoner(str(root))
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
         shields = zoner.ensure_anti_indexing_shields()
 
         self.assertTrue(shields[".metadata_never_index"])
@@ -165,13 +185,13 @@ class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
         loose = root / "loose_note.pdf"
         loose.write_bytes(b"x" * 100)
 
-        zoner_4k = AutoZoner(str(root), cluster_size=4096)
+        zoner_4k = AutoZoner(str(root), cluster_size=4096, system_refs=SystemRefIndex([]))
         plan_4k = zoner_4k.generate_plan()
         self.assertEqual(len(plan_4k), 1)
         self.assertEqual(plan_4k[0].nominal_size, 100)
         self.assertEqual(plan_4k[0].slack_bytes, 3996)
 
-        zoner_512k = AutoZoner(str(root), cluster_size=524288)
+        zoner_512k = AutoZoner(str(root), cluster_size=524288, system_refs=SystemRefIndex([]))
         plan_512k = zoner_512k.generate_plan()
         self.assertEqual(len(plan_512k), 1)
         self.assertEqual(plan_512k[0].nominal_size, 100)
@@ -179,7 +199,6 @@ class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
 
     def test_cluster_size_detected_from_filesystem_with_512k_fallback(self) -> None:
         """AutoZoner uses detect_filesystem(root).block_size when > 0 and falls back to 524,288 when 0."""
-        from unittest.mock import patch
         from smart_drive.core.fsinfo import FilesystemInfo
 
         root = self.test_dir
@@ -191,7 +210,7 @@ class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
             source="win32",
         )
         with patch("smart_drive.core.auto_zoner.detect_filesystem", return_value=fs_4k):
-            zoner = AutoZoner(str(root))
+            zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
             self.assertEqual(zoner.cluster_size, 4096)
 
         fs_unknown = FilesystemInfo(
@@ -202,7 +221,7 @@ class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
             source="unknown",
         )
         with patch("smart_drive.core.auto_zoner.detect_filesystem", return_value=fs_unknown):
-            zoner_fallback = AutoZoner(str(root))
+            zoner_fallback = AutoZoner(str(root), system_refs=SystemRefIndex([]))
             self.assertEqual(zoner_fallback.cluster_size, 524288)
 
     def test_system_referenced_and_uninstaller_folders_never_planned_or_moved(self) -> None:
