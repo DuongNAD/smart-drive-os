@@ -223,6 +223,51 @@ class AutoZoner:
 
         return results
 
+    @staticmethod
+    def _is_link_or_junction(entry: os.DirEntry) -> bool:
+        """Returns True if `entry` is a symlink or NTFS reparse point / junction."""
+        try:
+            if entry.is_symlink():
+                return True
+            st = entry.stat(follow_symlinks=False)
+            if getattr(st, "st_file_attributes", 0) & 0x400:
+                return True
+        except OSError:
+            return True
+        return False
+
+    def _count_child_projects(self, item_path: str, max_subdirs: int = 200) -> int:
+        """Counts first-level subdirectories (up to `max_subdirs`, skipping links/junctions) that contain a project indicator."""
+        try:
+            with os.scandir(item_path) as it:
+                children = sorted(list(it), key=lambda e: e.name.lower())
+        except (OSError, PermissionError):
+            return 0
+
+        checked_dirs = 0
+        project_count = 0
+        for child in children:
+            if self._is_link_or_junction(child):
+                continue
+            try:
+                if not child.is_dir(follow_symlinks=False):
+                    continue
+            except OSError:
+                continue
+
+            checked_dirs += 1
+            if checked_dirs > max_subdirs:
+                break
+
+            try:
+                with os.scandir(child.path) as sub_it:
+                    if any(sub.name.lower() in self.PROJECT_INDICATORS for sub in sub_it):
+                        project_count += 1
+            except (OSError, PermissionError):
+                continue
+
+        return project_count
+
     def classify_item(self, item_path: str) -> Optional[Tuple[str, str, str]]:
         """Classifies a loose item into (target_taxonomy, target_subpath, reason).
 
@@ -281,6 +326,14 @@ class AutoZoner:
 
             if any(ind in entries for ind in self.PROJECT_INDICATORS):
                 return ("03_Development_Projects", os.path.join("03_Development_Projects", base_name), "Detected development project indicator")
+
+            child_projects = self._count_child_projects(item_path)
+            if child_projects >= 2:
+                return (
+                    "03_Development_Projects",
+                    os.path.join("03_Development_Projects", base_name),
+                    f"Folder of {child_projects} development projects",
+                )
 
             base_lower = base_name.lower()
             if any(k in base_lower for k in ("model", "weights", "checkpoint", "gguf")):
