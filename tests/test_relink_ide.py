@@ -7,8 +7,10 @@ reads or writes real IDE or coding agent configuration files on the host machine
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 import unittest
 from unittest.mock import patch
@@ -21,6 +23,7 @@ from smart_drive.core.relink import (
     running_agents,
 )
 from tests.helpers import SmartDriveTestCase
+from tests.test_system_refs import _build_lnk_bytes
 
 
 class TestRelinkIDE(SmartDriveTestCase):
@@ -402,6 +405,125 @@ class TestRelinkIDE(SmartDriveTestCase):
 
         with patch("smart_drive.core.relink._running_processes", return_value={"Obsidian.exe"}):
             self.assertIn("Obsidian", running_agents())
+
+    def test_07_windows_shortcuts_repointed_mocked_subprocess(self) -> None:
+        desktop = self.fake_home / "Desktop"
+        desktop.mkdir(parents=True, exist_ok=True)
+        moved_lnk = desktop / "MyTool.lnk"
+        keep_lnk = desktop / "KeepApp.lnk"
+
+        moved_lnk.write_bytes(_build_lnk_bytes(r"E:\tool\bin\run.exe", use_unicode=True))
+        keep_lnk.write_bytes(_build_lnk_bytes(r"E:\keep\app.exe", use_unicode=True))
+
+        moves = [(r"E:\tool", r"E:\05_Dev_Toolbox\tool")]
+
+        # 1) Dry-run lists the shortcut to be modified without calling subprocess.run or creating backup
+        with (
+            patch.object(sys, "platform", "win32"),
+            patch("smart_drive.core.relink.subprocess.run") as mock_run,
+        ):
+            dry = relink(moves, dry_run=True, home=self.fake_home, app_data=self.fake_appdata)
+
+        mock_run.assert_not_called()
+        self.assertEqual(dry.agents, {"Windows Shortcuts": 1})
+        self.assertEqual(dry.updated, [{"file": str(moved_lnk), "agent": "Windows Shortcuts", "paths": 1}])
+        self.assertFalse(Path(str(moved_lnk) + BACKUP_SUFFIX).exists())
+
+        # 2) Real run with mocked PowerShell COM command
+        fake_done = subprocess.CompletedProcess(args=["powershell"], returncode=0, stdout="", stderr="")
+        with (
+            patch.object(sys, "platform", "win32"),
+            patch("smart_drive.core.relink.shutil.which", return_value="powershell.exe"),
+            patch("smart_drive.core.relink.subprocess.run", return_value=fake_done) as mock_run,
+        ):
+            real = relink(moves, dry_run=False, home=self.fake_home, app_data=self.fake_appdata)
+
+        self.assertEqual(real.agents, {"Windows Shortcuts": 1})
+        self.assertTrue(Path(str(moved_lnk) + BACKUP_SUFFIX).is_file())
+        self.assertFalse(Path(str(keep_lnk) + BACKUP_SUFFIX).exists())
+        mock_run.assert_called_once()
+        cmd_passed = mock_run.call_args[0][0]
+        self.assertEqual(cmd_passed[0], "powershell.exe")
+        ps_script = cmd_passed[-1]
+        for expected_fragment in (
+            "WScript.Shell",
+            "CreateShortcut",
+            "TargetPath",
+            "WorkingDirectory",
+            "IconLocation",
+            str(moved_lnk),
+            r"E:\05_Dev_Toolbox\tool\bin\run.exe",
+        ):
+            self.assertIn(expected_fragment, ps_script)
+
+        # 3) Missing PowerShell emits warning, not error
+        with (
+            patch.object(sys, "platform", "win32"),
+            patch("smart_drive.core.relink.shutil.which", return_value=None),
+        ):
+            no_ps = relink(moves, dry_run=False, home=self.fake_home, app_data=self.fake_appdata)
+        self.assertEqual(no_ps.errors, [])
+        self.assertTrue(any("PowerShell" in w for w in no_ps.warnings))
+
+    @unittest.skipUnless(
+        sys.platform == "win32" and os.environ.get("SMART_DRIVE_TEST_LNK") == "1",
+        "Real PowerShell COM .lnk test runs only on win32 with SMART_DRIVE_TEST_LNK=1",
+    )
+    def test_08_windows_shortcuts_real_powershell_com(self) -> None:
+        old_dir = self.test_dir / "tool_app"
+        new_dir = self.test_dir / "05_Dev_Toolbox" / "tool_app"
+        old_dir.mkdir(parents=True, exist_ok=True)
+        new_dir.mkdir(parents=True, exist_ok=True)
+        old_exe = old_dir / "app.exe"
+        new_exe = new_dir / "app.exe"
+        old_exe.write_bytes(b"MZ")
+        new_exe.write_bytes(b"MZ")
+
+        desktop = self.fake_home / "Desktop"
+        desktop.mkdir(parents=True, exist_ok=True)
+        lnk_path = desktop / "RealApp.lnk"
+
+        create_script = (
+            f"$ws = New-Object -ComObject WScript.Shell; "
+            f"$sc = $ws.CreateShortcut('{lnk_path}'); "
+            f"$sc.TargetPath = '{old_exe}'; "
+            f"$sc.WorkingDirectory = '{old_dir}'; "
+            f"$sc.IconLocation = '{old_exe},0'; "
+            f"$sc.Save()"
+        )
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", create_script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        report = relink(
+            [(str(old_dir), str(new_dir))],
+            dry_run=False,
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+        )
+        self.assertEqual(report.agents.get("Windows Shortcuts"), 1)
+        self.assertTrue(Path(str(lnk_path) + BACKUP_SUFFIX).is_file())
+
+        read_script = (
+            f"$ws = New-Object -ComObject WScript.Shell; "
+            f"$sc = $ws.CreateShortcut('{lnk_path}'); "
+            f"Write-Output $sc.TargetPath; "
+            f"Write-Output $sc.WorkingDirectory; "
+            f"Write-Output $sc.IconLocation"
+        )
+        done = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", read_script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        lines = [line.strip() for line in done.stdout.splitlines() if line.strip()]
+        self.assertEqual(os.path.normcase(lines[0]), os.path.normcase(str(new_exe)))
+        self.assertEqual(os.path.normcase(lines[1]), os.path.normcase(str(new_dir)))
+        self.assertEqual(os.path.normcase(lines[2]), os.path.normcase(f"{new_exe},0"))
 
 
 if __name__ == "__main__":

@@ -46,6 +46,7 @@ except ImportError:  # Python < 3.11: only the line-level duplicate guard protec
     tomllib = None  # type: ignore[assignment]
 
 from smart_drive.core.root import same_file
+from smart_drive.core.system_refs import SystemRefIndex
 
 Move = Tuple[str, str]
 BACKUP_SUFFIX = ".bak.smart-drive"
@@ -1697,6 +1698,120 @@ def _relink_virtualenvs(
             )
 
 
+def _ps_quote(value: str) -> str:
+    """Quotes a string as a PowerShell single-quoted literal."""
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _relink_shortcuts(
+    moves: Sequence[Move],
+    mapper: PathMapper,
+    resolved_home: Path,
+    use_env: bool,
+    dry_run: bool,
+    report: RelinkReport,
+) -> None:
+    """Repoints Windows .lnk shortcuts found by SystemRefIndex that target moved folders."""
+    if sys.platform != "win32":
+        return
+
+    effective_home: Optional[Path] = resolved_home
+    if use_env:
+        try:
+            temp_root = os.path.normcase(os.path.abspath(tempfile.gettempdir()))
+            home_norm = os.path.normcase(os.path.abspath(str(resolved_home)))
+            if not (home_norm == temp_root or home_norm.startswith(temp_root + os.sep)):
+                effective_home = None
+        except OSError:
+            effective_home = None
+
+    ref_index = SystemRefIndex.collect(home=effective_home, reader={})
+    matched_shortcuts: List[Tuple[Path, str, str, str]] = []
+    seen_lnks: Set[str] = set()
+
+    for old_dir, _ in moves:
+        for ref in ref_index.refs_under(old_dir):
+            if ref.kind != "shortcut":
+                continue
+            lnk_norm = os.path.normcase(os.path.abspath(ref.source))
+            if lnk_norm in seen_lnks:
+                continue
+            new_target = mapper.map(ref.target)
+            if new_target is None:
+                continue
+            parsed_target = _split(ref.target)
+            old_prefix = old_dir.rstrip("\\/")
+            new_prefix = mapper.map(old_prefix) or ""
+            if parsed_target is not None:
+                t_key = _key(*parsed_target)
+                for old_k, (old_anchor, old_names), (new_anchor, new_names) in mapper._rules:
+                    if t_key[: len(old_k)] == old_k:
+                        old_prefix = _join_split(old_anchor, old_names)
+                        new_prefix = _join_split(new_anchor, new_names)
+                        break
+            seen_lnks.add(lnk_norm)
+            matched_shortcuts.append((Path(ref.source), new_target, old_prefix, new_prefix))
+
+    if not matched_shortcuts:
+        return
+
+    if dry_run:
+        for lnk_path, _, _, _ in matched_shortcuts:
+            report.updated.append({"file": str(lnk_path), "agent": "Windows Shortcuts", "paths": 1})
+        return
+
+    ps_bin = shutil.which("powershell") or shutil.which("pwsh")
+    if not ps_bin:
+        report.warnings.append("PowerShell was not found on PATH; could not update Windows shortcuts.")
+        return
+
+    for lnk_path, new_target, old_prefix, new_prefix in matched_shortcuts:
+        try:
+            if _is_file(lnk_path):
+                shutil.copy2(str(lnk_path), str(lnk_path) + BACKUP_SUFFIX)
+        except OSError as err:
+            report.warnings.append(f"Could not back up shortcut {lnk_path}: {err}")
+            continue
+
+        ps_script = (
+            f"$ws = New-Object -ComObject WScript.Shell; "
+            f"$sc = $ws.CreateShortcut({_ps_quote(str(lnk_path))}); "
+            f"$sc.TargetPath = {_ps_quote(new_target)}; "
+            f"$oldPrefix = {_ps_quote(old_prefix)}; "
+            f"$newPrefix = {_ps_quote(new_prefix)}; "
+            f"$wd = $sc.WorkingDirectory; "
+            f"if ($wd -and $wd.StartsWith($oldPrefix, [System.StringComparison]::OrdinalIgnoreCase) "
+            f"-and ($wd.Length -eq $oldPrefix.Length -or $wd[$oldPrefix.Length] -in @('\\', '/'))) {{ "
+            f"$sc.WorkingDirectory = $newPrefix + $wd.Substring($oldPrefix.Length) }}; "
+            f"$ic = $sc.IconLocation; "
+            f"if ($ic -and $ic.StartsWith($oldPrefix, [System.StringComparison]::OrdinalIgnoreCase) "
+            f"-and ($ic.Length -eq $oldPrefix.Length -or $ic[$oldPrefix.Length] -in @('\\', '/', ','))) {{ "
+            f"$sc.IconLocation = $newPrefix + $ic.Substring($oldPrefix.Length) }}; "
+            f"$sc.Save()"
+        )
+        cmd = [ps_bin, "-NoProfile", "-NonInteractive", "-Command", ps_script]
+        try:
+            done = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                stdin=subprocess.DEVNULL,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as err:
+            report.warnings.append(f"Could not update shortcut {lnk_path}: {err}")
+            continue
+
+        if done.returncode == 0:
+            report.updated.append({"file": str(lnk_path), "agent": "Windows Shortcuts", "paths": 1})
+        else:
+            err_msg = (done.stderr or done.stdout or f"exit {done.returncode}").strip()
+            report.warnings.append(f"Could not update shortcut {lnk_path}: {err_msg}")
+
+
 def relink(
     moves: Sequence[Move],
     root: Optional[str] = None,
@@ -1710,7 +1825,7 @@ def relink(
     if not mapper:
         return report
 
-    resolved_home, _, _ = _resolve_locations(home, app_data)
+    resolved_home, _, use_env = _resolve_locations(home, app_data)
     claude_originals: List[str] = []
 
     for af in agent_files(root=root, home=home, app_data=app_data):
@@ -1744,6 +1859,7 @@ def relink(
 
     history_candidates = [old for old, _ in moves] + claude_originals
     _relink_history(history_candidates, moves, mapper, resolved_home, dry_run, report)
+    _relink_shortcuts(moves, mapper, resolved_home, use_env, dry_run, report)
 
     if not dry_run:
         worktree_candidates = [new for _, new in moves]

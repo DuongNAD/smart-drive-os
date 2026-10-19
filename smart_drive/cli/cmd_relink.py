@@ -32,6 +32,10 @@ def print_relink(report: Optional[RelinkReport]) -> None:
     verb = "would be updated" if report.dry_run else "updated"
     for agent, count in report.agents.items():
         print(f"  ✓ {agent}: {count} path(s) {verb}")
+        if agent == "Windows Shortcuts":
+            for entry in report.updated:
+                if entry.get("agent") == "Windows Shortcuts":
+                    print(f"    - {entry['file']}")
 
     for item in report.history:
         print(f"  ✓ Claude Code history: {item['from']} -> {item['to']}")
