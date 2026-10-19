@@ -1,0 +1,372 @@
+"""tests/test_relink_ide.py - Unit and E2E tests for VS Code-family and JetBrains IDE relinking (T8).
+
+100% isolated: every test uses a fake home and fake AppData inside a temporary directory and never
+reads or writes real IDE or coding agent configuration files on the host machine.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import sqlite3
+import sys
+import unittest
+from unittest.mock import patch
+
+from smart_drive.core.relink import (
+    BACKUP_SUFFIX,
+    PathMapper,
+    find_moved,
+    relink,
+    running_agents,
+)
+from tests.helpers import SmartDriveTestCase
+
+
+class TestRelinkIDE(SmartDriveTestCase):
+    """Tests for PathMapper.map_uri, VS Code-family storage.json/state.vscdb, and JetBrains XML relinking."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.fake_home = self.test_dir / "fake_home"
+        self.fake_appdata = self.fake_home / "AppData" / "Roaming"
+        self.fake_temp = self.test_dir / "sys_temp"
+        self.fake_home.mkdir(parents=True, exist_ok=True)
+        self.fake_appdata.mkdir(parents=True, exist_ok=True)
+        self.fake_temp.mkdir(parents=True, exist_ok=True)
+        self._proc_patcher = patch("smart_drive.core.relink._running_processes", return_value=set())
+        self._proc_patcher.start()
+        self._temp_patcher = patch("smart_drive.core.relink.tempfile.gettempdir", return_value=str(self.fake_temp))
+        self._temp_patcher.start()
+
+    def tearDown(self) -> None:
+        if hasattr(self, "_temp_patcher"):
+            self._temp_patcher.stop()
+        if hasattr(self, "_proc_patcher"):
+            self._proc_patcher.stop()
+        super().tearDown()
+
+    def test_01_map_uri_preserves_colon_encoding_drive_case_and_ignores_other_schemes(self) -> None:
+        mapper = PathMapper([
+            ("E:\\project", "E:\\03_Development_Projects\\project"),
+            ("/Users/alice/proj", "/Users/alice/03_Development_Projects/proj"),
+        ])
+
+        # POSIX URI
+        self.assertEqual(
+            mapper.map_uri("file:///Users/alice/proj/sub"),
+            "file:///Users/alice/03_Development_Projects/proj/sub",
+        )
+        self.assertEqual(
+            mapper.map_uri("file:///Users/alice/proj/my%20app/index.ts"),
+            "file:///Users/alice/03_Development_Projects/proj/my%20app/index.ts",
+        )
+
+        if sys.platform in ("win32", "darwin"):
+            # Lowercase drive + %3A
+            self.assertEqual(
+                mapper.map_uri("file:///e%3A/project/x"),
+                "file:///e%3A/03_Development_Projects/project/x",
+            )
+            # Uppercase drive + %3A
+            self.assertEqual(
+                mapper.map_uri("file:///E%3A/project/x"),
+                "file:///E%3A/03_Development_Projects/project/x",
+            )
+            # Lowercase drive + %3a
+            self.assertEqual(
+                mapper.map_uri("file:///e%3a/project/x"),
+                "file:///e%3a/03_Development_Projects/project/x",
+            )
+            # Literal colon + uppercase/lowercase drive
+            self.assertEqual(
+                mapper.map_uri("file:///E:/project/x"),
+                "file:///E:/03_Development_Projects/project/x",
+            )
+            self.assertEqual(
+                mapper.map_uri("file:///e:/project/x"),
+                "file:///e:/03_Development_Projects/project/x",
+            )
+            # Percent-encoded space in subpath
+            self.assertEqual(
+                mapper.map_uri("file:///e%3A/project/Denso%20Hackathon/app"),
+                "file:///e%3A/03_Development_Projects/project/Denso%20Hackathon/app",
+            )
+
+        # Other URI schemes and unmoved paths are untouched
+        for untouched in (
+            "vscode-remote://ssh-remote+box/e/project/x",
+            "vscode-vfs://github/owner/project",
+            "https://example.com/e/project/x",
+            "http://localhost:3000/project",
+            "file:///e%3A/unrelated/x",
+            "E:\\project\\x",
+        ):
+            self.assertIsNone(mapper.map_uri(untouched), f"Should not map_uri({untouched!r})")
+
+    def test_02_vscode_storage_json_vscdb_and_jetbrains_xml_dry_run_and_apply(self) -> None:
+        # Prepare moved folders
+        if sys.platform in ("win32", "darwin"):
+            old_proj = "E:\\project"
+            new_proj = "E:\\03_Development_Projects\\project"
+            old_uri_pct = "file:///e%3A/project/openclaw"
+            new_uri_pct = "file:///e%3A/03_Development_Projects/project/openclaw"
+            old_uri_colon = "file:///E:/project/demo/main.py"
+            new_uri_colon = "file:///E:/03_Development_Projects/project/demo/main.py"
+            old_ws_uri = "file:///e%3A/project/multi.code-workspace"
+            new_ws_uri = "file:///e%3A/03_Development_Projects/project/multi.code-workspace"
+            untouched_uri = "file:///e%3A/other_folder/keep"
+            jb_old_slash = "E:/project/Project_NWC"
+            jb_new_slash = "E:/03_Development_Projects/project/Project_NWC"
+            jb_old_bslash = "E:\\project\\Project_NWC"
+            jb_new_bslash = "E:\\03_Development_Projects\\project\\Project_NWC"
+            jb_untouched = "E:/other_folder/keep"
+        else:
+            old_proj = "/mnt/ssd/project"
+            new_proj = "/mnt/ssd/03_Development_Projects/project"
+            old_uri_pct = "file:///mnt/ssd/project/openclaw"
+            new_uri_pct = "file:///mnt/ssd/03_Development_Projects/project/openclaw"
+            old_uri_colon = "file:///mnt/ssd/project/demo/main.py"
+            new_uri_colon = "file:///mnt/ssd/03_Development_Projects/project/demo/main.py"
+            old_ws_uri = "file:///mnt/ssd/project/multi.code-workspace"
+            new_ws_uri = "file:///mnt/ssd/03_Development_Projects/project/multi.code-workspace"
+            untouched_uri = "file:///mnt/ssd/other_folder/keep"
+            jb_old_slash = "/mnt/ssd/project/Project_NWC"
+            jb_new_slash = "/mnt/ssd/03_Development_Projects/project/Project_NWC"
+            jb_old_bslash = "/mnt/ssd/project/Project_NWC"
+            jb_new_bslash = "/mnt/ssd/03_Development_Projects/project/Project_NWC"
+            jb_untouched = "/mnt/ssd/other_folder/keep"
+
+        home_old = str(self.fake_home / "IdeaProjects" / "Demo")
+        home_new = str(self.fake_home / "03_Development_Projects" / "IdeaProjects" / "Demo")
+
+        # 1) VS Code storage.json
+        code_gs = self.fake_appdata / "Code" / "User" / "globalStorage"
+        code_gs.mkdir(parents=True, exist_ok=True)
+        storage_file = code_gs / "storage.json"
+        storage_payload = {
+            "profileAssociations": {
+                "workspaces": {
+                    old_uri_pct: "__default__profile__",
+                    untouched_uri: "__default__profile__",
+                    "vscode-remote://wsl+Ubuntu/home/user/project": "__default__profile__",
+                }
+            },
+            "backupWorkspaces": {
+                "folders": [{"folderUri": old_uri_pct}, {"folderUri": untouched_uri}],
+                "workspaces": [],
+            },
+        }
+        storage_raw = json.dumps(storage_payload, indent=2) + "\n"
+        storage_file.write_text(storage_raw, encoding="utf-8")
+
+        # 2) VS Code state.vscdb (SQLite)
+        vscdb_file = code_gs / "state.vscdb"
+        vscdb_entries = {
+            "entries": [
+                {"folderUri": old_uri_pct},
+                {"fileUri": old_uri_colon},
+                {"workspace": {"id": "w1", "configPath": old_ws_uri}},
+                {"folderUri": untouched_uri},
+                {"folderUri": "vscode-remote://ssh-remote+mybox/project"},
+            ]
+        }
+        conn = sqlite3.connect(str(vscdb_file))
+        with conn:
+            conn.execute("CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)")
+            conn.execute(
+                "INSERT INTO ItemTable (key, value) VALUES (?, ?)",
+                ("history.recentlyOpenedPathsList", json.dumps(vscdb_entries)),
+            )
+            conn.execute(
+                "INSERT INTO ItemTable (key, value) VALUES (?, ?)",
+                ("unrelated.key", '{"keep": true}'),
+            )
+        conn.close()
+
+        # 3) JetBrains recentProjects.xml and trusted-paths.xml
+        jb_opts = self.fake_appdata / "JetBrains" / "IntelliJIdea2025.3" / "options"
+        jb_opts.mkdir(parents=True, exist_ok=True)
+        recent_xml = jb_opts / "recentProjects.xml"
+        recent_xml_content = (
+            "<application>\n"
+            '  <component name="RecentProjectsManager">\n'
+            '    <option name="additionalInfo">\n'
+            "      <map>\n"
+            f'        <entry key="{jb_old_slash}">\n'
+            "          <value>\n"
+            '            <RecentProjectMetaInfo frameTitle="Project_NWC" projectWorkspaceId="id1">\n'
+            '              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />\n'
+            "            </RecentProjectMetaInfo>\n"
+            "          </value>\n"
+            "        </entry>\n"
+            '        <entry key="$USER_HOME$/IdeaProjects/Demo/sub">\n'
+            "          <value />\n"
+            "        </entry>\n"
+            f'        <entry key="{jb_untouched}">\n'
+            "          <value />\n"
+            "        </entry>\n"
+            "      </map>\n"
+            "    </option>\n"
+            "  </component>\n"
+            "</application>\n"
+        )
+        recent_xml.write_text(recent_xml_content, encoding="utf-8")
+
+        trusted_xml = jb_opts / "trusted-paths.xml"
+        trusted_xml_content = (
+            "<application>\n"
+            '  <component name="Trusted.Paths">\n'
+            '    <option name="TRUSTED_PROJECT_PATHS">\n'
+            "      <map>\n"
+            f'        <entry key="{jb_old_bslash}" value="true" />\n'
+            f'        <entry key="{jb_untouched}" value="true" />\n'
+            "      </map>\n"
+            "    </option>\n"
+            "  </component>\n"
+            "</application>\n"
+        )
+        trusted_xml.write_text(trusted_xml_content, encoding="utf-8")
+
+        moves = [
+            (old_proj, new_proj),
+            (home_old, home_new),
+        ]
+
+        # Dry-run first: nothing written, no backups created
+        dry = relink(moves, dry_run=True, home=self.fake_home, app_data=self.fake_appdata)
+        self.assertTrue(dry.dry_run)
+        self.assertTrue(dry.changed)
+        self.assertEqual(dry.agents, {"JetBrains": 3, "VS Code": 5})
+        self.assertEqual(storage_file.read_text(encoding="utf-8"), storage_raw)
+        self.assertEqual(recent_xml.read_text(encoding="utf-8"), recent_xml_content)
+        self.assertFalse(Path(str(storage_file) + BACKUP_SUFFIX).exists())
+        self.assertFalse(Path(str(vscdb_file) + BACKUP_SUFFIX).exists())
+        self.assertFalse(Path(str(recent_xml) + BACKUP_SUFFIX).exists())
+
+        # Apply relink
+        real = relink(moves, dry_run=False, home=self.fake_home, app_data=self.fake_appdata)
+        self.assertFalse(real.dry_run)
+        self.assertEqual(real.agents, {"JetBrains": 3, "VS Code": 5})
+        self.assertEqual(real.errors, [])
+
+        # Verify backups exist for all 4 files
+        for f in (storage_file, vscdb_file, recent_xml, trusted_xml):
+            self.assertTrue(Path(str(f) + BACKUP_SUFFIX).is_file(), f"Missing backup for {f}")
+
+        # Verify storage.json
+        storage_after = json.loads(storage_file.read_text(encoding="utf-8"))
+        ws_assoc = storage_after["profileAssociations"]["workspaces"]
+        self.assertIn(new_uri_pct, ws_assoc)
+        self.assertNotIn(old_uri_pct, ws_assoc)
+        self.assertIn(untouched_uri, ws_assoc)
+        self.assertIn("vscode-remote://wsl+Ubuntu/home/user/project", ws_assoc)
+        self.assertEqual(
+            storage_after["backupWorkspaces"]["folders"],
+            [{"folderUri": new_uri_pct}, {"folderUri": untouched_uri}],
+        )
+
+        # Verify state.vscdb
+        conn = sqlite3.connect(str(vscdb_file))
+        row = conn.execute(
+            "SELECT value FROM ItemTable WHERE key = ?",
+            ("history.recentlyOpenedPathsList",),
+        ).fetchone()
+        unrelated_row = conn.execute(
+            "SELECT value FROM ItemTable WHERE key = ?",
+            ("unrelated.key",),
+        ).fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
+        vscdb_after = json.loads(row[0])
+        self.assertEqual(
+            vscdb_after["entries"],
+            [
+                {"folderUri": new_uri_pct},
+                {"fileUri": new_uri_colon},
+                {"workspace": {"id": "w1", "configPath": new_ws_uri}},
+                {"folderUri": untouched_uri},
+                {"folderUri": "vscode-remote://ssh-remote+mybox/project"},
+            ],
+        )
+        self.assertEqual(unrelated_row[0], '{"keep": true}')
+
+        # Verify JetBrains recentProjects.xml and trusted-paths.xml
+        recent_after = recent_xml.read_text(encoding="utf-8")
+        self.assertIn(f'<entry key="{jb_new_slash}">', recent_after)
+        self.assertNotIn(f'<entry key="{jb_old_slash}">', recent_after)
+        self.assertIn('<entry key="$USER_HOME$/03_Development_Projects/IdeaProjects/Demo/sub">', recent_after)
+        self.assertIn(f'<entry key="{jb_untouched}">', recent_after)
+        self.assertIn('value="$APPLICATION_HOME_DIR$/bin"', recent_after)
+
+        trusted_after = trusted_xml.read_text(encoding="utf-8")
+        self.assertIn(f'<entry key="{jb_new_bslash}" value="true" />', trusted_after)
+        self.assertIn(f'<entry key="{jb_untouched}" value="true" />', trusted_after)
+
+    def test_03_locked_vscdb_emits_warning_not_error(self) -> None:
+        cursor_gs = self.fake_appdata / "Cursor" / "User" / "globalStorage"
+        cursor_gs.mkdir(parents=True, exist_ok=True)
+        vscdb_file = cursor_gs / "state.vscdb"
+        vscdb_file.write_bytes(b"locked")
+
+        with patch("smart_drive.core.relink.sqlite3.connect", side_effect=sqlite3.OperationalError("database is locked")):
+            report = relink(
+                [("D:\\proj", "D:\\03_Development_Projects\\proj")],
+                home=self.fake_home,
+                app_data=self.fake_appdata,
+            )
+
+        self.assertEqual(report.errors, [])
+        self.assertEqual(len(report.warnings), 1)
+        self.assertIn("database is locked", report.warnings[0])
+
+    def test_04_running_agents_detects_vscode_and_jetbrains_processes(self) -> None:
+        with patch(
+            "smart_drive.core.relink._running_processes",
+            return_value={"Code.exe", "pycharm64.exe", "idea64.exe"},
+        ):
+            active = running_agents()
+        self.assertIn("VS Code", active)
+        self.assertIn("JetBrains", active)
+
+    def test_05_find_moved_discovers_vscode_and_jetbrains_stale_paths(self) -> None:
+        drive = self.test_dir / "drive"
+        new_loc = drive / "03_Development_Projects" / "moved_ide_proj"
+        new_loc.mkdir(parents=True)
+        old_loc = drive / "moved_ide_proj"
+
+        if sys.platform == "win32":
+            old_uri = "file:///" + old_loc.as_posix().replace(":", "%3A", 1)
+        else:
+            old_uri = "file://" + old_loc.as_posix()
+
+        ag_gs = self.fake_appdata / "Antigravity" / "User" / "globalStorage"
+        ag_gs.mkdir(parents=True, exist_ok=True)
+        vscdb_file = ag_gs / "state.vscdb"
+        conn = sqlite3.connect(str(vscdb_file))
+        with conn:
+            conn.execute("CREATE TABLE ItemTable (key TEXT UNIQUE, value BLOB)")
+            conn.execute(
+                "INSERT INTO ItemTable (key, value) VALUES (?, ?)",
+                ("history.recentlyOpenedPathsList", json.dumps({"entries": [{"folderUri": old_uri}]})),
+            )
+        conn.close()
+
+        jb_opts = self.fake_appdata / "JetBrains" / "PyCharm2026.1" / "options"
+        jb_opts.mkdir(parents=True, exist_ok=True)
+        (jb_opts / "recentProjects.xml").write_text(
+            f'<application><entry key="{old_loc.as_posix()}" /></application>\n',
+            encoding="utf-8",
+        )
+
+        entries = find_moved(root=str(drive), home=self.fake_home, app_data=self.fake_appdata)
+        by_old = {e.old: e for e in entries}
+        self.assertIn(str(old_loc), by_old)
+        found = by_old[str(old_loc)]
+        self.assertEqual(found.kind, "same-name")
+        self.assertEqual(found.new, str(new_loc))
+        self.assertEqual(found.agents, ["Antigravity", "JetBrains"])
+
+
+if __name__ == "__main__":
+    unittest.main()

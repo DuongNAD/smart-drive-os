@@ -25,17 +25,20 @@ import csv
 import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime
+import html
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import stat
 import subprocess
 import sys
 import tempfile
 import unicodedata
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+import urllib.parse
 
 try:
     import tomllib
@@ -50,10 +53,20 @@ JOURNAL_NAME = "moves.jsonl"
 
 _CASE_INSENSITIVE = sys.platform in ("win32", "darwin")
 _TOML_QUOTED_RE = re.compile(r"'([^'\r\n]*)'|\"((?:[^\"\\\r\n]|\\.)*)\"")
+_XML_QUOTED_RE = re.compile(r'"([^"\r\n]*)"|\'([^\'\r\n]*)\'')
 _UNREADABLE_DRIVE_RE = re.compile(r"^[A-Za-z]:[^\\/]")
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f]")
 _WIN_INVALID_COMP_RE = re.compile(r'[:*?"<>|]')
 _REPARSE_POINT = 0x400
+
+VSCODE_FAMILY_APPS: Tuple[Tuple[str, str], ...] = (
+    ("Code", "VS Code"),
+    ("Code - Insiders", "Code - Insiders"),
+    ("VSCodium", "VSCodium"),
+    ("Cursor", "Cursor"),
+    ("Windsurf", "Windsurf"),
+    ("Antigravity", "Antigravity"),
+)
 
 AGENT_PROCESSES: Dict[str, Set[str]] = {
     "claude": {"Claude desktop", "Claude Code"},
@@ -61,6 +74,16 @@ AGENT_PROCESSES: Dict[str, Set[str]] = {
     "antigravity": {"Antigravity"},
     "cursor": {"Cursor"},
     "windsurf": {"Windsurf"},
+    "code": {"VS Code", "Code - Insiders", "VSCodium"},
+    "idea64": {"JetBrains"},
+    "pycharm64": {"JetBrains"},
+    "webstorm64": {"JetBrains"},
+      "clion64": {"JetBrains"},
+    "rider64": {"JetBrains"},
+    "goland64": {"JetBrains"},
+    "phpstorm64": {"JetBrains"},
+    "datagrip64": {"JetBrains"},
+    "rustrover64": {"JetBrains"},
 }
 
 
@@ -259,6 +282,20 @@ def _split_pathsep(text: str) -> List[str]:
     return merged
 
 
+def _decode_file_uri(uri: str) -> Optional[str]:
+    """Decodes a file:/// URI into a plain filesystem path, or None if not a file:/// URI."""
+    if not isinstance(uri, str) or uri[:8].lower() != "file:///":
+        return None
+    rest = uri[8:]
+    if not rest:
+        return None
+    if len(rest) >= 4 and rest[0].isalpha() and rest[1:4] in ("%3A", "%3a") and (len(rest) == 4 or rest[4] == "/"):
+        return f"{rest[0]}:{urllib.parse.unquote(rest[4:]) or '/'}"
+    if len(rest) >= 2 and rest[0].isalpha() and rest[1] == ":" and (len(rest) == 2 or rest[2] == "/"):
+        return f"{rest[0]}:{urllib.parse.unquote(rest[2:]) or '/'}"
+    return "/" + urllib.parse.unquote(rest)
+
+
 class PathMapper:
     """Rewrites paths under moved folders while preserving separator and casing style."""
 
@@ -289,6 +326,7 @@ class PathMapper:
                 has_non_ascii = True
             else:
                 needles.add(last_name.casefold())
+                needles.add(urllib.parse.quote(last_name).casefold())
 
         # Deepest moved folder wins when moves nest.
         rules.sort(key=lambda item: len(item[0]), reverse=True)
@@ -339,6 +377,74 @@ class PathMapper:
             return None if result == text else result
         return None
 
+    def map_uri(self, uri: str) -> Optional[str]:
+        """Rewrites a file:/// URI if its path is inside a moved folder, preserving URI style."""
+        mapped_uri, _ = self._map_uri_with_original(uri)
+        return mapped_uri
+
+    def _map_uri_with_original(self, uri: str) -> Tuple[Optional[str], Optional[str]]:
+        if not isinstance(uri, str) or uri[:8].lower() != "file:///":
+            return None, None
+        scheme = uri[:8]
+        rest = uri[8:]
+        if not rest:
+            return None, None
+
+        if len(rest) >= 4 and rest[0].isalpha() and rest[1:4] in ("%3A", "%3a") and (len(rest) == 4 or rest[4] == "/"):
+            orig_drive: Optional[str] = rest[0]
+            orig_colon = rest[1:4]
+            raw_tail = rest[4:]
+        elif len(rest) >= 2 and rest[0].isalpha() and rest[1] == ":" and (len(rest) == 2 or rest[2] == "/"):
+            orig_drive = rest[0]
+            orig_colon = ":"
+            raw_tail = rest[2:]
+        else:
+            orig_drive = None
+            orig_colon = ""
+            raw_tail = "/" + rest
+
+        unquoted_tail = urllib.parse.unquote(raw_tail)
+        if orig_drive is not None:
+            decoded_path = f"{orig_drive}:{unquoted_tail or '/'}"
+            # Use uppercase drive letter when probing self.map() so VS Code's standard lowercase
+            # drive letter ('e%3A') does not cause map() to lowercase the entire mapped path.
+            probe_path = f"{orig_drive.upper()}:{unquoted_tail or '/'}"
+            mapped = self.map(probe_path)
+            if mapped is None:
+                return None, None
+            if unquoted_tail and unquoted_tail.islower() and mapped[2:].lower() != mapped[2:]:
+                parsed_probe = _split(probe_path)
+                if parsed_probe is not None:
+                    p_key = _key(*parsed_probe)
+                    for old_key, (_, old_names), _ in self._rules:
+                        if p_key[: len(old_key)] == old_key:
+                            if parsed_probe[1][: len(old_names)] != old_names:
+                                mapped = mapped[:2] + mapped[2:].lower()
+                            break
+            mapped_drive = mapped[0].upper() if orig_drive.isupper() else mapped[0].lower()
+            mapped_tail = mapped[2:].replace("\\", "/")
+            if not raw_tail and mapped_tail == "/":
+                mapped_tail = ""
+        else:
+            decoded_path = unquoted_tail
+            mapped = self.map(decoded_path)
+            if mapped is None:
+                return None, None
+            mapped_drive = ""
+            mapped_tail = mapped.replace("\\", "/")
+
+        if "%" in raw_tail or any(ord(ch) <= 0x20 or ch in "#?%" for ch in mapped_tail):
+            encoded_tail = urllib.parse.quote(mapped_tail, safe="/:@!$&'()*+,;=-._~")
+        else:
+            encoded_tail = mapped_tail
+
+        if orig_drive is not None:
+            result_uri = f"{scheme}{mapped_drive}{orig_colon}{encoded_tail}"
+        else:
+            result_uri = f"{scheme}{encoded_tail.lstrip('/')}"
+
+        return (None, None) if result_uri == uri else (result_uri, decoded_path)
+
     def map_value(self, text: str) -> Optional[str]:
         """Rewrites one path string, or several paths joined by os.pathsep (e.g. PYTHONPATH)."""
         mapped, _ = self._map_value_with_originals(text)
@@ -350,6 +456,11 @@ class PathMapper:
             mapped_head = self.map(head)
             if mapped_head is not None:
                 return f"{mapped_head}\x00{tail}", [head]
+            return None, []
+        if text[:8].lower() == "file:///":
+            mapped_uri, orig_path = self._map_uri_with_original(text)
+            if mapped_uri is not None and orig_path is not None:
+                return mapped_uri, [orig_path]
             return None, []
         if os.pathsep in text and not text.startswith(("file:", "http:", "https:", "-")):
             pieces = _split_pathsep(text)
@@ -514,6 +625,24 @@ def agent_files(
         AgentFile(resolved_home / ".codeium" / "windsurf" / "mcp_config.json", "Windsurf", "json", True),
         AgentFile(const_eco, "Constellation", "json", True),
     ])
+
+    for app_dir_name, agent_label in VSCODE_FAMILY_APPS:
+        gs_dir = resolved_app_data / app_dir_name / "User" / "globalStorage"
+        candidates.append(AgentFile(gs_dir / "storage.json", agent_label, "json", True))
+        candidates.append(AgentFile(gs_dir / "state.vscdb", agent_label, "vscdb", True))
+
+    jb_root = resolved_app_data / "JetBrains"
+    if _is_dir(jb_root):
+        try:
+            jb_dirs = sorted(jb_root.iterdir(), key=lambda p: p.name.casefold())
+        except OSError:
+            jb_dirs = []
+        for prod_dir in jb_dirs:
+            if not _is_dir(prod_dir):
+                continue
+            opts_dir = prod_dir / "options"
+            candidates.append(AgentFile(opts_dir / "recentProjects.xml", "JetBrains", "jetbrains_xml", True))
+            candidates.append(AgentFile(opts_dir / "trusted-paths.xml", "JetBrains", "jetbrains_xml", True))
 
     if root:
         candidates.append(AgentFile(Path(root) / ".mcp.json", "SSD .mcp.json", "json", True))
@@ -1047,6 +1176,184 @@ def _process_finder_file(
     return "".join(out_lines).encode("utf-8"), total
 
 
+def _expand_jetbrains_user_home(text: str, resolved_home: Path) -> str:
+    """Expands leading $USER_HOME$ macro in a JetBrains XML path string."""
+    if not text.startswith("$USER_HOME$"):
+        return text
+    suffix = text[len("$USER_HOME$") :]
+    if suffix and suffix[0] not in "\\/":
+        return text
+    sep = "/" if "\\" not in text else "\\"
+    home_str = str(resolved_home).rstrip("\\/")
+    if sep == "/":
+        home_str = home_str.replace("\\", "/")
+    return home_str + suffix
+
+
+def _map_jetbrains_value(
+    text: str,
+    mapper: PathMapper,
+    resolved_home: Path,
+) -> Optional[str]:
+    """Maps a single JetBrains XML attribute value (supporting E:/..., $USER_HOME$/..., and file://...)."""
+    if not text:
+        return None
+    if text.startswith("$USER_HOME$"):
+        suffix = text[len("$USER_HOME$") :]
+        if suffix and suffix[0] not in "\\/":
+            return None
+        sep = "/" if "\\" not in text else "\\"
+        expanded = _expand_jetbrains_user_home(text, resolved_home)
+        mapped = mapper.map(expanded)
+        if mapped is None:
+            return None
+        home_parsed = _split(str(resolved_home).rstrip("\\/"))
+        mapped_parsed = _split(mapped)
+        if home_parsed and home_parsed[1] and mapped_parsed and _is_under(_key(*mapped_parsed), _key(*home_parsed)):
+            rel_parts = mapped_parsed[1][len(home_parsed[1]) :]
+            collapsed = "$USER_HOME$" + (sep + sep.join(rel_parts) if rel_parts else "")
+            if text[-1] in "\\/" and not collapsed.endswith(sep):
+                collapsed += sep
+            return None if collapsed == text else collapsed
+        return mapped.replace("\\", "/") if sep == "/" else mapped
+
+    if text[:8].lower() == "file:///":
+        return mapper.map_uri(text)
+
+    if text[:7].lower() == "file://":
+        mapped_inner = mapper.map(text[7:])
+        if mapped_inner is not None:
+            return text[:7] + mapped_inner
+        return None
+
+    return mapper.map(text)
+
+
+def _escape_xml_attr(text: str, quote_char: str) -> str:
+    escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    if quote_char == '"':
+        return escaped.replace('"', "&quot;")
+    return escaped.replace("'", "&apos;")
+
+
+def _process_jetbrains_xml_file(
+    af: AgentFile,
+    mapper: PathMapper,
+    resolved_home: Path,
+    report: RelinkReport,
+) -> Tuple[Optional[bytes], int]:
+    """Reads and rewrites quoted path attributes in JetBrains recentProjects.xml / trusted-paths.xml."""
+    try:
+        raw_bytes = af.path.read_bytes()
+    except OSError as err:
+        report.errors.append({"file": str(af.path), "error": str(err)})
+        return None, 0
+
+    has_bom = raw_bytes.startswith(b"\xef\xbb\xbf")
+    try:
+        text = raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as err:
+        report.warnings.append(f"{af.path}: invalid UTF-8 ({err})")
+        return None, 0
+
+    if not mapper.mentions(text) and "$USER_HOME$" not in text:
+        return None, 0
+
+    total_count = 0
+
+    def _replace_attr(match: re.Match[str]) -> str:
+        nonlocal total_count
+        double = match.group(1)
+        if double is not None:
+            quote_char = '"'
+            raw_inner = double
+        else:
+            quote_char = "'"
+            raw_inner = match.group(2) or ""
+
+        unescaped = html.unescape(raw_inner) if "&" in raw_inner else raw_inner
+        mapped = _map_jetbrains_value(unescaped, mapper, resolved_home)
+        if mapped is None:
+            return match.group(0)
+        total_count += 1
+        return f"{quote_char}{_escape_xml_attr(mapped, quote_char)}{quote_char}"
+
+    new_text = _XML_QUOTED_RE.sub(_replace_attr, text)
+    if total_count == 0:
+        return None, 0
+
+    prefix = b"\xef\xbb\xbf" if has_bom else b""
+    return prefix + new_text.encode("utf-8"), total_count
+
+
+def _process_vscdb_file(
+    af: AgentFile,
+    mapper: PathMapper,
+    report: RelinkReport,
+    dry_run: bool,
+) -> int:
+    """Reads and rewrites history.recentlyOpenedPathsList in a VS Code-family state.vscdb SQLite database."""
+    try:
+        real_target = Path(os.path.realpath(str(af.path)))
+    except OSError as err:
+        report.warnings.append(f"{af.path}: {err}")
+        return 0
+
+    conn: Optional[sqlite3.Connection] = None
+    try:
+        conn = sqlite3.connect(str(real_target), timeout=1.0)
+        cur = conn.execute(
+            "SELECT value FROM ItemTable WHERE key = ?",
+            ("history.recentlyOpenedPathsList",),
+        )
+        row = cur.fetchone()
+        if not row or row[0] is None:
+            return 0
+        raw_val = row[0]
+        is_bytes = isinstance(raw_val, bytes)
+        text_val = raw_val.decode("utf-8") if is_bytes else str(raw_val)
+        if not mapper.mentions(text_val):
+            return 0
+        try:
+            data = json.loads(text_val)
+        except json.JSONDecodeError as err:
+            report.warnings.append(f"{af.path}: invalid JSON in history.recentlyOpenedPathsList ({err})")
+            return 0
+
+        originals: List[str] = []
+        new_data, count = _rewrite_json_value(data, mapper, originals)
+        if count == 0:
+            return 0
+        if dry_run:
+            return count
+
+        new_bytes = _serialize_json_like(new_data, text_val, False)
+        new_db_val: Union[bytes, str] = new_bytes if is_bytes else new_bytes.decode("utf-8")
+
+        conn.close()
+        conn = None
+
+        if af.backup and _is_file(real_target):
+            shutil.copy2(str(real_target), str(real_target) + BACKUP_SUFFIX)
+
+        conn = sqlite3.connect(str(real_target), timeout=1.0)
+        with conn:
+            conn.execute(
+                "UPDATE ItemTable SET value = ? WHERE key = ?",
+                (new_db_val, "history.recentlyOpenedPathsList"),
+            )
+        return count
+    except (sqlite3.Error, OSError, UnicodeDecodeError) as err:
+        report.warnings.append(f"{af.path}: {err}")
+        return 0
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def _write_agent_file(af: AgentFile, content: bytes, report: RelinkReport) -> bool:
     """Writes content atomically to the real path of af.path, creating a rolling backup when requested."""
     try:
@@ -1405,12 +1712,20 @@ def relink(
 
     for af in agent_files(root=root, home=home, app_data=app_data):
         try:
+            if af.kind == "vscdb":
+                count = _process_vscdb_file(af, mapper, report, dry_run)
+                if count > 0:
+                    report.updated.append({"file": str(af.path), "agent": af.agent, "paths": count})
+                continue
+
             if af.kind == "json":
                 new_bytes, count = _process_json_file(af, mapper, report, claude_originals)
             elif af.kind == "toml":
                 new_bytes, count = _process_toml_file(af, mapper, report)
             elif af.kind == "lines":
                 new_bytes, count = _process_lines_file(af, mapper, report)
+            elif af.kind == "jetbrains_xml":
+                new_bytes, count = _process_jetbrains_xml_file(af, mapper, resolved_home, report)
             else:
                 continue
 
@@ -1703,6 +2018,48 @@ def _collect_toml_strings(text: str, agent: str, out: List[Tuple[str, str]]) -> 
             out.append((re.sub(r"\\(.)", r"\1", double), agent))
 
 
+def _collect_jetbrains_xml_strings(
+    text: str,
+    agent: str,
+    resolved_home: Path,
+    out: List[Tuple[str, str]],
+) -> None:
+    for match in _XML_QUOTED_RE.finditer(text):
+        raw_inner = match.group(1) if match.group(1) is not None else (match.group(2) or "")
+        if not raw_inner:
+            continue
+        unescaped = html.unescape(raw_inner) if "&" in raw_inner else raw_inner
+        if unescaped.startswith("$USER_HOME$"):
+            unescaped = _expand_jetbrains_user_home(unescaped, resolved_home)
+        elif unescaped[:7].lower() == "file://" and unescaped[:8].lower() != "file:///":
+            unescaped = unescaped[7:]
+        out.append((unescaped, agent))
+
+
+def _collect_vscdb_strings(path: Path, agent: str, out: List[Tuple[str, str]]) -> None:
+    conn: Optional[sqlite3.Connection] = None
+    try:
+        conn = sqlite3.connect(str(path), timeout=1.0)
+        row = conn.execute(
+            "SELECT value FROM ItemTable WHERE key = ?",
+            ("history.recentlyOpenedPathsList",),
+        ).fetchone()
+        if not row or row[0] is None:
+            return
+        raw_val = row[0]
+        text_val = raw_val.decode("utf-8") if isinstance(raw_val, bytes) else str(raw_val)
+        data = json.loads(text_val)
+        _collect_json_strings(data, agent, out)
+    except Exception:
+        return
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def find_moved(
     root: Optional[str] = None,
     home: Optional[Path] = None,
@@ -1740,6 +2097,9 @@ def find_moved(
 
     raw_items: List[Tuple[str, str]] = []
     for af in agent_files(root=root, home=home, app_data=app_data):
+        if af.kind == "vscdb":
+            _collect_vscdb_strings(af.path, af.agent, raw_items)
+            continue
         try:
             raw_bytes = af.path.read_bytes()
             text = raw_bytes.decode("utf-8-sig")
@@ -1753,10 +2113,17 @@ def find_moved(
             _collect_json_strings(data, af.agent, raw_items)
         elif af.kind == "toml":
             _collect_toml_strings(text, af.agent, raw_items)
+        elif af.kind == "jetbrains_xml":
+            _collect_jetbrains_xml_strings(text, af.agent, resolved_home, raw_items)
 
     expanded_items: List[Tuple[str, str]] = []
     for raw_str, agent in raw_items:
         if not raw_str:
+            continue
+        if raw_str[:8].lower() == "file:///":
+            decoded_uri = _decode_file_uri(raw_str)
+            if decoded_uri:
+                expanded_items.append((decoded_uri, agent))
             continue
         if _is_unreadable_drive_path(raw_str):
             expanded_items.append((raw_str, agent))
