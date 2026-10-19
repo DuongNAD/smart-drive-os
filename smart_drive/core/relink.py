@@ -1892,7 +1892,7 @@ def find_moved(
                     resolved_kind = "journal"
                 break
 
-        # 2. same-name (at A/*/<name> and A/*/*/<name>, verified against direct_subs) and 3. renamed
+        # 2. same-name (at A/*/<name> and A/*/*/<name>, verified against direct_subs) or name-only, and 3. renamed
         if resolved_kind is None:
             target_cf = _fold(m_names[-1])
             same_all: List[Path] = []
@@ -1912,7 +1912,9 @@ def find_moved(
             same_passing = [str(c) for c in same_all if _holds_all(c, direct_subs)]
             if len(same_all) == 1 and len(same_passing) == 1:
                 resolved_new = same_passing[0]
-                resolved_kind = "same-name"
+                # A name alone proves nothing (the old folder may be deleted and this one another project):
+                # only a folder that also holds what the agents remember inside the old one is sure.
+                resolved_kind = "same-name" if direct_subs else "name-only"
             else:
                 if len(direct_subs) >= 2:
                     renamed_matches = [str(c1) for c1 in a_children if _has_all_subs(c1, direct_subs, listings)]
