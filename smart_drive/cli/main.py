@@ -62,6 +62,7 @@ from smart_drive.cli.cmd_sentinel import cmd_sentinel
 from smart_drive.cli.cmd_setup import cmd_setup
 from smart_drive.cli.cmd_snapshot import cmd_snapshot
 from smart_drive.cli.cmd_status import cmd_status
+from smart_drive.cli.cmd_undo import cmd_undo
 from smart_drive.core.duplicates import DuplicateDetector
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
@@ -541,6 +542,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_relink.add_argument("--dry-run", action="store_true", help="Preview path updates without modifying any files")
     p_relink.add_argument("--json", action="store_true", help="Output relink report in JSON format")
 
+    # 22. undo
+    p_undo = subparsers.add_parser(
+        "undo",
+        help="Reverse the most recent organize or classify move batch (dry-run preview by default)",
+    )
+    p_undo.add_argument("--root", help="Root directory of the SSD")
+    p_undo.add_argument("--apply", action="store_true", help="Execute the undo and restore items to their original paths")
+    p_undo.add_argument("--dry-run", action="store_true", help="Preview items to restore without moving anything (default)")
+    p_undo.add_argument("--json", action="store_true", help="Output undo report in JSON format")
+
     # self-path-check subcommand
     p_path_check = subparsers.add_parser(
         "self-path-check",
@@ -584,6 +595,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "gitignore": cmd_gitignore,
         "setup": cmd_setup,
         "relink": cmd_relink,
+        "undo": cmd_undo,
         "self-path-check": cmd_path_check,
         "path-check": cmd_path_check,
         "self_path_check": cmd_path_check,
