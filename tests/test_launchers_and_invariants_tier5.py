@@ -123,6 +123,18 @@ class TestLauncherInventoryAndSynchronization(unittest.TestCase):
                     f"PowerShell script {name} must declare UTF-8 console output",
                 )
 
+    def test_powershell_launchers_are_ascii_or_carry_a_bom(self):
+        """Windows PowerShell 5.1 reads a script without a BOM in the ANSI code page, where UTF-8 text such as
+        a check mark turns into a curly quote that ends a string early, and the whole script fails to parse."""
+        for name in ALL_20_LAUNCHER_NAMES:
+            if name.endswith(".ps1"):
+                for path in (LAUNCHERS_DIR / name, REPO_ROOT / name):
+                    raw = path.read_bytes()
+                    self.assertTrue(
+                        raw.isascii() or raw.startswith(b"\xef\xbb\xbf"),
+                        f"{path} must be ASCII or start with a UTF-8 BOM",
+                    )
+
 
 class TestLauncherSecurityAndHardcodedPaths(unittest.TestCase):
     """Adversarial audit verifying the absence of machine-specific usernames or hardcoded paths."""

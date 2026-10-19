@@ -168,7 +168,7 @@ while ($true) {
             Write-Host ""
             Run-SmartDrive @("relink", "--find")
             Write-Host ""
-            $Confirm = Read-Host "Apply the ✓ relinks now? Open coding agents will be waited for. [y/N]"
+            $Confirm = Read-Host "Apply the relinks marked with a check now? Open coding agents will be waited for. [y/N]"
             if ($Confirm -eq "y" -or $Confirm -eq "Y") {
                 Write-Host ""
                 Run-SmartDrive @("relink", "--find", "--apply", "--wait")
