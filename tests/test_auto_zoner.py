@@ -401,6 +401,48 @@ class TestAutoZonerPlanningAndExecution(_IsolatedAutoZonerTestCase):
         self.assertTrue(shortcut_file.exists())
         self.assertTrue(path_file.exists())
 
+    def test_folder_of_multiple_repositories_routed_to_development_projects(self) -> None:
+        """Folders containing >= 2 child repos route to 03_Development_Projects/<name>; 1 child repo returns None."""
+        from unittest.mock import patch
+        from smart_drive.core.system_refs import SystemRefIndex
+
+        root = self.test_dir
+        project_dir = root / "project"
+        (project_dir / "a" / ".git").mkdir(parents=True)
+        (project_dir / "b").mkdir(parents=True)
+        (project_dir / "b" / "package.json").write_text("{}", encoding="utf-8")
+        (project_dir / "c").mkdir(parents=True)
+
+        misc_dir = root / "misc"
+        (misc_dir / "a" / ".git").mkdir(parents=True)
+        (misc_dir / "other").mkdir(parents=True)
+
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
+        res_project = zoner.classify_item(str(project_dir))
+        self.assertEqual(
+            res_project,
+            (
+                "03_Development_Projects",
+                os.path.join("03_Development_Projects", "project"),
+                "Folder of 2 development projects",
+            ),
+        )
+        self.assertIsNone(zoner.classify_item(str(misc_dir)))
+
+        # If one of the 2 child repos is a symlink/junction, it is skipped -> only 1 real repo -> returns None
+        with patch.object(
+            AutoZoner,
+            "_is_link_or_junction",
+            side_effect=lambda entry: entry.name == "b",
+        ):
+            self.assertIsNone(zoner.classify_item(str(project_dir)))
+
+        plan = zoner.generate_plan()
+        self.assertEqual(len(plan), 1)
+        self.assertEqual(plan[0].src_path, str(project_dir))
+        self.assertEqual(plan[0].dest_path, str(root / "03_Development_Projects" / "project"))
+        self.assertEqual(plan[0].reason, "Folder of 2 development projects")
+
 
 if __name__ == "__main__":
     unittest.main()
