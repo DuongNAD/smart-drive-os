@@ -62,7 +62,7 @@ class DeletionRecord:
     size: int
     allocated_size: int
     is_dir: bool
-    status: str          # "SIMULATED", "DELETED", "BLOCKED", "FAILED"
+    status: str          # "SIMULATED", "DELETED", "QUARANTINED", "BLOCKED", "FAILED"
     reason: str          # Descriptive rationale (e.g. "AppleDouble junk", "Inviolable file")
     timestamp: str       # ISO-8601 UTC timestamp
     tier: Optional[int] = None
@@ -92,6 +92,11 @@ class PurgeSummary:
     timestamp_start: str
     timestamp_end: str
     records: List[DeletionRecord] = field(default_factory=list)
+    deleted_count: int = 0
+    freed_bytes: int = 0
+    quarantined_count: int = 0
+    quarantined_bytes: int = 0
+    batch_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert summary to dictionary."""
@@ -99,6 +104,11 @@ class PurgeSummary:
             "dry_run": self.dry_run,
             "total_attempted": self.total_attempted,
             "total_succeeded": self.total_succeeded,
+            "deleted_count": self.deleted_count,
+            "freed_bytes": self.freed_bytes,
+            "quarantined_count": self.quarantined_count,
+            "quarantined_bytes": self.quarantined_bytes,
+            "batch_id": self.batch_id,
             "total_blocked": self.total_blocked,
             "total_failed": self.total_failed,
             "nominal_bytes_reclaimed": self.nominal_bytes_reclaimed,
@@ -513,7 +523,7 @@ class PurgeEngine:
                 if os.path.isdir(real_p):
                     is_dir = True
         record = self.delete_dir(clean_path, tier=tier) if is_dir else self.delete_file(clean_path, size, tier=tier)
-        if record.status in ("SIMULATED", "DELETED"):
+        if record.status in ("SIMULATED", "DELETED", "QUARANTINED"):
             return True, record.reason
         return False, record.reason
 
@@ -610,8 +620,8 @@ class PurgeEngine:
                 size=size,
                 allocated_size=allocated,
                 is_dir=False,
-                status="DELETED",
-                reason="Quarantined successfully" if use_quarantine else "Purged successfully",
+                status="QUARANTINED" if use_quarantine else "DELETED",
+                reason="Quarantined successfully" if use_quarantine else "Deleted successfully",
                 timestamp=ts,
                 tier=tier,
             )
@@ -715,8 +725,8 @@ class PurgeEngine:
                 size=0,
                 allocated_size=0,
                 is_dir=True,
-                status="DELETED",
-                reason="Quarantined directory tree successfully" if use_quarantine else "Purged directory tree successfully",
+                status="QUARANTINED" if use_quarantine else "DELETED",
+                reason="Quarantined directory tree successfully" if use_quarantine else "Deleted directory tree successfully",
                 timestamp=ts,
                 tier=tier,
             )
@@ -745,6 +755,10 @@ class PurgeEngine:
         """Executes purge (or simulation) across a sequence of JunkItem or dict entries."""
         ts_start = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         succeeded = 0
+        deleted_count = 0
+        freed_bytes = 0
+        quarantined_count = 0
+        quarantined_bytes = 0
         blocked = 0
         failed = 0
         reclaimed_nominal = 0
@@ -768,10 +782,20 @@ class PurgeEngine:
             else:
                 rec = self.delete_file(path, size, tier=tier)
 
-            if rec.status in ("SIMULATED", "DELETED"):
+            if rec.status == "SIMULATED":
                 succeeded += 1
                 reclaimed_nominal += rec.size
                 reclaimed_allocated += rec.allocated_size
+            elif rec.status == "DELETED":
+                succeeded += 1
+                deleted_count += 1
+                freed_bytes += rec.size
+                reclaimed_nominal += rec.size
+                reclaimed_allocated += rec.allocated_size
+            elif rec.status == "QUARANTINED":
+                succeeded += 1
+                quarantined_count += 1
+                quarantined_bytes += rec.size
             elif rec.status == "BLOCKED":
                 blocked += 1
             else:
@@ -793,6 +817,11 @@ class PurgeEngine:
             timestamp_start=ts_start,
             timestamp_end=ts_end,
             records=self.audit_records[records_start_idx:],
+            deleted_count=deleted_count,
+            freed_bytes=freed_bytes,
+            quarantined_count=quarantined_count,
+            quarantined_bytes=quarantined_bytes,
+            batch_id=self.batch_id,
         )
 
     def purge_batch(
@@ -831,6 +860,11 @@ class PurgeEngine:
             "dry_run": self.dry_run,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "total_records": len(self.audit_records),
+            "deleted_count": sum(1 for r in self.audit_records if r.status == "DELETED"),
+            "freed_bytes": sum(r.size for r in self.audit_records if r.status == "DELETED"),
+            "quarantined_count": sum(1 for r in self.audit_records if r.status == "QUARANTINED"),
+            "quarantined_bytes": sum(r.size for r in self.audit_records if r.status == "QUARANTINED"),
+            "batch_id": self.batch_id,
             "total_reclaimed_nominal": sum(
                 r.size for r in self.audit_records if r.status in ("DELETED", "SIMULATED")
             ),

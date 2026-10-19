@@ -921,6 +921,11 @@ class SmartDriveMCPServer:
             "tier": max_tier.name,
             "detected_count": len(junk_items),
             "purged_count": summary.total_succeeded,
+            "deleted_count": summary.deleted_count,
+            "freed_bytes": summary.freed_bytes,
+            "quarantined_count": summary.quarantined_count,
+            "quarantined_bytes": summary.quarantined_bytes,
+            "batch_id": summary.batch_id,
             "nominal_bytes_reclaimed": summary.nominal_bytes_reclaimed,
             "slack_bytes_reclaimed": summary.allocated_bytes_reclaimed,
         }

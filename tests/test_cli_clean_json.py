@@ -60,12 +60,20 @@ class TestCleanApply(unittest.TestCase):
         self.assertFalse(report["dry_run"])
         self.assertEqual(self.present(("scratch.tmp", ".DS_Store", "Thumbs.db")), [])
         self.assertFalse((self.root / "__pycache__").exists())
-        self.assertGreaterEqual(report["deleted_count"], 4)
+        self.assertEqual(report["deleted_count"], 3)
+        self.assertEqual(report["quarantined_count"], 1)
+        self.assertGreater(report["freed_bytes"], 0)
+        self.assertGreater(report["quarantined_bytes"], 0)
+        self.assertTrue(report["batch_id"])
         self.assertEqual(
-            report["deleted_count"] + report["blocked_count"] + report["failed_count"], len(report["results"])
+            report["deleted_count"]
+            + report["quarantined_count"]
+            + report["blocked_count"]
+            + report["failed_count"],
+            len(report["results"]),
         )
         self.assertEqual(report["failed_count"], 0)
-        self.assertTrue(all({"rel_path", "deleted", "status", "reason"} <= set(r) for r in report["results"]))
+        self.assertTrue(all({"rel_path", "deleted", "quarantined", "status", "reason"} <= set(r) for r in report["results"]))
 
     def test_apply_json_never_touches_files_that_only_look_like_junk(self) -> None:
         self.run_clean("--apply", "--json")
@@ -82,15 +90,38 @@ class TestCleanApply(unittest.TestCase):
     def test_apply_text_mode_still_purges(self) -> None:
         code, out, _ = self.run_clean("--apply")
         self.assertEqual(code, 0)
-        self.assertIn("Purged", out)
+        self.assertIn("Deleted 3 item(s), freed", out)
+        self.assertIn(
+            "Quarantined 1 item(s), 0.00 MB — space is freed only after: smart-drive clean --purge-quarantine --older-than 30 --apply",
+            out,
+        )
+        self.assertIn("Restore with: smart-drive clean --restore", out)
+        self.assertNotIn("Purged", out)
         self.assertEqual(self.present(("scratch.tmp", ".DS_Store", "Thumbs.db")), [])
         self.assertEqual(self.present(KEEPERS), list(KEEPERS))
+
+    def test_apply_text_mode_only_quarantined_never_prints_purged_or_deleted(self) -> None:
+        for rel in (".DS_Store", "Thumbs.db", "__pycache__"):
+            p = self.root / rel
+            if p.is_dir():
+                shutil.rmtree(p)
+            elif p.exists():
+                p.unlink()
+        code, out, _ = self.run_clean("--apply")
+        self.assertEqual(code, 0)
+        self.assertNotIn("Purged", out)
+        self.assertNotIn("Deleted", out)
+        self.assertIn(
+            "Quarantined 1 item(s), 0.00 MB — space is freed only after: smart-drive clean --purge-quarantine --older-than 30 --apply",
+            out,
+        )
+        self.assertIn("Restore with: smart-drive clean --restore", out)
 
     def test_apply_json_on_a_clean_drive_reports_zero(self) -> None:
         self.run_clean("--apply", "--json")
         _, out, _ = self.run_clean("--apply", "--json")
         report = json.loads(out)
-        self.assertEqual((report["junk_count"], report["deleted_count"]), (0, 0))
+        self.assertEqual((report["junk_count"], report["deleted_count"], report["quarantined_count"]), (0, 0, 0))
 
 
 def _can_ignore_permissions() -> bool:
@@ -121,7 +152,7 @@ class TestCleanReportsFailuresHonestly(unittest.TestCase):
         code, out = self.run_clean()
         self.assertEqual(code, 1)
         self.assertNotIn("successfully", out)
-        self.assertIn("Purged 1 of 2 junk files.", out)
+        self.assertIn("Deleted 1 of 2 item(s), freed", out)
         self.assertIn("locked/Thumbs.db", out.replace("\\", "/"))
         self.assertFalse((self.root / "open" / ".DS_Store").exists())
         self.assertTrue((self.root / "locked" / "Thumbs.db").exists())
@@ -275,7 +306,7 @@ class TestDirectoryPurgesAreVerified(unittest.TestCase):
         code, out = self.run_clean()
         self.assertEqual(code, 1)
         self.assertNotIn("successfully", out)
-        self.assertIn("Purged 0 of 1 junk files.", out)
+        self.assertIn("Deleted 0 of 1 item(s), freed", out)
 
 
 class TestBlockedIsNotFailed(unittest.TestCase):
@@ -300,7 +331,7 @@ class TestBlockedIsNotFailed(unittest.TestCase):
                 code = main(["clean", "--root", str(root), "--apply"])
         self.assertEqual(code, 0)
         self.assertIn("1 item(s) kept by the safety guard", out.getvalue())
-        self.assertIn("Purged 0 of 1 junk files.", out.getvalue())
+        self.assertIn("Deleted 0 of 1 item(s), freed", out.getvalue())
 
 
 class TestReclaimableSpaceCountsEveryItem(unittest.TestCase):
