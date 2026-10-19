@@ -76,6 +76,11 @@ def print_found(
                 print(f"  ✓ {entry.old} -> {entry.new}  ({entry.kind}; {agents_str})")
             elif entry.kind == "renamed":
                 print(f'  ? {entry.old} -> {entry.new}  (renamed? check it, then run: smart-drive relink "{entry.old}" "{entry.new}")')
+            elif entry.kind == "name-only":
+                print(
+                    f"  ? {entry.old} -> {entry.new}  (only the name matches; if you moved it there, run: "
+                    f'smart-drive relink "{entry.old}" "{entry.new}")'
+                )
             elif entry.kind == "ambiguous":
                 cands = ", ".join(entry.candidates)
                 print(f"  ? {entry.old}: several candidates: {cands}")

@@ -1008,7 +1008,7 @@ class TestRelink(SmartDriveTestCase):
 
         # Setup sure (same-name and journal), renamed, ambiguous, not-found, unreadable
         same_new = drive / "03_Development_Projects" / "sure_app"
-        same_new.mkdir(parents=True)
+        (same_new / "src").mkdir(parents=True)
         jrn_new = drive / "03_Development_Projects" / "jrn_app_moved"
         jrn_new.mkdir(parents=True)
         record_moves(str(drive), [(str(drive / "jrn_app"), str(jrn_new))], "organize")
@@ -1027,6 +1027,8 @@ class TestRelink(SmartDriveTestCase):
             json.dumps({
                 "projects": {
                     str(drive / "sure_app"): {},
+                    # what the agents remember inside sure_app is what makes the same-name match sure
+                    str(drive / "sure_app" / "src"): {},
                     str(drive / "jrn_app"): {},
                     str(drive / "old_box" / "part1"): {},
                     str(drive / "old_box" / "part2"): {},
@@ -1068,15 +1070,16 @@ class TestRelink(SmartDriveTestCase):
         dry_data = json.loads(dry_proc.stdout)
         self.assertIsNotNone(dry_data["relink"])
         self.assertTrue(dry_data["relink"]["dry_run"])
-        self.assertEqual(dry_data["relink"]["agents"], {"Claude Code": 2})
+        self.assertEqual(dry_data["relink"]["agents"], {"Claude Code": 3})
 
         # CLI --find --apply (real run): relinks only ✓ entries and journals them with tool "relink"
         apply_proc = run_smart_drive_cli(["relink", "--find", "--apply", "--root", str(drive)], env=env)
         self.assertEqual(apply_proc.returncode, 0, apply_proc.stderr)
-        self.assertIn("Claude Code: 2 path(s) updated", apply_proc.stdout)
+        self.assertIn("Claude Code: 3 path(s) updated", apply_proc.stdout)
 
         after_projects = json.loads(claude_file.read_text(encoding="utf-8"))["projects"]
         self.assertIn(str(same_new), after_projects)
+        self.assertIn(str(same_new / "src"), after_projects)
         self.assertIn(str(jrn_new), after_projects)
         self.assertNotIn(str(drive / "sure_app"), after_projects)
         self.assertNotIn(str(drive / "jrn_app"), after_projects)
@@ -1136,11 +1139,12 @@ class TestRelink(SmartDriveTestCase):
     def test_25_wait_polls_until_closed_then_writes_and_timeout_exits_3(self) -> None:
         drive = self.create_mock_drive()
         new_dir = drive / "03_Development_Projects" / "wait_app"
-        new_dir.mkdir(parents=True, exist_ok=True)
+        (new_dir / "src").mkdir(parents=True, exist_ok=True)
         old_dir = drive / "wait_app"
 
         claude_file = self.fake_home / ".claude.json"
-        initial_json = json.dumps({"projects": {str(old_dir): {}}}, indent=2)
+        # src, remembered inside the old folder, makes the same-name match sure for --find --apply
+        initial_json = json.dumps({"projects": {str(old_dir): {}, str(old_dir / "src"): {}}}, indent=2)
         claude_file.write_text(initial_json, encoding="utf-8")
 
         sleeps: list[float] = []
@@ -1450,9 +1454,9 @@ class TestRelink(SmartDriveTestCase):
         self.assertIsNone(e_part.new)
         self.assertEqual(e_part.candidates, [str(partial_same)])
 
-        # 4) Name with " - " is preserved and matched as "same-name"
+        # 4) Name with " - " is preserved and matched by name (nothing inside it is remembered: "name-only")
         e_dash = by_old[str(drive / "Resource 16 - PE 18")]
-        self.assertEqual(e_dash.kind, "same-name")
+        self.assertEqual(e_dash.kind, "name-only")
         self.assertEqual(e_dash.new, str(dash_new))
 
         # 5) skip_dirs honoured
@@ -1669,9 +1673,10 @@ class TestRelink(SmartDriveTestCase):
 
     def test_38_json_output_stays_json_while_waiting(self) -> None:
         drive = self.create_mock_drive()
-        (drive / "03_Development_Projects" / "json_app").mkdir(parents=True, exist_ok=True)
+        (drive / "03_Development_Projects" / "json_app" / "src").mkdir(parents=True, exist_ok=True)
         claude_file = self.fake_home / ".claude.json"
-        claude_file.write_text(json.dumps({"projects": {str(drive / "json_app"): {}}}), encoding="utf-8")
+        old_dir = drive / "json_app"
+        claude_file.write_text(json.dumps({"projects": {str(old_dir): {}, str(old_dir / "src"): {}}}), encoding="utf-8")
 
         out_buf, err_buf = io.StringIO(), io.StringIO()
         with (
@@ -1686,7 +1691,7 @@ class TestRelink(SmartDriveTestCase):
             rc = cli_main(["relink", "--find", "--apply", "--wait", "--json", "--root", str(drive)])
 
         self.assertEqual(rc, 0, err_buf.getvalue())
-        self.assertEqual(json.loads(out_buf.getvalue())["relink"]["agents"], {"Claude Code": 1})
+        self.assertEqual(json.loads(out_buf.getvalue())["relink"]["agents"], {"Claude Code": 2})
         self.assertIn("Waiting for Claude Code to close", err_buf.getvalue())
 
     def test_39_wait_keeps_waiting_while_the_process_list_cannot_be_read(self) -> None:
@@ -1929,6 +1934,43 @@ class TestRelink(SmartDriveTestCase):
         entries = find_moved(root=str(drive), home=self.fake_home, skip_dirs=[])
 
         self.assertEqual([(e.old, e.kind, e.candidates) for e in entries], [(str(drive / "proj"), "not-found", [])])
+
+    def test_49_find_apply_never_relinks_a_folder_matched_by_name_only(self) -> None:
+        drive = self.test_dir / "drive_deleted"
+        # The user deleted drive/demo; another project that happens to be named demo lives elsewhere
+        deleted, other = drive / "demo", drive / "02_Code" / "client" / "demo"
+        other.mkdir(parents=True)
+        projects = {
+            str(deleted): {"allowedTools": ["Bash(rm -rf build)"], "mcpServers": {"old-db": {"command": "node"}}},
+            str(other): {"allowedTools": [], "mcpServers": {}},
+        }
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(json.dumps({"projects": projects}), encoding="utf-8")
+        history = self.fake_home / ".claude" / "projects"
+        (history / claude_slug(str(deleted)) / "memory").mkdir(parents=True)
+        (history / claude_slug(str(deleted)) / "memory" / "MEMORY.md").write_text("deleted\n", encoding="utf-8")
+        (history / claude_slug(str(other))).mkdir(parents=True)
+        (history / claude_slug(str(other)) / "s-client.jsonl").write_text("{}\n", encoding="utf-8")
+
+        out_buf = io.StringIO()
+        with patch.dict(os.environ, self._cli_env()), contextlib.redirect_stdout(out_buf):
+            rc = cli_main(["relink", "--find", "--apply", "--root", str(drive)])
+
+        self.assertEqual(rc, 0, out_buf.getvalue())
+        # Nothing the agents remember inside the old folder shows it is the same project, so nothing moves
+        self.assertEqual(json.loads(claude_file.read_text(encoding="utf-8"))["projects"], projects)
+        self.assertEqual([p.name for p in (history / claude_slug(str(other))).iterdir()], ["s-client.jsonl"])
+        self.assertTrue((history / claude_slug(str(deleted)) / "memory" / "MEMORY.md").is_file())
+        self.assertIsNone(last_moves(str(drive)))
+        # ...and the user gets the command to run if they did move it there
+        self.assertIn(
+            f'? {deleted} -> {other}  (only the name matches; if you moved it there, run: '
+            f'smart-drive relink "{deleted}" "{other}")',
+            out_buf.getvalue(),
+        )
+
+        entries = find_moved(root=str(drive), home=self.fake_home, app_data=self.fake_appdata)
+        self.assertEqual([(e.old, e.new, e.kind) for e in entries], [(str(deleted), str(other), "name-only")])
 
 
 if __name__ == "__main__":
