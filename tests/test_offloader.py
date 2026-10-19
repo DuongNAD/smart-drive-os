@@ -363,6 +363,115 @@ class TestTransactionalOffloadAndRevert(unittest.TestCase):
         with self.assertRaises(KeyError):
             revert_cache("non_existent_cache_xyz")
 
+    def test_docker_wsl_refused_when_docker_desktop_running_and_allowed_with_force(self) -> None:
+        """T12: docker_wsl refuses to move when Docker Desktop.exe is running unless force=True."""
+        with patch.dict(os.environ, self.env):
+            docker_src = self.mock_user / "AppData" / "Local" / "Docker" / "wsl"
+            docker_src.mkdir(parents=True, exist_ok=True)
+            (docker_src / "ext4.vhdx").write_bytes(b"VHDX_DATA" * 64)
+
+            with patch("smart_drive.core.offloader._running_processes", return_value={"Docker Desktop.exe"}):
+                with self.assertRaises(RuntimeError) as ctx:
+                    offload_cache("docker_wsl", self.mock_d)
+                self.assertIn("Docker Desktop", str(ctx.exception))
+                self.assertFalse(is_directory_junction(docker_src))
+                self.assertTrue((docker_src / "ext4.vhdx").is_file())
+
+                # With force=True, offload proceeds in sandbox mode and records a warning
+                res = offload_cache("docker_wsl", self.mock_d, force=True)
+                self.assertEqual(res["status"], "success")
+                self.assertTrue(is_directory_junction(docker_src))
+                self.assertTrue(any("Docker Desktop" in w for w in res.get("warnings", [])))
+
+    def test_ollama_and_cargo_refused_when_running_while_npm_and_gradle_only_warn(self) -> None:
+        """T12: ollama and cargo block when running; npm (node) and gradle (java) warn without blocking."""
+        with patch.dict(os.environ, self.env):
+            ollama_src = self.mock_user / ".ollama" / "models"
+            ollama_src.mkdir(parents=True, exist_ok=True)
+            (ollama_src / "model.bin").write_bytes(b"OLLAMA")
+
+            cargo_src = self.mock_user / ".cargo" / "registry" / "cache"
+            cargo_src.mkdir(parents=True, exist_ok=True)
+            (cargo_src / "serde.crate").write_bytes(b"CRATE")
+
+            npm_src = self.mock_user / "AppData" / "Roaming" / "npm-cache"
+            npm_src.mkdir(parents=True, exist_ok=True)
+            (npm_src / "index.json").write_text("{}", encoding="utf-8")
+
+            gradle_src = self.mock_user / ".gradle" / "caches"
+            gradle_src.mkdir(parents=True, exist_ok=True)
+            (gradle_src / "jars.bin").write_bytes(b"JAR")
+
+            with patch(
+                "smart_drive.core.offloader._running_processes",
+                return_value={"ollama app.exe", "rustc.exe", "node.exe", "java.exe"},
+            ):
+                with self.assertRaises(RuntimeError):
+                    offload_cache("ollama", self.mock_d)
+                with self.assertRaises(RuntimeError):
+                    offload_cache("cargo", self.mock_d)
+
+                # npm and gradle succeed without force=True, emitting a warning
+                res_npm = offload_cache("npm", self.mock_d)
+                self.assertEqual(res_npm["status"], "success")
+                self.assertTrue(any("node" in w for w in res_npm.get("warnings", [])))
+
+                res_gradle = offload_cache("gradle", self.mock_d)
+                self.assertEqual(res_gradle["status"], "success")
+                self.assertTrue(any("java" in w for w in res_gradle.get("warnings", [])))
+
+    def test_wait_polls_until_process_closes_or_times_out(self) -> None:
+        """T12: --wait / wait_minutes polls until blocking processes exit, or aborts on timeout."""
+        import contextlib
+        import io
+        from smart_drive.cli.main import main as cli_main
+
+        with patch.dict(os.environ, self.env):
+            ollama_src = self.mock_user / ".ollama" / "models"
+            ollama_src.mkdir(parents=True, exist_ok=True)
+            (ollama_src / "weights.bin").write_bytes(b"WEIGHTS" * 32)
+
+            # 1) Timeout when ollama never closes
+            with (
+                patch("smart_drive.core.offloader._running_processes", return_value={"ollama.exe"}),
+                patch("smart_drive.core.offloader.time.sleep", return_value=None),
+            ):
+                out, err = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    code = cli_main([
+                        "offload",
+                        "--move",
+                        "ollama",
+                        "--target",
+                        str(self.mock_d),
+                        "--wait",
+                        "0",
+                        "--json",
+                    ])
+                self.assertEqual(code, 3)
+                self.assertFalse(is_directory_junction(ollama_src))
+
+            # 2) Process closes on second poll -> offload succeeds
+            poll_seq = [{"ollama.exe"}, {"ollama.exe"}, set(), set()]
+            with (
+                patch("smart_drive.core.offloader._running_processes", side_effect=poll_seq),
+                patch("smart_drive.core.offloader.time.sleep", return_value=None),
+            ):
+                out2, err2 = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(out2), contextlib.redirect_stderr(err2):
+                    code2 = cli_main([
+                        "offload",
+                        "--move",
+                        "ollama",
+                        "--target",
+                        str(self.mock_d),
+                        "--wait",
+                        "5",
+                        "--json",
+                    ])
+                self.assertEqual(code2, 0, err2.getvalue())
+                self.assertTrue(is_directory_junction(ollama_src))
+
 
 if __name__ == "__main__":
     unittest.main()

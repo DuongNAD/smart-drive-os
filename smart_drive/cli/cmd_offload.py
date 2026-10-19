@@ -27,6 +27,7 @@ def cmd_offload(args: argparse.Namespace) -> int:
     is_json = getattr(args, "json", False)
     dry_run = getattr(args, "dry_run", False)
     force = getattr(args, "force", False)
+    wait_minutes = getattr(args, "wait", None)
 
     # 1. Move Action
     if getattr(args, "move", None):
@@ -40,15 +41,20 @@ def cmd_offload(args: argparse.Namespace) -> int:
             return 1
 
         try:
-            res = offload_cache(
-                name=args.move,
-                target_drive=target,
-                dry_run=dry_run,
-                force=force,
-            )
+            call_kwargs: Dict[str, Any] = {
+                "name": args.move,
+                "target_drive": target,
+                "dry_run": dry_run,
+                "force": force,
+            }
+            if wait_minutes is not None:
+                call_kwargs["wait_minutes"] = wait_minutes
+            res = offload_cache(**call_kwargs)
             if is_json:
                 print(json.dumps(res, indent=2, ensure_ascii=False))
             else:
+                for w in res.get("warnings", []):
+                    sys.stderr.write(f"{w}\n")
                 print(f"\n{res.get('message', 'Offload completed.')}")
                 if res.get("reclaimed_formatted"):
                     print(f"Reclaimed Space on C: {res['reclaimed_formatted']} ({res.get('file_count', 0)} files)")
@@ -59,7 +65,7 @@ def cmd_offload(args: argparse.Namespace) -> int:
                 print(json.dumps({"status": "error", "error": str(exc)}, indent=2))
             else:
                 sys.stderr.write(f"Error: {exc}\n")
-            return 1
+            return 3 if "Timed out waiting for" in str(exc) else 1
 
     # 2. Revert Action
     if getattr(args, "revert", None):

@@ -21,14 +21,16 @@ import platform
 import shutil
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+from smart_drive.core import processes as _processes
 from smart_drive.core.junction import (
     create_directory_junction,
     get_junction_target,
     is_directory_junction,
     remove_directory_junction,
 )
+from smart_drive.core.processes import _running_processes, normalize_process_name
 
 
 # ==============================================================================
@@ -506,11 +508,88 @@ def _update_manifest(
         pass
 
 
+CACHE_BLOCKING_PROCESSES: Dict[str, Set[str]] = {
+    "docker_wsl": {"docker desktop", "com.docker.backend", "vmmem", "wsl"},
+    "ollama": {"ollama", "ollama app"},
+    "cargo": {"cargo", "rustc"},
+}
+
+CACHE_WARNING_PROCESSES: Dict[str, Set[str]] = {
+    "npm": {"node"},
+    "gradle": {"java"},
+}
+
+CACHE_PROCESS_LABELS: Dict[str, str] = {
+    "docker desktop": "Docker Desktop",
+    "com.docker.backend": "com.docker.backend",
+    "vmmem": "vmmem",
+    "wsl": "wsl",
+    "ollama": "ollama",
+    "ollama app": "ollama app",
+    "cargo": "cargo",
+    "rustc": "rustc",
+    "node": "node",
+    "java": "java",
+}
+
+
+def _probe_processes() -> Set[str]:
+    """Calls `_running_processes` (honoring mocks on either `offloader` or `processes`)."""
+    if _running_processes is not _processes.running_processes:
+        return _running_processes()
+    if _processes._running_processes is not _processes.running_processes:
+        return _processes._running_processes()
+    return _processes.running_processes()
+
+
+def running_cache_processes(name: str) -> Tuple[List[str], List[str]]:
+    """Returns `(blocking_processes, warning_processes)` currently running for cache `name`."""
+    clean_name = name.strip().lower()
+    block_targets = CACHE_BLOCKING_PROCESSES.get(clean_name, set())
+    warn_targets = CACHE_WARNING_PROCESSES.get(clean_name, set())
+    if not block_targets and not warn_targets:
+        return [], []
+
+    try:
+        raw_names = _probe_processes()
+    except Exception:
+        return [], []
+
+    blocking_found: Set[str] = set()
+    warning_found: Set[str] = set()
+    for raw in raw_names:
+        norm = normalize_process_name(raw)
+        if norm in block_targets:
+            blocking_found.add(CACHE_PROCESS_LABELS.get(norm, norm))
+        if norm in warn_targets:
+            warning_found.add(CACHE_PROCESS_LABELS.get(norm, norm))
+
+    return sorted(blocking_found), sorted(warning_found)
+
+
+def wait_for_cache_processes(name: str, wait_minutes: float) -> List[str]:
+    """Waits up to `wait_minutes` for blocking processes of cache `name` to exit.
+
+    Returns the list of blocking processes still running (empty if all closed).
+    """
+    blocking, _ = running_cache_processes(name)
+    if not blocking:
+        return []
+    deadline = time.monotonic() + max(0.0, float(wait_minutes)) * 60.0
+    while blocking:
+        if time.monotonic() >= deadline:
+            return blocking
+        time.sleep(2)
+        blocking, _ = running_cache_processes(name)
+    return []
+
+
 def offload_cache(
     name: str,
     target_drive: Union[str, Path],
     dry_run: bool = False,
     force: bool = False,
+    wait_minutes: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Executes a 7-phase zero-data-loss transactional move of a cache from C: to secondary drive.
 
@@ -586,6 +665,36 @@ def offload_cache(
                 "Use 'smart-drive offload --revert' first if you wish to relocate it."
             )
 
+    # 3b. Check running processes associated with this cache
+    blocking_procs, warning_procs = running_cache_processes(clean_name)
+    warnings: List[str] = []
+    if warning_procs:
+        warnings.append(
+            f"Warning: {', '.join(warning_procs)} is currently running while offloading '{clean_name}'."
+        )
+
+    if blocking_procs and not dry_run:
+        if wait_minutes is not None and not force:
+            blocking_procs = wait_for_cache_processes(clean_name, wait_minutes)
+            if blocking_procs:
+                raise RuntimeError(
+                    f"Timed out waiting for {', '.join(blocking_procs)} to close before offloading '{clean_name}'; "
+                    "no files were moved."
+                )
+        elif not force:
+            raise RuntimeError(
+                f"Cannot offload '{clean_name}' while {', '.join(blocking_procs)} is running. "
+                "Close the application first, pass --wait to wait for it to exit, or use --force to override."
+            )
+        else:
+            warnings.append(
+                f"Warning: forced offload of '{clean_name}' while {', '.join(blocking_procs)} was running."
+            )
+    elif blocking_procs and dry_run:
+        warnings.append(
+            f"Note: {', '.join(blocking_procs)} is currently running; close it or pass --wait / --force before moving."
+        )
+
     # 4. Measure size and file count
     size_bytes, file_count = calculate_dir_size(source_path)
 
@@ -617,6 +726,8 @@ def offload_cache(
             "size_formatted": format_bytes(size_bytes),
             "file_count": file_count,
             "phases_planned": 7,
+            "warnings": warnings,
+            "blocking_processes": blocking_procs,
             "message": f"[DRY-RUN] Would safely offload {format_bytes(size_bytes)} ({file_count} files) to '{target_cache_dir}' and create a {LINK_NAME}.",
         }
 
@@ -692,6 +803,7 @@ def offload_cache(
             "reclaimed_formatted": format_bytes(size_bytes),
             "file_count": file_count,
             "phases_completed": 7,
+            "warnings": warnings,
             "message": (
                 f"✓ Successfully offloaded '{clean_name}' cache ({format_bytes(size_bytes)}) "
                 f"to '{target_cache_dir}' and created a {LINK_NAME}."
