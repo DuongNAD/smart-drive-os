@@ -101,7 +101,8 @@ def _wait_for_busy_agents(moves: Sequence[Move], root: Optional[str], wait_minut
     if not busy:
         return True
 
-    print(f"Waiting for {', '.join(busy)} to close. Quit them now (Ctrl+C cancels)...", flush=True)
+    # stderr, so that `--json` output stays parseable while relink waits
+    print(f"Waiting for {', '.join(busy)} to close. Quit them now (Ctrl+C cancels)...", file=sys.stderr, flush=True)
     deadline = time.monotonic() + max(0.0, float(wait_minutes)) * 60.0
     while busy:
         if time.monotonic() >= deadline:
