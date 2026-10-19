@@ -1290,6 +1290,13 @@ def _process_jetbrains_xml_file(
     return prefix + new_text.encode("utf-8"), total_count
 
 
+def _connect_vscdb_ro(target: Path) -> sqlite3.Connection:
+    """Opens a state.vscdb SQLite file in strict read-only URI mode (?mode=ro)."""
+    abs_target = Path(os.path.abspath(str(target)))
+    ro_uri = f"{abs_target.as_uri()}?mode=ro"
+    return sqlite3.connect(ro_uri, timeout=1.0, uri=True)
+
+
 def _process_vscdb_file(
     af: AgentFile,
     mapper: PathMapper,
@@ -1305,7 +1312,7 @@ def _process_vscdb_file(
 
     conn: Optional[sqlite3.Connection] = None
     try:
-        conn = sqlite3.connect(str(real_target), timeout=1.0)
+        conn = _connect_vscdb_ro(real_target)
         cur = conn.execute(
             "SELECT value FROM ItemTable WHERE key = ?",
             ("history.recentlyOpenedPathsList",),
@@ -2191,7 +2198,8 @@ def _collect_jetbrains_xml_strings(
 def _collect_vscdb_strings(path: Path, agent: str, out: List[Tuple[str, str]]) -> None:
     conn: Optional[sqlite3.Connection] = None
     try:
-        conn = sqlite3.connect(str(path), timeout=1.0)
+        real_target = Path(os.path.realpath(str(path)))
+        conn = _connect_vscdb_ro(real_target)
         row = conn.execute(
             "SELECT value FROM ItemTable WHERE key = ?",
             ("history.recentlyOpenedPathsList",),

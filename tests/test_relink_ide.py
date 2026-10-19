@@ -312,9 +312,10 @@ class TestRelinkIDE(SmartDriveTestCase):
         vscdb_file = cursor_gs / "state.vscdb"
         vscdb_file.write_bytes(b"locked")
 
-        with patch("smart_drive.core.relink.sqlite3.connect", side_effect=sqlite3.OperationalError("database is locked")):
+        with patch("smart_drive.core.relink.sqlite3.connect", side_effect=sqlite3.OperationalError("database is locked")) as mock_conn:
             report = relink(
                 [("D:\\proj", "D:\\03_Development_Projects\\proj")],
+                dry_run=True,
                 home=self.fake_home,
                 app_data=self.fake_appdata,
             )
@@ -322,6 +323,10 @@ class TestRelinkIDE(SmartDriveTestCase):
         self.assertEqual(report.errors, [])
         self.assertEqual(len(report.warnings), 1)
         self.assertIn("database is locked", report.warnings[0])
+        mock_conn.assert_called_once()
+        db_arg = mock_conn.call_args[0][0]
+        self.assertTrue(db_arg.endswith("?mode=ro"), db_arg)
+        self.assertTrue(mock_conn.call_args[1].get("uri"), mock_conn.call_args)
 
     def test_04_running_agents_detects_vscode_and_jetbrains_processes(self) -> None:
         with patch(
@@ -362,7 +367,27 @@ class TestRelinkIDE(SmartDriveTestCase):
             encoding="utf-8",
         )
 
-        entries = find_moved(root=str(drive), home=self.fake_home, app_data=self.fake_appdata)
+        real_connect = sqlite3.connect
+        connect_calls = []
+
+        def spy_connect(database, *args, **kwargs):
+            connect_calls.append((database, kwargs))
+            return real_connect(database, *args, **kwargs)
+
+        with patch("smart_drive.core.relink.sqlite3.connect", side_effect=spy_connect):
+            entries = find_moved(root=str(drive), home=self.fake_home, app_data=self.fake_appdata)
+            dry_report = relink(
+                [(str(old_loc), str(new_loc))],
+                dry_run=True,
+                home=self.fake_home,
+                app_data=self.fake_appdata,
+            )
+
+        self.assertEqual(len(connect_calls), 2)
+        for db_uri, kw in connect_calls:
+            self.assertTrue(str(db_uri).endswith("?mode=ro"), db_uri)
+            self.assertTrue(kw.get("uri"), kw)
+        self.assertEqual(dry_report.agents.get("Antigravity"), 1)
         by_old = {e.old: e for e in entries}
         self.assertIn(str(old_loc), by_old)
         found = by_old[str(old_loc)]
