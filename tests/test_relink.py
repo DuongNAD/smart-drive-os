@@ -1648,6 +1648,14 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(list(json.loads(claude_json.read_text(encoding="utf-8"))["projects"]), [new])
         self.assertTrue((history / claude_slug(new)).is_dir())
 
+    def test_37_claude_slug_counts_utf16_units_like_claude_code(self) -> None:
+        # Claude Code runs path.replace(/[^a-zA-Z0-9]/g, "-") in JavaScript, which works per UTF-16 unit:
+        # a character outside the Basic Multilingual Plane is two units, so two dashes
+        self.assertEqual(claude_slug("/Volumes/SSD/\U0001F680 Rocket"), "-Volumes-SSD----Rocket")
+        self.assertEqual(claude_slug("/a/Dự án"), "-a-D---n")
+        self.assertEqual(len(claude_slug("/" + "a" * 197 + "\U0001F680")), 200)
+        self.assertIsNone(claude_slug("/" + "a" * 198 + "\U0001F680"))
+
 
 if __name__ == "__main__":
     unittest.main()

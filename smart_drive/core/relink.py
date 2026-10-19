@@ -49,7 +49,6 @@ JOURNAL_NAME = "moves.jsonl"
 
 _CASE_INSENSITIVE = sys.platform in ("win32", "darwin")
 _TOML_QUOTED_RE = re.compile(r"'([^'\r\n]*)'|\"((?:[^\"\\\r\n]|\\.)*)\"")
-_CLAUDE_SLUG_RE = re.compile(r"[^A-Za-z0-9]")
 _UNREADABLE_DRIVE_RE = re.compile(r"^[A-Za-z]:[^\\/]")
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f]")
 _WIN_INVALID_COMP_RE = re.compile(r'[:*?"<>|]')
@@ -316,11 +315,17 @@ class PathMapper:
         return None, []
 
 
+def _claude_slug_text(path: str) -> str:
+    """path with each UTF-16 unit outside [A-Za-z0-9] replaced by '-', as Claude Code's JavaScript does it."""
+    return "".join(ch if ch.isascii() and ch.isalnum() else "--" if ord(ch) > 0xFFFF else "-" for ch in path)
+
+
 def claude_slug(path: str) -> Optional[str]:
-    """Converts a project path into its Claude Code project folder slug, or None if > 200 chars."""
-    if not path or len(path) > 200:
+    """Converts a project path into its Claude Code project folder slug, or None if > 200 UTF-16 units."""
+    slug = _claude_slug_text(path) if path else ""
+    if not slug or len(slug) > 200:
         return None
-    return _CLAUDE_SLUG_RE.sub("-", path)
+    return slug
 
 
 @dataclass(frozen=True)
@@ -1045,7 +1050,7 @@ def _relink_history(
         if old_slug is None or new_slug is None:
             parsed_old = _split(old_clean)
             is_move_old = parsed_old is not None and _key(*parsed_old) in move_old_keys
-            full_old_slug = _CLAUDE_SLUG_RE.sub("-", old_clean)
+            full_old_slug = _claude_slug_text(old_clean)
             if is_move_old or _has_matching_history_dir(projects_base, full_old_slug):
                 warn_key = old_clean.casefold()
                 if warn_key not in seen_slugs:
