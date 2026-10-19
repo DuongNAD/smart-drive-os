@@ -354,6 +354,11 @@ Thứ tự khuyến nghị: M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7 
 - **Test**: `app_data` giả có `storage.json` trỏ thư mục không tồn tại; `.lnk` tự dựng trỏ chỗ không tồn tại.
 - **Commit**: `feat(cli): add smart-drive paths --broken to find stale shortcuts and IDE entries`
 
+#### T20. `Smart_Organize` — launcher "dời an toàn" cho người dùng thường
+- **Mục tiêu**: tạo đủ 4 bản `.bat`/`.ps1`/`.command`/`.sh` ở gốc repo và `launchers/` (giống hệt nhau như 24 launcher tổng cộng, cập nhật test inventory), cùng luồng: `dry-run` → chờ đóng `busy_apps` → gõ `YES` → `organize --apply --json` → hiện rõ mục KHÔNG dời được kèm lý do → kiểm tra (`relink --dry-run` không còn gì để sửa, git/worktree, venv) → `R` thử lại / `U` hoàn tác / `Enter` giữ nguyên; tiếng Anh mặc định, tiếng Việt khi hệ thống là `vi-*` hoặc `SMARTDRIVE_LANG=vi`; ghi log vào `<root>/.smart_drive/smart-organize.log`. Thêm vào menu `SmartDrive.*` một mục `[10]` gọi nó.
+- **Test**: test cho chuỗi i18n và cho chế độ `SD_SELFTEST=1` (chỉ đọc).
+- **Commit**: `feat(launchers): Smart_Organize — safe guided organizer launcher for everyday users`
+
 ### M7 — Báo cáo trực quan
 
 #### T17. `smart-drive audit --html [file]`
@@ -394,6 +399,7 @@ Thứ tự khuyến nghị: M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7 
 | T13 | **T8** (không thì dời `E:\project` làm gãy IDE) |
 | T15 | T11, T16 (phần nào chưa có thì bỏ qua mục đó trong checkup) |
 | T16 | T5, T8 |
+| T20 | T5, T8, T10 |
 | T19 | các task đã xong |
 
 ---

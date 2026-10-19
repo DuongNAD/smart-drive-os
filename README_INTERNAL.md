@@ -125,28 +125,28 @@ exFAT (512 KB): [================512KB================] -> 10 KB file takes 1 cl
 
 ### NTFS Native Optimizations in SmartDrive-OS:
 - **4KB Granular Storage**: Cuts slack waste on millions of small source code files, JSON metadata records, and test fixtures by up to 99%.
-- **Reparse Point Linkage**: Enables transparent cross-volume junctions that trick Windows applications into writing to `D:` while believing they are writing to `C:`.
+- **Reparse Point Linkage**: Enables transparent cross-volume junctions that trick Windows applications into writing to your secondary drive (`D:`, `E:`, …) while believing they are writing to `C:`.
 - **Selective Indexing Shielding**: Sets Win32 file attribute `FILE_ATTRIBUTE_NOT_CONTENT_INDEXED` (0x2000) on cache targets to eliminate Windows Search overhead and disk thrashing.
 
 ---
 
 ## 4. C-Drive Cache Offloader & NTFS Directory Junctions
 
-The Cache Offloader (`smart-drive offload`) frees tens or hundreds of gigabytes from the Windows OS drive by moving bulky developer directories to an internal secondary drive and substituting an **NTFS Directory Junction** at the original path.
+The Cache Offloader (`smart-drive offload`) frees tens or hundreds of gigabytes from the Windows OS drive by moving bulky developer directories to your secondary drive (`D:`, `E:`, …) and substituting an **NTFS Directory Junction** at the original path.
 
 ### The 7-Phase Transactional Offloading Engine
 
 ```
-[Phase 1: Pre-Flight Checks]
-   Validate target != C:, verify source existence, measure size, check free space (+5% buffer)
+[Phase 1: Pre-Flight & Running-Process Checks]
+   Validate target != C:, verify source existence, check running processes (ollama, docker, gradle, python...), measure size, check free space (+5% buffer)
            │
            ▼
 [Phase 2: Staged Cross-Volume Copy]
-   Recursively copy to D:\04_System_Offload_Caches\.tmp_offload_<name>_<ts>
+   Recursively copy to <target>:\04_System_Offload_Caches\.tmp_offload_<name>_<ts>
            │
            ▼
 [Phase 3: Atomic Target Activation]
-   Rename .tmp_offload_<name>_<ts> -> D:\04_System_Offload_Caches\<name>
+   Rename .tmp_offload_<name>_<ts> -> <target>:\04_System_Offload_Caches\<name>
            │
            ▼
 [Phase 4: Atomic Source Quarantine on C:]
@@ -154,7 +154,7 @@ The Cache Offloader (`smart-drive offload`) frees tens or hundreds of gigabytes 
            │
            ▼
 [Phase 5: Directory Junction Creation]
-   Execute 'mklink /J C:\path\to\<name> D:\04_System_Offload_Caches\<name>'
+   Execute 'mklink /J C:\path\to\<name> <target>:\04_System_Offload_Caches\<name>'
            │
            ▼
 [Phase 6: Integrity Verification Probe]
@@ -166,6 +166,8 @@ The Cache Offloader (`smart-drive offload`) frees tens or hundreds of gigabytes 
 ```
 
 ### Zero-Data-Loss Rollback & Failure Recovery
+
+Before moving any cache, `smart-drive offload` checks whether processes using that cache (`ollama`, `docker`, `wsl`, `java`/`gradle`, `cargo`/`rustc`, `python`, `uv`, `node`, `conda`) are currently running and refuses to move while they are active unless `--wait [MIN]` (wait for them to exit) or `--force` is passed.
 
 If any exception occurs during phases 1 through 6 (e.g. process interrupted, permission error, disk full), the transaction triggers an immediate multi-step rollback:
 
@@ -183,8 +185,8 @@ smart-drive offload --revert huggingface
 The reversion engine executes an atomic 5-step reverse transaction:
 1. Confirms source is an active NTFS directory junction pointing to the offload directory.
 2. Verifies sufficient free space on `C:`.
-3. Safely removes the junction link (leaving data intact on `D:`).
-4. Moves data from `D:` back to `C:`.
+3. Safely removes the junction link (leaving data intact on your secondary drive `D:`, `E:`, …).
+4. Moves data from your secondary drive back to `C:`.
 5. Updates `offload_manifest.json` marking status as `"reverted"`.
 
 ### Catalog of Known Cache Targets
@@ -206,12 +208,12 @@ The reversion engine executes an atomic 5-step reverse transaction:
 
 ## 5. Internal Developer Vault Profile (`internal-developer-vault`)
 
-For workstations with a dedicated secondary drive (`D:`), SmartDrive-OS provides the `internal-developer-vault` preset profile.
+For workstations with a dedicated secondary drive (`D:`, `E:`, …), SmartDrive-OS provides the `internal-developer-vault` preset profile (and `workstation-hybrid` for drives shared with games, apps, and university coursework).
 
 ### 6-Partition Directory Structure:
 
 ```
-D:\
+D:\ (or E:\)
 ├── 01_AI_Models/
 │   ├── checkpoints/         # Training checkpoints & fine-tuned LoRA adapters
 │   ├── gguf/                # Quantized GGUF models for Ollama / llama.cpp
@@ -239,7 +241,9 @@ D:\
 ```
 
 ### Inviolable Protection Rules:
-All 6 partitions are registered in `smart_drive.core.config.PROTECTED_CORE_TAXONOMIES`. SmartDrive-OS junk cleaner algorithms (`smart-drive clean`) will **never** delete user files or root taxonomies inside these partitions.
+- All 6 partitions are registered in `smart_drive.core.config.PROTECTED_CORE_TAXONOMIES`. SmartDrive-OS junk cleaner algorithms (`smart-drive clean`) will **never** delete user files or root taxonomies inside these partitions, and move cleaned junk into reversible `.smart_drive/quarantine/` batches by default (`--restore latest`).
+- **System Reference Guard (`protected_by_system`)**: Folders on your secondary drive (`D:`, `E:`, …) referenced by Windows `PATH`, Services, Installed Apps (`Uninstall` registry), Startup (`Run`), `.lnk` shortcuts, folders containing `unins000.exe` / `uninstall.exe`, and game libraries (`SteamLibrary`, `Riot Games`, `Epic Games`, `XboxGames`, `GOG Galaxy`, `Battle.net`, `Ubisoft Game Launcher`, `EA Games`, `HoYoPlay`, `Genshin Impact`, `LDPlayer`) are automatically pinned in place and never moved by `organize` or `classify`.
+- **Reversible Moves (`undo`) & Path Doctor (`paths --broken`)**: Every `organize`/`classify` batch is logged to `.smart_drive/moves.jsonl`, rewrites IDE/agent/shortcut paths (`storage.json`, `state.vscdb`, JetBrains `recentProjects.xml`, Obsidian `obsidian.json`, `.lnk`), and can be reverted via `smart-drive undo --apply`.
 
 ---
 
@@ -249,7 +253,8 @@ Flash memory in solid-state drives cannot overwrite existing data blocks without
 
 ### Diagnostic Command:
 ```bash
-smart-drive health D:
+smart-drive health D:   # or E:, or `py -m smart_drive health E:` on Windows
+smart-drive checkup     # 1-screen health score (0-100) and prioritized next steps
 ```
 
 ### Terminal Output:
@@ -282,10 +287,13 @@ smart-drive health D:
 
 ## 7. Step-by-Step CLI Usage Guide
 
+> On Windows, if `smart-drive` or `python` is not on your `PATH`, use `py -m smart_drive <command>`.
+
 ### 1. Initialize an Internal Secondary Drive
-Format and organize `D:` with the workstation vault profile:
+Format and organize your secondary drive (`D:`, `E:`, …) with the workstation vault or hybrid profile:
 ```bash
 smart-drive init D: --profile internal-developer-vault
+smart-drive init E: --profile workstation-hybrid
 ```
 
 ### 2. Scan C-Drive for Cache Reclaimable Space
@@ -316,9 +324,9 @@ smart-drive offload --move huggingface --target D: --dry-run
 ```
 
 ### 4. Execute Transactional Cache Offload
-Safely migrate cache to `D:\04_System_Offload_Caches\huggingface` and link via NTFS Directory Junction:
+Safely migrate cache to `<target>:\04_System_Offload_Caches\huggingface` (waiting for any active cache-using processes if `--wait` is passed) and link via NTFS Directory Junction:
 ```bash
-smart-drive offload --move huggingface --target D:
+smart-drive offload --move huggingface --target D: --wait 5
 ```
 Output:
 ```text
@@ -328,16 +336,19 @@ Target Directory:      D:\04_System_Offload_Caches\huggingface
 NTFS Directory Junction created at: C:\Users\Admin\.cache\huggingface
 ```
 
-### 5. Check SSD TRIM and Health Status
-Verify drive health, TRIM status, and cluster geometry:
+### 5. Check SSD TRIM, Health Score, Broken Paths, and HTML Treemap
+Verify drive health, TRIM status, broken IDE/shortcut references, and export an offline HTML treemap:
 ```bash
 smart-drive health D:
+smart-drive checkup --root D:
+smart-drive paths --broken --root D:
+smart-drive audit --root D: --html
 ```
 
 ### 6. Revert an Offloaded Cache Back to C:
 If needed, restore the cache directory to `C:` and unlink the junction:
 ```bash
-smart-drive offload --revert huggingface
+smart-drive offload --revert huggingface --wait 5
 ```
 
 ### 7. Structured JSON Output
@@ -390,18 +401,20 @@ python -m unittest discover tests -v
 ### Test Suite Summary:
 - **`test_workstation_hybrid.py`**: AcademicClassifier, Vietnamese university localization, FPTU course regex, mojibake font repair, workstation-hybrid profile, and `self-path-check`.
 - **`test_autozoner_defense.py`**: AutoZoner inviolable self-defense, repository anchors, protection of WindowsApps, Steam, Riot Games, LDPlayer, and active SQL Server 2022 database instances.
+- **`test_system_refs.py` & `test_undo_and_quarantine.py`**: `protected_by_system` guard (PATH, Services, Uninstall registry, Startup, `.lnk`, uninstallers), `undo` reversal, and `clean` quarantine/restore.
+- **`test_relink.py`, `test_paths_broken.py` & `test_checkup.py`**: Agent/IDE/Obsidian/`.lnk` relinking (`storage.json`, `state.vscdb`, `recentProjects.xml`), `paths --broken`, and `checkup` health scoring.
 - **`test_drive_detector.py`**: Drive enumeration, strict `C:` exclusion, Win32 bus type resolution, cluster geometry, and filesystem adaptation.
 - **`test_junction.py`**: NTFS junction detection, creation (`mklink /J`), target normalization, and unlinking safety.
-- **`test_offloader.py`**: Cache catalog discovery, size measurement without junction traversal, 7-phase transactional move, rollback on error, and revert.
+- **`test_offloader.py`**: Cache catalog discovery, running-process guard, size measurement without junction traversal, 7-phase transactional move, rollback on error, and revert.
 - **`test_internal_vault.py`**: `internal-developer-vault` profile registration, subfolder creation, and taxonomy whitelist immutability.
 - **`test_health.py`**: TRIM state parsing, disk space utilization, cluster size computation, and diagnostic alerts.
 - **`test_cli_internal_e2e.py`**: End-to-end CLI integration testing (`smart-drive offload`, `smart-drive health`, `smart-drive init`).
 - **`test_learning_units.py`**: Atomic Learning Unit detection, AutoZoner pinning, JunkDetector dev-cache tiering, duplicate exclusion, and cluster slack hotspot analytics.
 
 ```text
-Ran 968 tests in ~48s
-OK (skipped=79)
-100% Pass Rate (968 total tests, 0 failures, 0 errors)
+Ran 1,150+ tests
+OK
+100% Pass Rate (0 failures, 0 errors)
 ```
 
 ---
