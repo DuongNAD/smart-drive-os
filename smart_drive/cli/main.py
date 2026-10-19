@@ -524,6 +524,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_relink.add_argument("--find", action="store_true", help="Find where missing folders remembered by coding agents went")
     p_relink.add_argument("--apply", action="store_true", help="Relink every sure match found by --find")
     p_relink.add_argument(
+        "--ask",
+        action="store_true",
+        help="With --find --apply: also ask whether to relink each ? match (only when stdin is a terminal)",
+    )
+    p_relink.add_argument(
         "--wait",
         nargs="?",
         const=30.0,
