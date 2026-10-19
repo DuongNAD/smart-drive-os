@@ -936,6 +936,51 @@ class TestClassifierEdgeCases(unittest.TestCase):
             self.assertEqual(len(actions), 0)
             self.assertTrue(git_dir.exists())
 
+            # Loose file targeted by shortcut/service AND loose file directly inside a PATH directory are protected
+            pinned_py = tmp / "daemon_worker.py"
+            pinned_py.write_text("import os\nprint('daemon')\n", encoding="utf-8")
+            path_script = git_dir / "cmd" / "git_hook.py"
+            path_script.parent.mkdir(parents=True, exist_ok=True)
+            path_script.write_text("import sys\nprint('hook')\n", encoding="utf-8")
+
+            file_refs = SystemRefIndex([
+                SystemRef(kind="shortcut", source=r"C:\Users\X\Desktop\Worker.lnk", target=str(pinned_py)),
+                SystemRef(kind="path", source="PATH (User)", target=str(git_dir / "cmd")),
+            ])
+            engine_files = ClassifierEngine(root_path=tmp, system_refs=file_refs)
+            self.assertIsNone(engine_files.inspect_path(pinned_py))
+            self.assertIsNone(engine_files.inspect_path(path_script))
+
+            stale_file_res = [
+                ClassificationResult(
+                    source_path=pinned_py,
+                    name="daemon_worker.py",
+                    is_dir=False,
+                    format_type="Script",
+                    category="05_Dev_Toolbox",
+                    subcategory="Scripts",
+                    recommended_path="05_Dev_Toolbox/Scripts/daemon_worker.py",
+                    confidence=0.95,
+                    reason="stale",
+                    size_bytes=20,
+                ),
+                ClassificationResult(
+                    source_path=path_script,
+                    name="git_hook.py",
+                    is_dir=False,
+                    format_type="Script",
+                    category="05_Dev_Toolbox",
+                    subcategory="Scripts",
+                    recommended_path="05_Dev_Toolbox/Scripts/git_hook.py",
+                    confidence=0.95,
+                    reason="stale",
+                    size_bytes=20,
+                ),
+            ]
+            self.assertEqual(engine_files.execute_relocation(stale_file_res, dry_run=False), [])
+            self.assertTrue(pinned_py.exists())
+            self.assertTrue(path_script.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

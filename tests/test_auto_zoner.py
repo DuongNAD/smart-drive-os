@@ -327,6 +327,61 @@ class TestAutoZonerPlanningAndExecution(SmartDriveTestCase):
             txt = buf_txt.getvalue()
             self.assertIn(f"Skipped {git_dir} — used by PATH, installed app \"Git\", 1 shortcut", txt)
 
+    def test_system_referenced_files_and_files_directly_on_path_never_moved(self) -> None:
+        """Loose files targeted by shortcuts/services or lying directly inside a PATH directory are never moved."""
+        from smart_drive.core.system_refs import SystemRef, SystemRefIndex
+
+        root = self.test_dir
+        shortcut_file = root / "pinned_script.ps1"
+        shortcut_file.write_text("Write-Output 'shortcut'\n", encoding="utf-8")
+
+        path_dir = root / "bin_dir"
+        path_dir.mkdir()
+        path_file = path_dir / "cli_helper.ps1"
+        path_file.write_text("Write-Output 'on path'\n", encoding="utf-8")
+
+        free_file = root / "free_script.ps1"
+        free_file.write_text("Write-Output 'free'\n", encoding="utf-8")
+
+        fake_index = SystemRefIndex([
+            SystemRef(kind="shortcut", source=r"C:\Users\X\Desktop\Pinned.lnk", target=str(shortcut_file)),
+            SystemRef(kind="path", source="PATH (User)", target=str(path_dir)),
+        ])
+
+        zoner = AutoZoner(str(root), system_refs=fake_index)
+        self.assertIsNone(zoner.classify_item(str(shortcut_file)))
+        self.assertIsNone(zoner.classify_item(str(path_file)))
+        self.assertIsNotNone(zoner.classify_item(str(free_file)))
+
+        plan = zoner.generate_plan()
+        self.assertEqual([os.path.basename(a.src_path) for a in plan], ["free_script.ps1"])
+
+        # Even if stale ZoningActions for shortcut_file or path_file are passed to apply_plan, they are not moved
+        stale_plan = [
+            ZoningAction(
+                src_path=str(shortcut_file),
+                dest_path=str(root / "05_Dev_Toolbox" / "scripts" / "pinned_script.ps1"),
+                target_taxonomy="05_Dev_Toolbox",
+                reason="stale",
+                is_dir=False,
+                nominal_size=10,
+                slack_bytes=10,
+            ),
+            ZoningAction(
+                src_path=str(path_file),
+                dest_path=str(root / "05_Dev_Toolbox" / "scripts" / "cli_helper.ps1"),
+                target_taxonomy="05_Dev_Toolbox",
+                reason="stale",
+                is_dir=False,
+                nominal_size=10,
+                slack_bytes=10,
+            ),
+        ]
+        res = zoner.apply_plan(stale_plan)
+        self.assertEqual(res["moved_count"], 0)
+        self.assertTrue(shortcut_file.exists())
+        self.assertTrue(path_file.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

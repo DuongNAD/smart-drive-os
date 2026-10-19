@@ -728,9 +728,10 @@ class SystemRefIndex:
             except OSError:
                 continue
 
-    def refs_under(self, folder: Union[str, Path]) -> List[SystemRef]:
-        """Returns all references whose target equals `folder` or resides inside `folder`."""
-        folder_parts = _normalize_for_match(str(folder))
+    def refs_under(self, folder: Union[str, Path], is_file: Optional[bool] = None) -> List[SystemRef]:
+        """Returns all references whose target equals `folder` or resides inside `folder` (and for files, direct parent PATH entries)."""
+        p_str = str(folder)
+        folder_parts = _normalize_for_match(p_str)
         if not folder_parts:
             return []
         n = len(folder_parts)
@@ -738,20 +739,29 @@ class SystemRefIndex:
         for target_parts, ref in self._normalized_targets:
             if len(target_parts) >= n and target_parts[:n] == folder_parts:
                 matched.append(ref)
+
+        effective_is_file = os.path.isfile(p_str) if is_file is None else is_file
+        if effective_is_file and n >= 2:
+            parent_parts = folder_parts[:-1]
+            for target_parts, ref in self._normalized_targets:
+                if ref.kind == "path" and target_parts == parent_parts and ref not in matched:
+                    matched.append(ref)
+
         return matched
 
-    def check_folder(self, folder: Union[str, Path]) -> List[SystemRef]:
+    def check_folder(self, folder: Union[str, Path], is_file: Optional[bool] = None) -> List[SystemRef]:
         """Returns all system references under `folder`, plus a synthetic `uninstaller` ref if present on disk."""
-        matched = list(self.refs_under(folder))
-        uninst = looks_like_installed_app(folder)
-        if uninst:
-            matched.append(
-                SystemRef(
-                    kind="uninstaller",
-                    source=uninst,
-                    target=os.path.join(str(folder), uninst),
+        matched = list(self.refs_under(folder, is_file=is_file))
+        if not is_file:
+            uninst = looks_like_installed_app(folder)
+            if uninst:
+                matched.append(
+                    SystemRef(
+                        kind="uninstaller",
+                        source=uninst,
+                        target=os.path.join(str(folder), uninst),
+                    )
                 )
-            )
         return matched
 
     def to_dict(self) -> Dict[str, Any]:
