@@ -64,9 +64,10 @@ while true; do
     echo "  [6] Auto-Zoning & Anti-Slack Rebalancer (smart-drive organize)"
     echo "  [7] Register AI Coding Agents MCP (smart-drive mcp register)"
     echo "  [8] Relink Coding Agents After Moving Folders (smart-drive relink --find)"
+    echo "  [9] Drive Health Checkup & Score (smart-drive checkup)"
     echo "  [0] Exit"
     echo ""
-    read -r -p "Select an option [0-8]: " OPT
+    read -r -p "Select an option [0-9]: " OPT
 
     case "$OPT" in
         1)
@@ -152,6 +153,12 @@ while true; do
                 echo ""
                 "$PYTHON_CMD" -m smart_drive relink --find --apply --ask --wait
             fi
+            echo ""
+            read -r -p "Press Enter to return to menu..."
+            ;;
+        9)
+            echo ""
+            "$PYTHON_CMD" -m smart_drive checkup
             echo ""
             read -r -p "Press Enter to return to menu..."
             ;;

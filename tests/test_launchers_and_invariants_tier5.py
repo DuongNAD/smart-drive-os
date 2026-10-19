@@ -563,6 +563,10 @@ class TestLauncherMasterMenuMapping(unittest.TestCase):
         self.assertTrue(args_8_apply.ask)
         self.assertEqual(args_8_apply.wait, 30.0)
 
+        # Option 9: checkup
+        args_9 = self.parser.parse_args(["checkup"])
+        self.assertEqual(args_9.subcommand, "checkup")
+
     def test_master_menu_option_8_asks_about_each_question_mark_folder(self):
         """Option [8] relinks with --ask, so a ? folder can be confirmed and relinked without leaving the menu."""
         for ext in EXPECTED_EXTENSIONS:

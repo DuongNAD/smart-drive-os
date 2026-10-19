@@ -87,9 +87,10 @@ while ($true) {
     Write-Host "  [6] Auto-Zoning & Anti-Slack Rebalancer (smart-drive organize)"
     Write-Host "  [7] Register AI Coding Agents MCP (smart-drive mcp register)"
     Write-Host "  [8] Relink Coding Agents After Moving Folders (smart-drive relink --find)"
+    Write-Host "  [9] Drive Health Checkup & Score (smart-drive checkup)"
     Write-Host "  [0] Exit"
     Write-Host ""
-    $Opt = Read-Host "Select an option [0-8]"
+    $Opt = Read-Host "Select an option [0-9]"
 
     switch ($Opt) {
         "1" {
@@ -176,6 +177,12 @@ while ($true) {
                 Write-Host ""
                 Run-SmartDrive @("relink", "--find", "--apply", "--ask", "--wait")
             }
+            Write-Host ""
+            Read-Host "Press Enter to return to menu..."
+        }
+        "9" {
+            Write-Host ""
+            Run-SmartDrive @("checkup")
             Write-Host ""
             Read-Host "Press Enter to return to menu..."
         }
