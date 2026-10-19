@@ -46,7 +46,7 @@ except ImportError:  # Python < 3.11: only the line-level duplicate guard protec
     tomllib = None  # type: ignore[assignment]
 
 from smart_drive.core.root import same_file
-from smart_drive.core.system_refs import SystemRefIndex
+from smart_drive.core.system_refs import SystemRefIndex, parse_lnk_file
 
 Move = Tuple[str, str]
 BACKUP_SUFFIX = ".bak.smart-drive"
@@ -1698,9 +1698,37 @@ def _relink_virtualenvs(
             )
 
 
-def _ps_quote(value: str) -> str:
-    """Quotes a string as a PowerShell single-quoted literal."""
-    return "'" + value.replace("'", "''") + "'"
+_PS_UPDATE_SHORTCUT_SCRIPT = (
+    "$ErrorActionPreference = 'Stop'; "
+    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+    "$ws = New-Object -ComObject WScript.Shell; "
+    "$sc = $ws.CreateShortcut($env:SD_LNK); "
+    "$sc.TargetPath = $env:SD_TARGET; "
+    "$oldPrefix = $env:SD_OLD_PREFIX; "
+    "$newPrefix = $env:SD_NEW_PREFIX; "
+    "$wd = $sc.WorkingDirectory; "
+    "if ($wd -and $oldPrefix -and $wd.StartsWith($oldPrefix, [System.StringComparison]::OrdinalIgnoreCase) "
+    "-and ($wd.Length -eq $oldPrefix.Length -or $wd[$oldPrefix.Length] -in @('\\', '/'))) { "
+    "$sc.WorkingDirectory = $newPrefix + $wd.Substring($oldPrefix.Length) }; "
+    "$ic = $sc.IconLocation; "
+    "if ($ic -and $oldPrefix -and $ic.StartsWith($oldPrefix, [System.StringComparison]::OrdinalIgnoreCase) "
+    "-and ($ic.Length -eq $oldPrefix.Length -or $ic[$oldPrefix.Length] -in @('\\', '/', ','))) { "
+    "$sc.IconLocation = $newPrefix + $ic.Substring($oldPrefix.Length) }; "
+    "$sc.Save(); "
+    "$verify = $ws.CreateShortcut($env:SD_LNK); "
+    "if (-not [string]::Equals($verify.TargetPath, $env:SD_TARGET, [System.StringComparison]::OrdinalIgnoreCase)) { "
+    "Write-Error \"TargetPath mismatch after Save: expected '$($env:SD_TARGET)', got '$($verify.TargetPath)'\"; "
+    "exit 2 }"
+)
+
+
+def _same_shortcut_target(actual: Optional[str], expected: str) -> bool:
+    if not actual:
+        return False
+    pa, pe = _split(actual), _split(expected)
+    if pa is not None and pe is not None:
+        return _key(*pa) == _key(*pe)
+    return os.path.normcase(os.path.normpath(actual)) == os.path.normcase(os.path.normpath(expected))
 
 
 def _relink_shortcuts(
@@ -1766,33 +1794,24 @@ def _relink_shortcuts(
         return
 
     for lnk_path, new_target, old_prefix, new_prefix in matched_shortcuts:
+        backup_path = Path(str(lnk_path) + BACKUP_SUFFIX)
         try:
             if _is_file(lnk_path):
-                shutil.copy2(str(lnk_path), str(lnk_path) + BACKUP_SUFFIX)
+                shutil.copy2(str(lnk_path), str(backup_path))
         except OSError as err:
             report.warnings.append(f"Could not back up shortcut {lnk_path}: {err}")
             continue
 
-        ps_script = (
-            f"$ws = New-Object -ComObject WScript.Shell; "
-            f"$sc = $ws.CreateShortcut({_ps_quote(str(lnk_path))}); "
-            f"$sc.TargetPath = {_ps_quote(new_target)}; "
-            f"$oldPrefix = {_ps_quote(old_prefix)}; "
-            f"$newPrefix = {_ps_quote(new_prefix)}; "
-            f"$wd = $sc.WorkingDirectory; "
-            f"if ($wd -and $wd.StartsWith($oldPrefix, [System.StringComparison]::OrdinalIgnoreCase) "
-            f"-and ($wd.Length -eq $oldPrefix.Length -or $wd[$oldPrefix.Length] -in @('\\', '/'))) {{ "
-            f"$sc.WorkingDirectory = $newPrefix + $wd.Substring($oldPrefix.Length) }}; "
-            f"$ic = $sc.IconLocation; "
-            f"if ($ic -and $ic.StartsWith($oldPrefix, [System.StringComparison]::OrdinalIgnoreCase) "
-            f"-and ($ic.Length -eq $oldPrefix.Length -or $ic[$oldPrefix.Length] -in @('\\', '/', ','))) {{ "
-            f"$sc.IconLocation = $newPrefix + $ic.Substring($oldPrefix.Length) }}; "
-            f"$sc.Save()"
-        )
-        cmd = [ps_bin, "-NoProfile", "-NonInteractive", "-Command", ps_script]
+        sub_env = dict(os.environ)
+        sub_env["SD_LNK"] = str(lnk_path)
+        sub_env["SD_TARGET"] = new_target
+        sub_env["SD_OLD_PREFIX"] = old_prefix
+        sub_env["SD_NEW_PREFIX"] = new_prefix
+        cmd = [ps_bin, "-NoProfile", "-NonInteractive", "-Command", _PS_UPDATE_SHORTCUT_SCRIPT]
         try:
             done = subprocess.run(
                 cmd,
+                env=sub_env,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -1802,14 +1821,25 @@ def _relink_shortcuts(
                 check=False,
             )
         except (OSError, subprocess.SubprocessError) as err:
-            report.warnings.append(f"Could not update shortcut {lnk_path}: {err}")
+            report.warnings.append(f"Could not update shortcut {lnk_path} (cần sửa tay): {err}")
             continue
 
-        if done.returncode == 0:
+        saved_target = parse_lnk_file(lnk_path) if done.returncode == 0 else None
+        if done.returncode == 0 and _same_shortcut_target(saved_target, new_target):
             report.updated.append({"file": str(lnk_path), "agent": "Windows Shortcuts", "paths": 1})
         else:
+            try:
+                if _is_file(backup_path):
+                    shutil.copy2(str(backup_path), str(lnk_path))
+            except OSError:
+                pass
             err_msg = (done.stderr or done.stdout or f"exit {done.returncode}").strip()
-            report.warnings.append(f"Could not update shortcut {lnk_path}: {err_msg}")
+            if done.returncode == 0 and not _same_shortcut_target(saved_target, new_target):
+                err_msg = f"TargetPath after Save() was '{saved_target}', expected '{new_target}'"
+            report.warnings.append(
+                f"Could not update shortcut {lnk_path} -> {new_target} "
+                f"(WScript.Shell could not preserve path characters; cần sửa tay): {err_msg}"
+            )
 
 
 def relink(

@@ -47,8 +47,8 @@ def _build_lnk_bytes(
     struct.pack_into("<I", header, 0x00, 0x0000004C)  # HeaderSize
     struct.pack_into("<I", header, 0x14, link_flags)  # LinkFlags
 
-    base_ansi = local_base_path.encode("cp1252") + b"\x00"
-    suffix_ansi = common_suffix.encode("cp1252") + b"\x00"
+    base_ansi = local_base_path.encode("cp1252", errors="replace") + b"\x00"
+    suffix_ansi = common_suffix.encode("cp1252", errors="replace") + b"\x00"
     volume_id = struct.pack("<IIII", 0x10, 3, 0x12345678, 0x10) + b"\x00"
 
     if use_unicode:
