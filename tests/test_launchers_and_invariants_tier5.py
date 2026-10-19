@@ -403,17 +403,30 @@ class TestLauncherMasterMenuMapping(unittest.TestCase):
         args_7_cfg = self.parser.parse_args(["mcp-config"])
         self.assertEqual(args_7_cfg.subcommand, "mcp-config")
 
-        # Option 8: relink --find / relink --find --apply --wait
+        # Option 8: relink --find / relink --find --apply --ask --wait
         args_8_find = self.parser.parse_args(["relink", "--find"])
         self.assertEqual(args_8_find.subcommand, "relink")
         self.assertTrue(args_8_find.find)
         self.assertFalse(args_8_find.apply)
+        self.assertFalse(args_8_find.ask)
 
-        args_8_apply = self.parser.parse_args(["relink", "--find", "--apply", "--wait"])
+        args_8_apply = self.parser.parse_args(["relink", "--find", "--apply", "--ask", "--wait"])
         self.assertEqual(args_8_apply.subcommand, "relink")
         self.assertTrue(args_8_apply.find)
         self.assertTrue(args_8_apply.apply)
+        self.assertTrue(args_8_apply.ask)
         self.assertEqual(args_8_apply.wait, 30.0)
+
+    def test_master_menu_option_8_asks_about_each_question_mark_folder(self):
+        """Option [8] relinks with --ask, so a ? folder can be confirmed and relinked without leaving the menu."""
+        for ext in EXPECTED_EXTENSIONS:
+            text = (LAUNCHERS_DIR / f"SmartDrive{ext}").read_text(encoding="utf-8")
+            with self.subTest(launcher=f"SmartDrive{ext}"):
+                if ext == ".ps1":
+                    self.assertIn('Run-SmartDrive @("relink", "--find", "--apply", "--ask", "--wait")', text)
+                else:
+                    self.assertIn("-m smart_drive relink --find --apply --ask --wait", text)
+                self.assertIn("ask about each ? folder? Open coding agents will be waited for. [y/N]", text)
 
     @unittest.skipIf(sys.platform == "win32", "POSIX interactive bash execution")
     def test_empirical_master_menu_loop_option_0_exit(self):

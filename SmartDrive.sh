@@ -148,10 +148,10 @@ while true; do
             echo ""
             "$PYTHON_CMD" -m smart_drive relink --find
             echo ""
-            read -r -p "Apply the ✓ relinks now? Open coding agents will be waited for. [y/N]: " CONF_REL
+            read -r -p "Relink the ✓ folders now and ask about each ? folder? Open coding agents will be waited for. [y/N]: " CONF_REL
             if [ "$CONF_REL" = "y" ] || [ "$CONF_REL" = "Y" ]; then
                 echo ""
-                "$PYTHON_CMD" -m smart_drive relink --find --apply --wait
+                "$PYTHON_CMD" -m smart_drive relink --find --apply --ask --wait
             fi
             echo ""
             read -r -p "Press Enter to return to menu..."

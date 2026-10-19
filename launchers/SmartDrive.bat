@@ -170,10 +170,10 @@ echo.
 %PYTHON_CMD% -m smart_drive relink --find
 echo.
 set "CONF_REL=N"
-set /p CONF_REL="Apply the ✓ relinks now? Open coding agents will be waited for. [y/N]: "
+set /p CONF_REL="Relink the ✓ folders now and ask about each ? folder? Open coding agents will be waited for. [y/N]: "
 if /i "%CONF_REL%"=="y" (
     echo.
-    %PYTHON_CMD% -m smart_drive relink --find --apply --wait
+    %PYTHON_CMD% -m smart_drive relink --find --apply --ask --wait
 )
 echo.
 pause

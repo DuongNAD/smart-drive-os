@@ -168,10 +168,10 @@ while ($true) {
             Write-Host ""
             Run-SmartDrive @("relink", "--find")
             Write-Host ""
-            $Confirm = Read-Host "Apply the relinks marked with a check now? Open coding agents will be waited for. [y/N]"
+            $Confirm = Read-Host "Relink the folders marked with a check now and ask about each ? folder? Open coding agents will be waited for. [y/N]"
             if ($Confirm -eq "y" -or $Confirm -eq "Y") {
                 Write-Host ""
-                Run-SmartDrive @("relink", "--find", "--apply", "--wait")
+                Run-SmartDrive @("relink", "--find", "--apply", "--ask", "--wait")
             }
             Write-Host ""
             Read-Host "Press Enter to return to menu..."
