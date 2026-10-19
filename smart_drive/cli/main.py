@@ -55,6 +55,7 @@ from smart_drive.cli.cmd_mcp_config import cmd_mcp_config
 from smart_drive.cli.cmd_offload import cmd_offload
 from smart_drive.cli.cmd_organize import cmd_organize
 from smart_drive.cli.cmd_path_check import cmd_path_check
+from smart_drive.cli.cmd_paths import cmd_paths
 from smart_drive.cli.cmd_relink import cmd_relink
 from smart_drive.cli.cmd_repos import cmd_repos
 from smart_drive.cli.cmd_search import cmd_search
@@ -566,6 +567,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_undo.add_argument("--dry-run", action="store_true", help="Preview items to restore without moving anything (default)")
     p_undo.add_argument("--json", action="store_true", help="Output undo report in JSON format")
 
+    # 23. paths
+    p_paths = subparsers.add_parser(
+        "paths",
+        help="Find and fix stale shortcuts, IDE entries, PATH directories, and coding agent paths",
+    )
+    p_paths.add_argument("--broken", action="store_true", default=True, help="List broken shortcuts, IDE entries, PATH and agent paths (default)")
+    p_paths.add_argument("--fix", action="store_true", help="Automatically relink all sure matches")
+    p_paths.add_argument("--dry-run", action="store_true", help="Preview path fixes without modifying any files")
+    p_paths.add_argument("--root", help="Root directory of the SSD")
+    p_paths.add_argument("--json", action="store_true", help="Output broken paths report in JSON format")
+
     # self-path-check subcommand
     p_path_check = subparsers.add_parser(
         "self-path-check",
@@ -610,6 +622,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "setup": cmd_setup,
         "relink": cmd_relink,
         "undo": cmd_undo,
+        "paths": cmd_paths,
         "self-path-check": cmd_path_check,
         "path-check": cmd_path_check,
         "self_path_check": cmd_path_check,
