@@ -289,6 +289,122 @@ class TestPurgeEngineExecution(SmartDriveTestCase):
         self.assertFalse(success)
         self.assertIn("Inviolable", msg)
         self.assertTrue((mock_root / "GEMINI.md").exists())
+        self.assertFalse((mock_root / ".smart_drive" / "quarantine").exists())
+
+
+class TestQuarantineEngine(SmartDriveTestCase):
+    """T11: PurgeEngine quarantine by default, restore, older-than purge, and scanner exclusion."""
+
+    def test_quarantine_writes_manifest_and_is_ignored_by_scanners(self) -> None:
+        import json
+        from smart_drive.core.duplicates import DuplicateDetector
+        from smart_drive.core.purge_engine import (
+            list_quarantine_batches,
+            restore_quarantine_batch,
+        )
+        from smart_drive.core.scanner import FastDirectoryScanner
+        from smart_drive.indexer.db import DatabaseManager
+        from smart_drive.indexer.manager import IndexManager
+
+        mock_root = self.create_mock_drive()
+        detector = JunkDetector(str(mock_root), max_tier=JunkTier.TIER_1_SAFE)
+        junk_items = detector.find_junk()
+        self.assertGreater(len(junk_items), 0)
+
+        engine = PurgeEngine(str(mock_root), dry_run=False, quarantine=True)
+        summary = engine.purge_items(junk_items)
+        self.assertEqual(summary.total_succeeded, len(junk_items))
+        self.assertIsNotNone(engine.batch_id)
+
+        batch_dir = mock_root / ".smart_drive" / "quarantine" / str(engine.batch_id)
+        manifest_path = batch_dir / "manifest.json"
+        self.assertTrue(manifest_path.is_file())
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertEqual(len(manifest), len(junk_items))
+        for entry in manifest:
+            self.assertTrue({"original", "quarantined", "size", "tier"} <= set(entry))
+            self.assertTrue((mock_root / entry["quarantined"]).exists())
+
+        # Scanner, JunkDetector, DuplicateDetector, and IndexManager must ignore .smart_drive/quarantine
+        scanned_rels = [e.rel_path for e in FastDirectoryScanner(str(mock_root)).scan_iter()]
+        self.assertFalse(any(r.startswith(".smart_drive") for r in scanned_rels))
+
+        re_detected = JunkDetector(str(mock_root), max_tier=JunkTier.TIER_3_SENSITIVE).find_junk()
+        self.assertFalse(any(j.rel_path.startswith(".smart_drive") for j in re_detected))
+
+        dup_plan = DuplicateDetector(str(mock_root)).generate_reclamation_plan()
+        for grp in dup_plan.get("duplicate_groups", []):
+            for fpath in grp.get("files", []):
+                self.assertNotIn(".smart_drive", str(fpath))
+
+        db_path = mock_root / ".smart_drive" / "index.db"
+        db = DatabaseManager(str(db_path))
+        try:
+            db.initialize_schema()
+            idx_mgr = IndexManager(db, str(mock_root))
+            idx_mgr.full_index()
+            rows = db.get_connection().execute("SELECT path FROM files WHERE path LIKE '%.smart_drive%'").fetchall()
+            self.assertEqual(rows, [])
+        finally:
+            db.close()
+        db_path.unlink(missing_ok=True)
+
+        # List and restore
+        batches = list_quarantine_batches(str(mock_root))
+        self.assertEqual(len(batches), 1)
+        res = restore_quarantine_batch(str(mock_root), "latest")
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["restored_count"], len(junk_items))
+        for item in junk_items:
+            self.assertTrue(os.path.exists(item.path))
+        self.assertFalse(batch_dir.exists())
+
+    def test_rename_failure_does_not_delete_original_file(self) -> None:
+        from unittest.mock import patch
+
+        mock_root = self.create_mock_drive()
+        ds_store = mock_root / ".DS_Store"
+        self.assertTrue(ds_store.exists())
+
+        engine = PurgeEngine(str(mock_root), dry_run=False, quarantine=True)
+        with patch("smart_drive.core.purge_engine.os.rename", side_effect=OSError("simulated rename failure")):
+            rec = engine.delete_file(str(ds_store))
+        self.assertEqual(rec.status, "FAILED")
+        self.assertTrue(ds_store.exists(), "Original file must NOT be unlinked when os.rename fails")
+
+    def test_purge_quarantine_batches_respects_older_than_and_dry_run(self) -> None:
+        from smart_drive.core.purge_engine import purge_quarantine_batches
+
+        root = self.test_dir
+        old_junk = root / ".DS_Store"
+        old_junk.write_bytes(b"old")
+        eng_old = PurgeEngine(str(root), dry_run=False, quarantine=True, batch_id="20260101-000000")
+        eng_old.delete_file(str(old_junk))
+
+        new_junk = root / "Thumbs.db"
+        new_junk.write_bytes(b"new")
+        eng_new = PurgeEngine(str(root), dry_run=False, quarantine=True, batch_id="20260110-000000")
+        eng_new.delete_file(str(new_junk))
+
+        import calendar, time as _time
+        injected_now = float(calendar.timegm(_time.strptime("20260111-000000", "%Y%m%d-%H%M%S")))
+
+        # Dry-run with older_than=5 days matches only 20260101-000000 and leaves both on disk
+        preview = purge_quarantine_batches(str(root), older_than_days=5, dry_run=True, now=injected_now)
+        self.assertTrue(preview["dry_run"])
+        self.assertEqual(preview["matched_count"], 1)
+        self.assertEqual(preview["kept_count"], 1)
+        self.assertTrue((root / ".smart_drive" / "quarantine" / "20260101-000000").is_dir())
+        self.assertTrue((root / ".smart_drive" / "quarantine" / "20260110-000000").is_dir())
+
+        # Apply with older_than=5 days deletes only the old batch
+        applied = purge_quarantine_batches(str(root), older_than_days=5, dry_run=False, now=injected_now)
+        self.assertFalse(applied["dry_run"])
+        self.assertEqual(applied["purged_count"], 1)
+        self.assertEqual(applied["kept_count"], 1)
+        self.assertFalse((root / ".smart_drive" / "quarantine" / "20260101-000000").exists())
+        self.assertTrue((root / ".smart_drive" / "quarantine" / "20260110-000000").is_dir())
 
 
 if __name__ == "__main__":

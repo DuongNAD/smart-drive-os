@@ -274,9 +274,9 @@ class JunkDetector:
         scan_root = os.path.realpath(os.path.abspath(sub_path or self.drive_root))
         junk_items: List[JunkItem] = []
 
-        # Only exclude version control and agent working directories during scan;
+        # Only exclude version control, agent working directories, and SmartDrive metadata/quarantine during scan;
         # allow scanner to inspect system junk directories like $RECYCLE.BIN, .Trashes
-        scanner_excludes = {".git", ".agents", "System Volume Information"}
+        scanner_excludes = {".git", ".agents", ".smart_drive", ".smart_drive_manager", "System Volume Information"}
 
         if FastDirectoryScanner is not None:
             scanner = FastDirectoryScanner(

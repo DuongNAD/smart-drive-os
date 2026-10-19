@@ -316,5 +316,92 @@ class TestReclaimableSpaceCountsEveryItem(unittest.TestCase):
         self.assertIn("and 10 more items", out.getvalue())
 
 
+class TestCleanQuarantineCLI(unittest.TestCase):
+    """T11 CLI tests: default quarantine, --list-quarantine, --restore, --purge-quarantine, --no-quarantine."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="sd_clean_q_")).resolve()
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        for rel in JUNK + KEEPERS:
+            path = self.root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("content_" + rel.replace("/", "_"), encoding="utf-8")
+
+    def run_cmd(self, *args: str) -> Tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["clean", "--root", str(self.root), *args])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_apply_quarantines_by_default_and_restore_brings_files_back_without_overwriting(self) -> None:
+        code, out, _ = self.run_cmd("--tier", "3", "--apply", "--json")
+        self.assertEqual(code, 0)
+        report = json.loads(out)
+        self.assertTrue(report["quarantine"])
+        batch_id = report["batch_id"]
+        self.assertTrue(batch_id)
+
+        batch_dir = self.root / ".smart_drive" / "quarantine" / batch_id
+        self.assertTrue((batch_dir / "manifest.json").is_file())
+        self.assertTrue((batch_dir / "scratch.tmp").is_file())
+
+        # --list-quarantine
+        code_l, out_l, _ = self.run_cmd("--list-quarantine", "--json")
+        self.assertEqual(code_l, 0)
+        list_rep = json.loads(out_l)
+        self.assertEqual(list_rep["total_batches"], 1)
+        self.assertEqual(list_rep["batches"][0]["batch_id"], batch_id)
+
+        # Recreate scratch.tmp at original path to verify --restore never overwrites
+        (self.root / "scratch.tmp").write_text("NEW_USER_CONTENT", encoding="utf-8")
+
+        code_r, out_r, _ = self.run_cmd("--restore", "latest", "--json")
+        self.assertEqual(code_r, 0)
+        rest_rep = json.loads(out_r)
+        self.assertEqual(rest_rep["skipped_count"], 1)
+        self.assertGreaterEqual(rest_rep["restored_count"], 3)
+        self.assertEqual((self.root / "scratch.tmp").read_text(encoding="utf-8"), "NEW_USER_CONTENT")
+        self.assertTrue((self.root / ".DS_Store").is_file())
+        self.assertTrue((self.root / "Thumbs.db").is_file())
+        self.assertTrue((self.root / "__pycache__" / "mod.pyc").is_file())
+        # Conflicted file remains in quarantine
+        self.assertTrue((batch_dir / "scratch.tmp").is_file())
+
+    def test_no_quarantine_permanently_deletes_without_creating_quarantine_dir(self) -> None:
+        code, out, _ = self.run_cmd("--tier", "3", "--apply", "--no-quarantine", "--json")
+        self.assertEqual(code, 0)
+        report = json.loads(out)
+        self.assertFalse(report["quarantine"])
+        self.assertIsNone(report["batch_id"])
+        self.assertFalse((self.root / ".DS_Store").exists())
+        self.assertFalse((self.root / ".smart_drive" / "quarantine").exists())
+
+    def test_purge_quarantine_cli_dry_run_and_apply_with_older_than(self) -> None:
+        self.run_cmd("--tier", "3", "--apply", "--json")
+        q_root = self.root / ".smart_drive" / "quarantine"
+        batches = [p for p in q_root.iterdir() if p.is_dir()]
+        self.assertEqual(len(batches), 1)
+        batch_dir = batches[0]
+
+        import time as _time
+        future_now = _time.time() + 10 * 86400.0
+        with patch("smart_drive.core.purge_engine.time.time", return_value=future_now):
+            # Dry-run by default: does not delete batch
+            code_p, out_p, _ = self.run_cmd("--purge-quarantine", "--older-than", "7", "--json")
+            self.assertEqual(code_p, 0)
+            prev_rep = json.loads(out_p)
+            self.assertTrue(prev_rep["dry_run"])
+            self.assertEqual(prev_rep["matched_count"], 1)
+            self.assertTrue(batch_dir.is_dir())
+
+            # With --apply: deletes batch older than 7 days
+            code_a, out_a, _ = self.run_cmd("--purge-quarantine", "--older-than", "7", "--apply", "--json")
+            self.assertEqual(code_a, 0)
+            app_rep = json.loads(out_a)
+            self.assertFalse(app_rep["dry_run"])
+            self.assertEqual(app_rep["purged_count"], 1)
+            self.assertFalse(batch_dir.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
