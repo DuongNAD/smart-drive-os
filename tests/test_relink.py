@@ -2332,35 +2332,35 @@ class TestRelink(SmartDriveTestCase):
         dist_info.mkdir(parents=True)
 
         pth_file = fake_sp / "__editable__.charforge-0.1.0.pth"
-        pth_file.write_text("E:\\project\\pygmalion-mcp\\src\n", encoding="utf-8")
+        pth_file.write_text("E:\\__sd_mock_drive__\\project\\pygmalion-mcp\\src\n", encoding="utf-8")
 
         direct_url = dist_info / "direct_url.json"
         direct_url.write_text(
-            '{"dir_info": {"editable": true}, "url": "file:///E:/project/pygmalion-mcp"}\n',
+            '{"dir_info": {"editable": true}, "url": "file:///E:/__sd_mock_drive__/project/pygmalion-mcp"}\n',
             encoding="utf-8",
         )
 
         finder_py = fake_sp / "__editable___other_0_1_0_finder.py"
         finder_py.write_text(
-            "MAPPING: dict[str, str] = {'other': 'E:\\\\project\\\\other\\\\src'}\n",
+            "MAPPING: dict[str, str] = {'other': 'E:\\\\__sd_mock_drive__\\\\project\\\\other\\\\src'}\n",
             encoding="utf-8",
         )
 
         egg_link = fake_sp / "legacy.egg-link"
-        egg_link.write_text("E:\\project\\legacy\n.\n", encoding="utf-8")
+        egg_link.write_text("E:\\__sd_mock_drive__\\project\\legacy\n.\n", encoding="utf-8")
 
         dry_report = relink(
-            [("E:\\project", "E:\\03_Development_Projects\\project")],
+            [("E:\\__sd_mock_drive__\\project", "E:\\__sd_mock_drive__\\03_Development_Projects\\project")],
             dry_run=True,
             home=self.fake_home,
             app_data=self.fake_appdata,
             site_packages=[fake_sp],
         )
         self.assertEqual(dry_report.agents.get("Python editable"), 4)
-        self.assertEqual(pth_file.read_text(encoding="utf-8").strip(), "E:\\project\\pygmalion-mcp\\src")
+        self.assertEqual(pth_file.read_text(encoding="utf-8").strip(), "E:\\__sd_mock_drive__\\project\\pygmalion-mcp\\src")
 
         report = relink(
-            [("E:\\project", "E:\\03_Development_Projects\\project")],
+            [("E:\\__sd_mock_drive__\\project", "E:\\__sd_mock_drive__\\03_Development_Projects\\project")],
             dry_run=False,
             home=self.fake_home,
             app_data=self.fake_appdata,
@@ -2369,20 +2369,20 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(report.agents.get("Python editable"), 4)
         self.assertEqual(
             pth_file.read_text(encoding="utf-8").strip(),
-            "E:\\03_Development_Projects\\project\\pygmalion-mcp\\src",
+            "E:\\__sd_mock_drive__\\03_Development_Projects\\project\\pygmalion-mcp\\src",
         )
         self.assertTrue(Path(str(pth_file) + BACKUP_SUFFIX).is_file())
         self.assertEqual(
             json.loads(direct_url.read_text(encoding="utf-8"))["url"],
-            "file:///E:/03_Development_Projects/project/pygmalion-mcp",
+            "file:///E:/__sd_mock_drive__/03_Development_Projects/project/pygmalion-mcp",
         )
         self.assertIn(
-            "E:\\\\03_Development_Projects\\\\project\\\\other\\\\src",
+            "E:\\\\__sd_mock_drive__\\\\03_Development_Projects\\\\project\\\\other\\\\src",
             finder_py.read_text(encoding="utf-8"),
         )
         self.assertEqual(
             egg_link.read_text(encoding="utf-8").splitlines()[0],
-            "E:\\03_Development_Projects\\project\\legacy",
+            "E:\\__sd_mock_drive__\\03_Development_Projects\\project\\legacy",
         )
 
     def test_34_dry_run_shows_worktrees_venvs_editable_and_busy_apps(self) -> None:
