@@ -501,6 +501,8 @@ class TestRelinkIDE(SmartDriveTestCase):
         mock_run.assert_not_called()
         self.assertEqual(dry.agents, {"Windows Shortcuts": 3})
         self.assertFalse(Path(str(moved_lnk) + BACKUP_SUFFIX).exists())
+        shortcuts_backup_root = self.fake_home / ".smart-drive" / "backups" / "shortcuts"
+        self.assertFalse(shortcuts_backup_root.exists())
 
         # 2) Real run with mocked PowerShell COM command:
         #    - For moved_lnk and tricky_lnk, simulated Save() writes the exact new TargetPath.
@@ -539,6 +541,15 @@ class TestRelinkIDE(SmartDriveTestCase):
         # The shortcut whose characters could not be preserved emits a warning with "cần sửa tay" and restores original bytes
         self.assertTrue(any("cần sửa tay" in w and str(viet_lnk) in w for w in real.warnings), real.warnings)
         self.assertEqual(viet_lnk.read_bytes(), viet_lnk_orig_bytes)
+
+        # Backups are saved under ~/.smart-drive/backups/shortcuts/<timestamp>/, never beside the shortcut on Desktop
+        for lnk_item in (moved_lnk, tricky_lnk, viet_lnk):
+            self.assertFalse(Path(str(lnk_item) + BACKUP_SUFFIX).exists())
+        self.assertTrue(shortcuts_backup_root.is_dir())
+        ts_dirs = [d for d in shortcuts_backup_root.iterdir() if d.is_dir()]
+        self.assertEqual(len(ts_dirs), 1)
+        backed_up_names = {p.name for p in ts_dirs[0].iterdir()}
+        self.assertEqual(backed_up_names, {moved_lnk.name, tricky_lnk.name, viet_lnk.name})
 
         # Also verify that if a path string contains '"' (e.g. on a non-Windows mock or injected string), it is passed via env
         mapper_quote = PathMapper([('E:\\dir"quote', 'E:\\05_Dev_Toolbox\\dir"quote')])
@@ -612,6 +623,13 @@ class TestRelinkIDE(SmartDriveTestCase):
         self.assertEqual(report.agents.get("Windows Shortcuts"), 1)
         self.assertEqual([u["file"] for u in report.updated], [str(lnk_path)])
         self.assertTrue(any("cần sửa tay" in w and str(vn_lnk_path) in w for w in report.warnings), report.warnings)
+        self.assertFalse(Path(str(lnk_path) + BACKUP_SUFFIX).exists())
+        self.assertFalse(Path(str(vn_lnk_path) + BACKUP_SUFFIX).exists())
+        shortcuts_backup_root = self.fake_home / ".smart-drive" / "backups" / "shortcuts"
+        self.assertTrue(shortcuts_backup_root.is_dir())
+        ts_dirs = [d for d in shortcuts_backup_root.iterdir() if d.is_dir()]
+        self.assertEqual(len(ts_dirs), 1)
+        self.assertEqual({p.name for p in ts_dirs[0].iterdir()}, {lnk_path.name, vn_lnk_path.name})
 
         read_script = (
             "$ErrorActionPreference = 'Stop'; "
