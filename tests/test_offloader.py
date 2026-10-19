@@ -472,6 +472,49 @@ class TestTransactionalOffloadAndRevert(unittest.TestCase):
                 self.assertEqual(code2, 0, err2.getvalue())
                 self.assertTrue(is_directory_junction(ollama_src))
 
+    def test_revert_guard_dry_run_warnings_and_vmmemwsl(self) -> None:
+        """T12 fix: revert_cache guards against running processes, dry-run reports 'would be blocked', and VmmemWSL.exe is recognized."""
+        with patch.dict(os.environ, self.env):
+            docker_src = self.mock_user / "AppData" / "Local" / "Docker" / "wsl"
+            docker_src.mkdir(parents=True, exist_ok=True)
+            (docker_src / "ext4.vhdx").write_bytes(b"VHDX_DATA" * 64)
+
+            # 1) Offload dry-run with VmmemWSL.exe running reports "would be blocked"
+            with patch("smart_drive.core.offloader._running_processes", return_value={"VmmemWSL.exe"}):
+                dry_off = offload_cache("docker_wsl", self.mock_d, dry_run=True)
+                self.assertEqual(dry_off["status"], "dry_run")
+                self.assertIn("VmmemWSL", dry_off["blocking_processes"])
+                self.assertTrue(any("would be blocked" in w and "VmmemWSL" in w for w in dry_off["warnings"]))
+                self.assertIn("would be blocked", dry_off["message"])
+                with self.assertRaises(RuntimeError) as ctx_vmmem:
+                    offload_cache("docker_wsl", self.mock_d)
+                self.assertIn("VmmemWSL", str(ctx_vmmem.exception))
+
+            # 2) Offload cleanly when no process is running
+            with patch("smart_drive.core.offloader._running_processes", return_value=set()):
+                offload_cache("docker_wsl", self.mock_d)
+                self.assertTrue(is_directory_junction(docker_src))
+
+            # 3) Revert dry-run with Docker Desktop.exe running reports "would be blocked"
+            with patch("smart_drive.core.offloader._running_processes", return_value={"Docker Desktop.exe"}):
+                dry_rev = revert_cache("docker_wsl", dry_run=True)
+                self.assertEqual(dry_rev["status"], "dry_run")
+                self.assertTrue(any("would be blocked" in w and "Docker Desktop" in w for w in dry_rev["warnings"]))
+                self.assertIn("would be blocked", dry_rev["message"])
+
+                # 4) Revert without --force is refused before touching any files
+                with self.assertRaises(RuntimeError) as ctx_rev:
+                    revert_cache("docker_wsl")
+                self.assertIn("Docker Desktop", str(ctx_rev.exception))
+                self.assertTrue(is_directory_junction(docker_src))
+
+                # 5) Revert with force=True succeeds and records warning
+                res_rev = revert_cache("docker_wsl", force=True)
+                self.assertEqual(res_rev["status"], "reverted")
+                self.assertFalse(is_directory_junction(docker_src))
+                self.assertTrue((docker_src / "ext4.vhdx").is_file())
+                self.assertTrue(any("Docker Desktop" in w for w in res_rev.get("warnings", [])))
+
 
 if __name__ == "__main__":
     unittest.main()
