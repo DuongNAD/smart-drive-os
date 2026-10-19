@@ -529,8 +529,8 @@ class PurgeEngine:
         return False, record.reason
 
     def _should_quarantine(self, tier: Optional[int]) -> bool:
-        """Only Tier 3 items (logs, .tmp, .bak, crash dumps) are quarantined; regenerable Tier 1-2 items are deleted immediately."""
-        return bool(self.quarantine and tier is not None and int(tier) >= int(JunkTier.TIER_3_SENSITIVE))
+        """Quarantines Tier 3 items and items with unknown tier (`tier is None`); only known Tier 1-2 items are deleted immediately."""
+        return bool(self.quarantine and (tier is None or int(tier) >= int(JunkTier.TIER_3_SENSITIVE)))
 
     def delete_file(self, file_path: str, size: int = 0, tier: Optional[int] = None) -> DeletionRecord:
         """Safely deletes (or quarantines) or simulates deletion of a regular file.
@@ -555,23 +555,11 @@ class PurgeEngine:
                 size = 0
         allocated = calculate_allocated_bytes(size, self.cluster_size)
 
-        base_name = os.path.basename(real_path)
         if tier is not None:
             try:
                 tier = int(tier)
             except (ValueError, TypeError):
                 tier = None
-        if tier is None:
-            rel_parts = [p for p in rel_path.split("/") if p and p != "."]
-            rule = match_junk_rule(
-                base_name,
-                is_dir=False,
-                max_tier=JunkTier.TIER_3_SENSITIVE,
-                is_root_level=(len(rel_parts) <= 1),
-                rel_path=rel_path,
-            )
-            if rule is not None:
-                tier = int(rule.tier)
 
         is_prot, reason = self.guard.is_protected(clean_path)
         if not is_prot:
@@ -660,23 +648,11 @@ class PurgeEngine:
         real_path = os.path.realpath(os.path.abspath(clean_path)) if os.path.isabs(clean_path) else os.path.realpath(os.path.abspath(os.path.join(self.drive_root, clean_path)))
         rel_path = self._normalize_rel_path(real_path)
 
-        base_name = os.path.basename(real_path)
         if tier is not None:
             try:
                 tier = int(tier)
             except (ValueError, TypeError):
                 tier = None
-        if tier is None:
-            rel_parts = [p for p in rel_path.split("/") if p and p != "."]
-            rule = match_junk_rule(
-                base_name,
-                is_dir=True,
-                max_tier=JunkTier.TIER_3_SENSITIVE,
-                is_root_level=(len(rel_parts) <= 1),
-                rel_path=rel_path,
-            )
-            if rule is not None:
-                tier = int(rule.tier)
 
         is_prot, reason = self.guard.is_protected(clean_path)
         if not is_prot:
