@@ -407,17 +407,35 @@ class TestRelinkIDE(SmartDriveTestCase):
             self.assertIn("Obsidian", running_agents())
 
     def test_07_windows_shortcuts_repointed_mocked_subprocess(self) -> None:
+        import smart_drive.core.relink as relink_mod
+
+        self.assertFalse(hasattr(relink_mod, "_ps_quote"), "_ps_quote must not exist; paths must not be interpolated")
+
         desktop = self.fake_home / "Desktop"
         desktop.mkdir(parents=True, exist_ok=True)
         moved_lnk = desktop / "MyTool.lnk"
+        tricky_lnk = desktop / "Tricky ’ ‘ ‚ ' $( ` ;.lnk"
+        viet_lnk = desktop / "VietApp.lnk"
         keep_lnk = desktop / "KeepApp.lnk"
 
+        old_tricky_dir = "E:\\tool ’ ‘ ‚ ' $( ` ;"
+        new_tricky_dir = "E:\\05_Dev_Toolbox\\tool ’ ‘ ‚ ' $( ` ;"
+        old_viet_dir = "E:\\Dự án ‛"
+        new_viet_dir = "E:\\03_Development_Projects\\Dự án ‛"
+
         moved_lnk.write_bytes(_build_lnk_bytes(r"E:\tool\bin\run.exe", use_unicode=True))
+        tricky_lnk.write_bytes(_build_lnk_bytes(old_tricky_dir + r"\bin\run.exe", use_unicode=True))
+        viet_lnk_orig_bytes = _build_lnk_bytes(old_viet_dir + r"\app.exe", use_unicode=True)
+        viet_lnk.write_bytes(viet_lnk_orig_bytes)
         keep_lnk.write_bytes(_build_lnk_bytes(r"E:\keep\app.exe", use_unicode=True))
 
-        moves = [(r"E:\tool", r"E:\05_Dev_Toolbox\tool")]
+        moves = [
+            (r"E:\tool", r"E:\05_Dev_Toolbox\tool"),
+            (old_tricky_dir, new_tricky_dir),
+            (old_viet_dir, new_viet_dir),
+        ]
 
-        # 1) Dry-run lists the shortcut to be modified without calling subprocess.run or creating backup
+        # 1) Dry-run lists the shortcuts to be modified without calling subprocess.run or creating backup
         with (
             patch.object(sys, "platform", "win32"),
             patch("smart_drive.core.relink.subprocess.run") as mock_run,
@@ -425,36 +443,50 @@ class TestRelinkIDE(SmartDriveTestCase):
             dry = relink(moves, dry_run=True, home=self.fake_home, app_data=self.fake_appdata)
 
         mock_run.assert_not_called()
-        self.assertEqual(dry.agents, {"Windows Shortcuts": 1})
-        self.assertEqual(dry.updated, [{"file": str(moved_lnk), "agent": "Windows Shortcuts", "paths": 1}])
+        self.assertEqual(dry.agents, {"Windows Shortcuts": 3})
         self.assertFalse(Path(str(moved_lnk) + BACKUP_SUFFIX).exists())
 
-        # 2) Real run with mocked PowerShell COM command
-        fake_done = subprocess.CompletedProcess(args=["powershell"], returncode=0, stdout="", stderr="")
+        # 2) Real run with mocked PowerShell COM command:
+        #    - For moved_lnk and tricky_lnk, simulated Save() writes the exact new TargetPath.
+        #    - For viet_lnk ("Dự án ‛"), simulated WScript.Shell mangles Unicode characters to '?' / '''.
+        def fake_ps_run(cmd, *args, **kwargs):
+            ps_script = cmd[-1]
+            self.assertIn("$ErrorActionPreference = 'Stop'", ps_script)
+            self.assertIn("$env:SD_LNK", ps_script)
+            self.assertIn("$env:SD_TARGET", ps_script)
+            env = kwargs.get("env") or {}
+            lnk_file = env["SD_LNK"]
+            target_val = env["SD_TARGET"]
+            # No path may ever be embedded inside the PowerShell command text
+            self.assertNotIn(lnk_file, ps_script)
+            self.assertNotIn(target_val, ps_script)
+            if "Dự án" in target_val or "\u201b" in target_val:
+                # Simulate WScript.Shell silently corrupting non-ANSI characters on Save()
+                mangled = target_val.replace("ự", "?").replace("\u201b", "'")
+                Path(lnk_file).write_bytes(_build_lnk_bytes(mangled, use_unicode=True))
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            Path(lnk_file).write_bytes(_build_lnk_bytes(target_val, use_unicode=True))
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
         with (
             patch.object(sys, "platform", "win32"),
             patch("smart_drive.core.relink.shutil.which", return_value="powershell.exe"),
-            patch("smart_drive.core.relink.subprocess.run", return_value=fake_done) as mock_run,
+            patch("smart_drive.core.relink.subprocess.run", side_effect=fake_ps_run) as mock_run,
         ):
             real = relink(moves, dry_run=False, home=self.fake_home, app_data=self.fake_appdata)
 
-        self.assertEqual(real.agents, {"Windows Shortcuts": 1})
-        self.assertTrue(Path(str(moved_lnk) + BACKUP_SUFFIX).is_file())
-        self.assertFalse(Path(str(keep_lnk) + BACKUP_SUFFIX).exists())
-        mock_run.assert_called_once()
-        cmd_passed = mock_run.call_args[0][0]
-        self.assertEqual(cmd_passed[0], "powershell.exe")
-        ps_script = cmd_passed[-1]
-        for expected_fragment in (
-            "WScript.Shell",
-            "CreateShortcut",
-            "TargetPath",
-            "WorkingDirectory",
-            "IconLocation",
-            str(moved_lnk),
-            r"E:\05_Dev_Toolbox\tool\bin\run.exe",
-        ):
-            self.assertIn(expected_fragment, ps_script)
+        self.assertEqual(mock_run.call_count, 3)
+        # Only the 2 shortcuts whose TargetPath verified cleanly after Save() are marked updated
+        updated_files = {entry["file"] for entry in real.updated if entry["agent"] == "Windows Shortcuts"}
+        self.assertEqual(updated_files, {str(moved_lnk), str(tricky_lnk)})
+        self.assertNotIn(str(viet_lnk), updated_files)
+        # The shortcut whose characters could not be preserved emits a warning with "cần sửa tay" and restores original bytes
+        self.assertTrue(any("cần sửa tay" in w and str(viet_lnk) in w for w in real.warnings), real.warnings)
+        self.assertEqual(viet_lnk.read_bytes(), viet_lnk_orig_bytes)
+
+        # Also verify that if a path string contains '"' (e.g. on a non-Windows mock or injected string), it is passed via env
+        mapper_quote = PathMapper([('E:\\dir"quote', 'E:\\05_Dev_Toolbox\\dir"quote')])
+        self.assertIsNone(mapper_quote.map('E:\\dir"quote\\app.exe'))
 
         # 3) Missing PowerShell emits warning, not error
         with (
@@ -470,8 +502,9 @@ class TestRelinkIDE(SmartDriveTestCase):
         "Real PowerShell COM .lnk test runs only on win32 with SMART_DRIVE_TEST_LNK=1",
     )
     def test_08_windows_shortcuts_real_powershell_com(self) -> None:
-        old_dir = self.test_dir / "tool_app"
-        new_dir = self.test_dir / "05_Dev_Toolbox" / "tool_app"
+        # 1) Folder with curly quotes and shell metacharacters that CP1252/WScript.Shell can represent
+        old_dir = self.test_dir / "tool ’ ‘ ‚ ' $( ` ;"
+        new_dir = self.test_dir / "05_Dev_Toolbox" / "tool ’ ‘ ‚ ' $( ` ;"
         old_dir.mkdir(parents=True, exist_ok=True)
         new_dir.mkdir(parents=True, exist_ok=True)
         old_exe = old_dir / "app.exe"
@@ -479,46 +512,67 @@ class TestRelinkIDE(SmartDriveTestCase):
         old_exe.write_bytes(b"MZ")
         new_exe.write_bytes(b"MZ")
 
+        # 2) Folder with Vietnamese characters ("Dự án ‛") that WScript.Shell cannot preserve
+        old_vn = self.test_dir / "old_vn_app"
+        new_vn = self.test_dir / "03_Development_Projects" / "Dự án ‛"
+        old_vn.mkdir(parents=True, exist_ok=True)
+        new_vn.mkdir(parents=True, exist_ok=True)
+        old_vn_exe = old_vn / "app.exe"
+        new_vn_exe = new_vn / "app.exe"
+        old_vn_exe.write_bytes(b"MZ")
+        new_vn_exe.write_bytes(b"MZ")
+
         desktop = self.fake_home / "Desktop"
         desktop.mkdir(parents=True, exist_ok=True)
         lnk_path = desktop / "RealApp.lnk"
+        vn_lnk_path = desktop / "VnApp.lnk"
 
         create_script = (
-            f"$ws = New-Object -ComObject WScript.Shell; "
-            f"$sc = $ws.CreateShortcut('{lnk_path}'); "
-            f"$sc.TargetPath = '{old_exe}'; "
-            f"$sc.WorkingDirectory = '{old_dir}'; "
-            f"$sc.IconLocation = '{old_exe},0'; "
-            f"$sc.Save()"
+            "$ErrorActionPreference = 'Stop'; "
+            "$ws = New-Object -ComObject WScript.Shell; "
+            "$sc = $ws.CreateShortcut($env:SD_LNK); "
+            "$sc.TargetPath = $env:SD_TARGET; "
+            "$sc.WorkingDirectory = $env:SD_WD; "
+            "$sc.IconLocation = \"$($env:SD_TARGET),0\"; "
+            "$sc.Save()"
         )
-        subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", create_script],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        for p_lnk, p_exe, p_wd in ((lnk_path, old_exe, old_dir), (vn_lnk_path, old_vn_exe, old_vn)):
+            env = dict(os.environ, SD_LNK=str(p_lnk), SD_TARGET=str(p_exe), SD_WD=str(p_wd))
+            subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", create_script],
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
         report = relink(
-            [(str(old_dir), str(new_dir))],
+            [(str(old_dir), str(new_dir)), (str(old_vn), str(new_vn))],
             dry_run=False,
             home=self.fake_home,
             app_data=self.fake_appdata,
         )
+        # Only lnk_path succeeds; vn_lnk_path emits a "cần sửa tay" warning and is not reported as updated
         self.assertEqual(report.agents.get("Windows Shortcuts"), 1)
-        self.assertTrue(Path(str(lnk_path) + BACKUP_SUFFIX).is_file())
+        self.assertEqual([u["file"] for u in report.updated], [str(lnk_path)])
+        self.assertTrue(any("cần sửa tay" in w and str(vn_lnk_path) in w for w in report.warnings), report.warnings)
 
         read_script = (
-            f"$ws = New-Object -ComObject WScript.Shell; "
-            f"$sc = $ws.CreateShortcut('{lnk_path}'); "
-            f"Write-Output $sc.TargetPath; "
-            f"Write-Output $sc.WorkingDirectory; "
-            f"Write-Output $sc.IconLocation"
+            "$ErrorActionPreference = 'Stop'; "
+            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+            "$ws = New-Object -ComObject WScript.Shell; "
+            "$sc = $ws.CreateShortcut($env:SD_LNK); "
+            "Write-Output $sc.TargetPath; "
+            "Write-Output $sc.WorkingDirectory; "
+            "Write-Output $sc.IconLocation"
         )
         done = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", read_script],
+            env=dict(os.environ, SD_LNK=str(lnk_path)),
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
         )
         lines = [line.strip() for line in done.stdout.splitlines() if line.strip()]
         self.assertEqual(os.path.normcase(lines[0]), os.path.normcase(str(new_exe)))
