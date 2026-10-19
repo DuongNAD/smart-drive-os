@@ -480,6 +480,26 @@ class TestAutoZonerPlanningAndExecution(_IsolatedAutoZonerTestCase):
             assert res is not None
             self.assertEqual(res[0], target_taxonomy)
 
+    def test_explicit_tool_folder_name_wins_over_multi_repo_rule(self) -> None:
+        """A folder named tool (or tools/utility/utilities/script/scripts) routes to 05_Dev_Toolbox even with >= 2 child repos."""
+        from smart_drive.core.system_refs import SystemRefIndex
+
+        root = self.test_dir
+        tool_dir = root / "tool"
+        (tool_dir / "a" / ".git").mkdir(parents=True)
+        (tool_dir / "b" / ".git").mkdir(parents=True)
+
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
+        res = zoner.classify_item(str(tool_dir))
+        self.assertEqual(
+            res,
+            (
+                "05_Dev_Toolbox",
+                os.path.join("05_Dev_Toolbox", "tool"),
+                "Detected tool/utility folder naming",
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

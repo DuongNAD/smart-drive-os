@@ -352,14 +352,6 @@ class AutoZoner:
             if any(ind in entries for ind in self.PROJECT_INDICATORS):
                 return ("03_Development_Projects", os.path.join("03_Development_Projects", base_name), "Detected development project indicator")
 
-            child_projects = self._count_child_projects(item_path)
-            if child_projects >= 2:
-                return (
-                    "03_Development_Projects",
-                    os.path.join("03_Development_Projects", base_name),
-                    f"Folder of {child_projects} development projects",
-                )
-
             tokens = self._folder_name_tokens(base_name)
             if tokens & self.AI_MODEL_FOLDER_TOKENS:
                 return ("01_AI_Models", os.path.join("01_AI_Models", base_name), "Detected AI model folder naming")
@@ -372,6 +364,14 @@ class AutoZoner:
 
             if tokens & self.ARCHIVE_FOLDER_TOKENS:
                 return ("06_Archives_Storage", os.path.join("06_Archives_Storage", base_name), "Detected archive/backup folder naming")
+
+            child_projects = self._count_child_projects(item_path)
+            if child_projects >= 2:
+                return (
+                    "03_Development_Projects",
+                    os.path.join("03_Development_Projects", base_name),
+                    f"Folder of {child_projects} development projects",
+                )
 
             return None
 
