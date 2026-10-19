@@ -453,6 +453,29 @@ class TestQuarantineEngine(SmartDriveTestCase):
         self.assertEqual(batches[0]["batch_id"], "20260515-143025")
         self.assertIn("2026-05-15 14:30:25", batches[0]["local_time"])
 
+    def test_unknown_tier_items_are_quarantined(self) -> None:
+        root = self.test_dir
+        f_dict = root / "Thumbs.db"
+        f_dict.write_bytes(b"dict_no_tier")
+        f_direct = root / "custom_item.dat"
+        f_direct.write_bytes(b"direct_no_tier")
+
+        eng = PurgeEngine(str(root), dry_run=False, quarantine=True)
+        # 1) purge_items with dict lacking "tier" -> quarantined (even if name matches Tier 1)
+        summary = eng.purge_items([{"path": str(f_dict), "size": 12, "is_dir": False}])
+        self.assertEqual(summary.quarantined_count, 1)
+        self.assertEqual(summary.deleted_count, 0)
+
+        # 2) delete_file(path) without passing tier -> quarantined
+        rec = eng.delete_file(str(f_direct))
+        self.assertEqual(rec.status, "QUARANTINED")
+        self.assertIsNone(rec.tier)
+
+        self.assertIsNotNone(eng.batch_id)
+        batch_dir = root / ".smart_drive" / "quarantine" / str(eng.batch_id)
+        self.assertTrue((batch_dir / "Thumbs.db").is_file())
+        self.assertTrue((batch_dir / "custom_item.dat").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()
