@@ -34,6 +34,10 @@ from smart_drive.core.relink import (
     running_agents,
 )
 from tests.helpers import SmartDriveTestCase, run_smart_drive_cli
+import smart_drive.core.relink as relink_core
+
+# setUp replaces the process listing; tests that need the real parser restore this one
+_REAL_RUNNING_PROCESSES = relink_core._running_processes
 
 try:
     import tomllib
@@ -1677,6 +1681,43 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(rc, 0, err_buf.getvalue())
         self.assertEqual(json.loads(out_buf.getvalue())["relink"]["agents"], {"Claude Code": 1})
         self.assertIn("Waiting for Claude Code to close", err_buf.getvalue())
+
+    def test_39_wait_keeps_waiting_while_the_process_list_cannot_be_read(self) -> None:
+        drive = self.create_mock_drive()
+        old_dir, new_dir = drive / "ps_app", drive / "03_Development_Projects" / "ps_app"
+        new_dir.mkdir(parents=True, exist_ok=True)
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(json.dumps({"projects": {str(old_dir): {}}}), encoding="utf-8")
+
+        # What ps / tasklist answers on each call: Claude runs, the listing times out, Claude has closed
+        listings: list = ["claude\n", subprocess.TimeoutExpired("ps", 10), "zsh\n", "zsh\n"]
+        real_run = subprocess.run
+
+        def fake_run(cmd, *args, **kwargs):
+            if cmd[0] not in ("ps", "tasklist"):
+                return real_run(cmd, *args, **kwargs)
+            answer = listings.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return subprocess.CompletedProcess(cmd, 0, stdout=answer, stderr="")
+
+        sleeps: list[float] = []
+        err_buf = io.StringIO()
+        with (
+            patch.dict(os.environ, self._cli_env()),
+            patch("smart_drive.core.relink._running_processes", new=_REAL_RUNNING_PROCESSES),
+            patch("smart_drive.core.relink.subprocess.run", side_effect=fake_run),
+            patch("smart_drive.cli.cmd_relink.time.sleep", side_effect=sleeps.append),
+            patch("smart_drive.cli.cmd_relink.time.monotonic", side_effect=[0.0, 2.0, 4.0]),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err_buf),
+        ):
+            rc = cli_main(["relink", str(old_dir), str(new_dir), "--wait", "--root", str(drive)])
+
+        self.assertEqual(rc, 0, err_buf.getvalue())
+        # The listing that timed out did not count as "closed": relink polled again before writing
+        self.assertEqual(sleeps, [2, 2])
+        self.assertIn(str(new_dir), json.loads(claude_file.read_text(encoding="utf-8"))["projects"])
 
 
 if __name__ == "__main__":
