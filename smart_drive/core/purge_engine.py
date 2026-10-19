@@ -8,6 +8,7 @@ and JSON audit logging.
 
 from __future__ import annotations
 
+import calendar
 import json
 import logging
 import os
@@ -256,14 +257,15 @@ class SecurityGuard:
 # ---------------------------------------------------------------------------
 
 class PurgeEngine:
-    """Safe deletion orchestrator featuring dry-run simulation, permission clearing, and auditing.
+    """Safe deletion orchestrator featuring dry-run simulation, quarantine, permission clearing, and auditing.
 
     Key Features:
-    1. Default `--dry-run`: safe by default, unlinks files ONLY when explicit dry_run=False.
-    2. Boundary guard: intercepts all operations through SecurityGuard before touching disk.
-    3. Windows read-only clearing: strips `stat.S_IWRITE` before unlinking to prevent Win32 PermissionErrors.
-    4. Anti-indexing restoration: ensures `.metadata_never_index` and `.fseventsd/no_log` exist post-purge.
-    5. JSON audit logging: structured trail of every simulated or executed unlinking.
+    1. Default `--dry-run`: safe by default, moves/unlinks files ONLY when explicit dry_run=False.
+    2. Default quarantine: moves items into `<root>/.smart_drive/quarantine/<YYYYmmdd-HHMMSS>/` with `manifest.json`.
+    3. Boundary guard: intercepts all operations through SecurityGuard before touching disk.
+    4. Windows read-only clearing: strips `stat.S_IWRITE` before unlinking to prevent Win32 PermissionErrors.
+    5. Anti-indexing restoration: ensures `.metadata_never_index` and `.fseventsd/no_log` exist post-purge.
+    6. JSON audit logging: structured trail of every simulated or executed unlinking.
     """
 
     def __init__(
@@ -271,6 +273,8 @@ class PurgeEngine:
         drive_root: Union[str, SecurityGuard],
         dry_run: bool = True,
         cluster_size: int = CLUSTER_SIZE_BYTES,
+        quarantine: bool = True,
+        batch_id: Optional[str] = None,
     ) -> None:
         if isinstance(drive_root, SecurityGuard):
             self.guard = drive_root
@@ -280,7 +284,113 @@ class PurgeEngine:
             self.guard = SecurityGuard(self.drive_root)
         self.dry_run = dry_run
         self.cluster_size = cluster_size
+        self.quarantine = quarantine
+        self.batch_id = batch_id
+        self.quarantine_manifest: List[Dict[str, Any]] = []
         self.audit_records: List[DeletionRecord] = []
+
+    def quarantine_root(self) -> str:
+        """Returns `<root>/.smart_drive/quarantine`."""
+        return os.path.join(self.drive_root, ".smart_drive", "quarantine")
+
+    def _ensure_batch_id(self) -> str:
+        """Lazily assigns a unique `<YYYYmmdd-HHMMSS>` quarantine batch ID for this engine instance."""
+        if self.batch_id:
+            return self.batch_id
+        base = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+        q_root = self.quarantine_root()
+        candidate = base
+        idx = 1
+        while os.path.exists(os.path.join(q_root, candidate)):
+            candidate = f"{base}-{idx:02d}"
+            idx += 1
+        self.batch_id = candidate
+        return self.batch_id
+
+    def _cleanup_empty_quarantine_dirs(self, start_dir: str) -> None:
+        """Removes empty intermediate directories inside `.smart_drive/quarantine` after a failed rename."""
+        q_root = os.path.abspath(self.quarantine_root())
+        curr = os.path.abspath(start_dir)
+        while curr and curr != q_root and curr.startswith(q_root):
+            try:
+                os.rmdir(curr)
+            except OSError:
+                break
+            curr = os.path.dirname(curr)
+        try:
+            os.rmdir(q_root)
+        except OSError:
+            pass
+
+    def _quarantine_item(
+        self,
+        real_path: str,
+        rel_path: str,
+        size: int = 0,
+        tier: Optional[int] = None,
+        is_dir: bool = False,
+    ) -> str:
+        """Moves a file or directory to `.smart_drive/quarantine/<batch>/<rel_path>` via `os.rename` and updates `manifest.json`.
+
+        If `os.rename` fails, the item is NEVER deleted and an exception is raised.
+        """
+        if not os.path.lexists(real_path):
+            return ""
+        if is_dir and os.path.islink(real_path):
+            raise OSError("refusing to remove a directory tree through a symlink")
+
+        rel_parts = [p for p in rel_path.replace("\\", "/").split("/") if p and p != "."]
+        if not rel_parts or any(p == ".." for p in rel_parts):
+            raise OSError(f"Invalid relative path for quarantine: {rel_path}")
+
+        batch_id = self._ensure_batch_id()
+        batch_dir = os.path.join(self.quarantine_root(), batch_id)
+        dest_path = os.path.join(batch_dir, *rel_parts)
+        dest_parent = os.path.dirname(dest_path)
+        os.makedirs(dest_parent, exist_ok=True)
+
+        try:
+            os.rename(real_path, dest_path)
+        except PermissionError as first_err:
+            if not is_dir and sys.platform == "win32":
+                mode_before = None
+                try:
+                    mode_before = stat.S_IMODE(os.lstat(real_path).st_mode)
+                    self._add_owner_access(real_path, is_dir=False)
+                    os.rename(real_path, dest_path)
+                except Exception as retry_err:
+                    if mode_before is not None:
+                        try:
+                            os.chmod(real_path, mode_before)
+                        except OSError:
+                            pass
+                    self._cleanup_empty_quarantine_dirs(dest_parent)
+                    raise retry_err
+            else:
+                self._cleanup_empty_quarantine_dirs(dest_parent)
+                if is_dir:
+                    raise OSError(f"directory could not be fully removed ({first_err})") from first_err
+                raise
+        except Exception as exc:
+            self._cleanup_empty_quarantine_dirs(dest_parent)
+            if is_dir:
+                raise OSError(f"directory could not be fully removed ({exc})") from exc
+            raise
+
+        norm_orig = "/".join(rel_parts)
+        quarantined_rel = f".smart_drive/quarantine/{batch_id}/{norm_orig}"
+        entry: Dict[str, Any] = {
+            "original": norm_orig,
+            "quarantined": quarantined_rel,
+            "size": int(size),
+            "tier": int(tier) if tier is not None else None,
+            "is_dir": bool(is_dir),
+        }
+        self.quarantine_manifest.append(entry)
+        manifest_path = os.path.join(batch_dir, "manifest.json")
+        with open(manifest_path, "w", encoding="utf-8") as mf:
+            json.dump(self.quarantine_manifest, mf, indent=2, ensure_ascii=False)
+        return quarantined_rel
 
     def _normalize_rel_path(self, target_path: str) -> str:
         """Computes relative path from drive root using '/'."""
@@ -408,7 +518,7 @@ class PurgeEngine:
         return False, record.reason
 
     def delete_file(self, file_path: str, size: int = 0, tier: Optional[int] = None) -> DeletionRecord:
-        """Safely deletes or simulates deletion of a regular file.
+        """Safely deletes (or quarantines) or simulates deletion of a regular file.
 
         Args:
             file_path: Absolute or relative file path.
@@ -431,6 +541,11 @@ class PurgeEngine:
         allocated = calculate_allocated_bytes(size, self.cluster_size)
 
         base_name = os.path.basename(real_path)
+        if tier is not None:
+            try:
+                tier = int(tier)
+            except (ValueError, TypeError):
+                tier = None
         if tier is None:
             rule = match_junk_rule(base_name, is_dir=False, max_tier=JunkTier.TIER_3_SENSITIVE)
             if rule is not None:
@@ -470,8 +585,13 @@ class PurgeEngine:
             return record
 
         try:
+            if ".." in Path(file_path).parts:
+                raise OSError("refusing to remove a file path named with '..'")
             if os.path.exists(real_path) or os.path.islink(real_path):
-                self._make_writable_and_remove_file(real_path)
+                if self.quarantine:
+                    self._quarantine_item(real_path, rel_path, size=size, tier=tier, is_dir=False)
+                else:
+                    self._make_writable_and_remove_file(real_path)
             record = DeletionRecord(
                 path=real_path,
                 rel_path=rel_path,
@@ -479,13 +599,14 @@ class PurgeEngine:
                 allocated_size=allocated,
                 is_dir=False,
                 status="DELETED",
-                reason="Purged successfully",
+                reason="Quarantined successfully" if self.quarantine else "Purged successfully",
                 timestamp=ts,
                 tier=tier,
             )
             self.audit_records.append(record)
             return record
         except Exception as exc:
+            action_word = "quarantine" if self.quarantine else "unlink"
             record = DeletionRecord(
                 path=real_path,
                 rel_path=rel_path,
@@ -493,7 +614,7 @@ class PurgeEngine:
                 allocated_size=allocated,
                 is_dir=False,
                 status="FAILED",
-                reason=f"Failed to unlink: {exc}",
+                reason=f"Failed to {action_word}: {exc}",
                 timestamp=ts,
                 tier=tier,
                 error=str(exc),
@@ -502,7 +623,7 @@ class PurgeEngine:
             return record
 
     def delete_dir(self, dir_path: str, tier: Optional[int] = None) -> DeletionRecord:
-        """Safely deletes or simulates deletion of a directory tree.
+        """Safely deletes (or quarantines) or simulates deletion of a directory tree.
 
         Args:
             dir_path: Absolute or relative directory path.
@@ -517,6 +638,11 @@ class PurgeEngine:
         rel_path = self._normalize_rel_path(real_path)
 
         base_name = os.path.basename(real_path)
+        if tier is not None:
+            try:
+                tier = int(tier)
+            except (ValueError, TypeError):
+                tier = None
         if tier is None:
             rule = match_junk_rule(base_name, is_dir=True, max_tier=JunkTier.TIER_3_SENSITIVE)
             if rule is not None:
@@ -556,8 +682,13 @@ class PurgeEngine:
             return record
 
         try:
-            if os.path.exists(real_path):
-                self._make_writable_and_remove_dir(real_path)
+            if ".." in Path(dir_path).parts:
+                raise OSError("refusing to remove a directory tree named with '..' (it may resolve elsewhere)")
+            if os.path.lexists(real_path):
+                if self.quarantine:
+                    self._quarantine_item(real_path, rel_path, size=0, tier=tier, is_dir=True)
+                else:
+                    self._make_writable_and_remove_dir(real_path)
             record = DeletionRecord(
                 path=real_path,
                 rel_path=rel_path,
@@ -565,7 +696,7 @@ class PurgeEngine:
                 allocated_size=0,
                 is_dir=True,
                 status="DELETED",
-                reason="Purged directory tree successfully",
+                reason="Quarantined directory tree successfully" if self.quarantine else "Purged directory tree successfully",
                 timestamp=ts,
                 tier=tier,
             )
@@ -695,10 +826,303 @@ class PurgeEngine:
         return str(out_path)
 
 
+# ---------------------------------------------------------------------------
+# Quarantine Management Helpers
+# ---------------------------------------------------------------------------
+
+def _batch_timestamp(batch_dir: str) -> float:
+    """Computes the creation timestamp (epoch seconds) of a quarantine batch directory."""
+    batch_name = os.path.basename(batch_dir)
+    parsed_ts: Optional[float] = None
+    if len(batch_name) >= 15 and batch_name[8] == "-":
+        try:
+            tm = time.strptime(batch_name[:15], "%Y%m%d-%H%M%S")
+            parsed_ts = float(calendar.timegm(tm))
+        except ValueError:
+            parsed_ts = None
+
+    try:
+        dir_mtime = float(os.path.getmtime(batch_dir))
+    except OSError:
+        dir_mtime = parsed_ts if parsed_ts is not None else time.time()
+
+    manifest_path = os.path.join(batch_dir, "manifest.json")
+    if os.path.isfile(manifest_path):
+        try:
+            dir_mtime = min(dir_mtime, float(os.path.getmtime(manifest_path)))
+        except OSError:
+            pass
+
+    if parsed_ts is not None:
+        return min(parsed_ts, dir_mtime)
+    return dir_mtime
+
+
+def _load_batch_manifest(batch_dir: str, batch_id: str) -> List[Dict[str, Any]]:
+    """Loads `manifest.json` from a quarantine batch folder, or reconstructs it if missing."""
+    manifest_path = os.path.join(batch_dir, "manifest.json")
+    if os.path.isfile(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict) and isinstance(data.get("items"), list):
+                return data["items"]
+        except Exception:
+            pass
+
+    reconstructed: List[Dict[str, Any]] = []
+    for curr, _, files in os.walk(batch_dir):
+        for fname in files:
+            if curr == batch_dir and fname == "manifest.json":
+                continue
+            full = os.path.join(curr, fname)
+            rel = os.path.relpath(full, batch_dir).replace("\\", "/")
+            try:
+                sz = os.path.getsize(full)
+            except OSError:
+                sz = 0
+            reconstructed.append({
+                "original": rel,
+                "quarantined": f".smart_drive/quarantine/{batch_id}/{rel}",
+                "size": sz,
+                "tier": None,
+                "is_dir": False,
+            })
+    return reconstructed
+
+
+def list_quarantine_batches(drive_root: str) -> List[Dict[str, Any]]:
+    """Lists all quarantine batches under `<root>/.smart_drive/quarantine/` sorted oldest to newest."""
+    real_root = os.path.realpath(os.path.abspath(drive_root))
+    q_root = os.path.join(real_root, ".smart_drive", "quarantine")
+    if not os.path.isdir(q_root):
+        return []
+
+    batches: List[Dict[str, Any]] = []
+    try:
+        with os.scandir(q_root) as it:
+            for entry in it:
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                items = _load_batch_manifest(entry.path, entry.name)
+                ts = _batch_timestamp(entry.path)
+                total_bytes = sum(int(i.get("size", 0) or 0) for i in items)
+                batches.append({
+                    "batch_id": entry.name,
+                    "path": entry.path,
+                    "timestamp": ts,
+                    "item_count": len(items),
+                    "total_bytes": total_bytes,
+                    "items": items,
+                })
+    except OSError:
+        return []
+
+    batches.sort(key=lambda b: (b["timestamp"], b["batch_id"]))
+    return batches
+
+
+def restore_quarantine_batch(drive_root: str, batch_id: str = "latest") -> Dict[str, Any]:
+    """Restores items from `<batch_id>` (or `'latest'`) back to their original paths without overwriting existing files."""
+    real_root = os.path.realpath(os.path.abspath(drive_root))
+    batches = list_quarantine_batches(real_root)
+    if not batches:
+        return {
+            "ok": False,
+            "batch_id": batch_id,
+            "restored_count": 0,
+            "skipped_count": 0,
+            "failed_count": 0,
+            "items": [],
+            "error": "No quarantine batches found",
+        }
+
+    if batch_id == "latest":
+        target = batches[-1]
+    else:
+        matched = [b for b in batches if b["batch_id"] == batch_id]
+        if not matched:
+            return {
+                "ok": False,
+                "batch_id": batch_id,
+                "restored_count": 0,
+                "skipped_count": 0,
+                "failed_count": 0,
+                "items": [],
+                "error": f"Quarantine batch not found: {batch_id}",
+            }
+        target = matched[0]
+
+    batch_dir = target["path"]
+    actual_id = target["batch_id"]
+    results: List[Dict[str, Any]] = []
+    remaining: List[Dict[str, Any]] = []
+    restored_count = 0
+    skipped_count = 0
+    failed_count = 0
+
+    for item in target["items"]:
+        orig_rel = str(item.get("original", "")).replace("\\", "/").strip("/")
+        rel_parts = [p for p in orig_rel.split("/") if p and p != "."]
+        if not rel_parts or any(p == ".." for p in rel_parts):
+            failed_count += 1
+            results.append({
+                "original": orig_rel,
+                "restored": False,
+                "status": "FAILED",
+                "reason": "Invalid relative path in manifest",
+            })
+            remaining.append(item)
+            continue
+
+        orig_abs = os.path.join(real_root, *rel_parts)
+        quar_abs = os.path.join(batch_dir, *rel_parts)
+
+        if os.path.lexists(orig_abs):
+            skipped_count += 1
+            results.append({
+                "original": orig_rel,
+                "restored": False,
+                "status": "SKIPPED_EXISTS",
+                "reason": "Destination already exists; refusing to overwrite",
+            })
+            remaining.append(item)
+            continue
+
+        if not os.path.lexists(quar_abs):
+            failed_count += 1
+            results.append({
+                "original": orig_rel,
+                "restored": False,
+                "status": "FAILED",
+                "reason": "Quarantined file/directory missing on disk",
+            })
+            continue
+
+        try:
+            os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
+            os.rename(quar_abs, orig_abs)
+            restored_count += 1
+            results.append({
+                "original": orig_rel,
+                "restored": True,
+                "status": "RESTORED",
+                "reason": "Restored to original path",
+            })
+        except Exception as exc:
+            failed_count += 1
+            results.append({
+                "original": orig_rel,
+                "restored": False,
+                "status": "FAILED",
+                "reason": str(exc),
+            })
+            remaining.append(item)
+
+    manifest_path = os.path.join(batch_dir, "manifest.json")
+    if remaining:
+        try:
+            with open(manifest_path, "w", encoding="utf-8") as mf:
+                json.dump(remaining, mf, indent=2, ensure_ascii=False)
+        except OSError:
+            pass
+    else:
+        try:
+            if os.path.exists(manifest_path):
+                os.unlink(manifest_path)
+        except OSError:
+            pass
+        for curr, dirs, files in os.walk(batch_dir, topdown=False):
+            for d in dirs:
+                try:
+                    os.rmdir(os.path.join(curr, d))
+                except OSError:
+                    pass
+        try:
+            os.rmdir(batch_dir)
+        except OSError:
+            pass
+
+    return {
+        "ok": failed_count == 0,
+        "batch_id": actual_id,
+        "restored_count": restored_count,
+        "skipped_count": skipped_count,
+        "failed_count": failed_count,
+        "items": results,
+    }
+
+
+def purge_quarantine_batches(
+    drive_root: str,
+    older_than_days: float = 0.0,
+    dry_run: bool = True,
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Previews or permanently deletes quarantine batches older than `older_than_days`."""
+    real_root = os.path.realpath(os.path.abspath(drive_root))
+    now_ts = float(now) if now is not None else time.time()
+    cutoff = now_ts - float(older_than_days) * 86400.0
+    batches = list_quarantine_batches(real_root)
+    engine = PurgeEngine(real_root, dry_run=dry_run, quarantine=False)
+
+    matched: List[Dict[str, Any]] = []
+    kept_count = 0
+    for b in batches:
+        if b["timestamp"] <= cutoff:
+            if dry_run:
+                matched.append({
+                    "batch_id": b["batch_id"],
+                    "item_count": b["item_count"],
+                    "total_bytes": b["total_bytes"],
+                    "purged": False,
+                    "status": "SIMULATED",
+                })
+            else:
+                try:
+                    engine._make_writable_and_remove_dir(b["path"])
+                    matched.append({
+                        "batch_id": b["batch_id"],
+                        "item_count": b["item_count"],
+                        "total_bytes": b["total_bytes"],
+                        "purged": True,
+                        "status": "PURGED",
+                    })
+                except Exception as exc:
+                    matched.append({
+                        "batch_id": b["batch_id"],
+                        "item_count": b["item_count"],
+                        "total_bytes": b["total_bytes"],
+                        "purged": False,
+                        "status": "FAILED",
+                        "error": str(exc),
+                    })
+        else:
+            kept_count += 1
+
+    purged_count = sum(1 for m in matched if m["status"] in ("PURGED", "SIMULATED"))
+    failed_count = sum(1 for m in matched if m["status"] == "FAILED")
+    return {
+        "root": real_root,
+        "dry_run": dry_run,
+        "older_than_days": float(older_than_days),
+        "matched_count": len(matched),
+        "purged_count": purged_count,
+        "failed_count": failed_count,
+        "kept_count": kept_count,
+        "batches": matched,
+    }
+
+
 __all__ = [
     "SecurityViolationError",
     "DeletionRecord",
     "PurgeSummary",
     "SecurityGuard",
     "PurgeEngine",
+    "list_quarantine_batches",
+    "restore_quarantine_batch",
+    "purge_quarantine_batches",
 ]

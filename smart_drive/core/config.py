@@ -208,6 +208,8 @@ PROTECTED_ROOT_DIRS: FrozenSet[str] = frozenset({
     "smart_drive_os",
     "smart_drive",
     "smart_drive_manager",
+    ".smart_drive",
+    ".smart_drive_manager",
 })
 
 _TAXONOMY_DIRS_LOWER: FrozenSet[str] = frozenset(t.lower() for t in PROTECTED_CORE_TAXONOMIES)
