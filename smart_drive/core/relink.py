@@ -95,6 +95,14 @@ def _running_processes() -> Optional[Set[str]]:
     return names
 
 
+def _labels_of(process_name: str) -> Set[str]:
+    """The coding agent labels a process name such as claude, Claude.exe or /usr/bin/codex stands for."""
+    base = os.path.basename(str(process_name).strip().replace("\\", "/")).casefold()
+    if base.endswith(".exe"):
+        base = base[:-4]
+    return set(AGENT_PROCESSES.get(base, ()))
+
+
 def _running_agent_labels() -> Optional[Set[str]]:
     """Labels of the coding agents whose application is running, or None if the process list is unreadable."""
     try:
@@ -105,13 +113,44 @@ def _running_agent_labels() -> Optional[Set[str]]:
         return None
     active: Set[str] = set()
     for raw in raw_names:
-        base = os.path.basename(str(raw).strip().replace("\\", "/")).casefold()
-        if base.endswith(".exe"):
-            base = base[:-4]
-        labels = AGENT_PROCESSES.get(base)
-        if labels:
-            active.update(labels)
+        active |= _labels_of(raw)
     return active
+
+
+def calling_agents() -> Set[str]:
+    """Labels of the coding agents this process runs under (POSIX process tree; CLAUDECODE everywhere).
+
+    relink cannot wait for these to close: they are waiting for relink.
+    """
+    labels = set(AGENT_PROCESSES["claude"]) if os.environ.get("CLAUDECODE") else set()
+    if sys.platform == "win32":
+        return labels
+    try:
+        done = subprocess.run(
+            ["ps", "-A", "-o", "pid=,ppid=,comm="],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            stdin=subprocess.DEVNULL,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return labels
+    parents: Dict[int, Tuple[int, str]] = {}
+    for line in done.stdout.splitlines():
+        fields = line.split(None, 2)
+        if len(fields) == 3 and fields[0].isdigit() and fields[1].isdigit():
+            parents[int(fields[0])] = (int(fields[1]), fields[2])
+    pid = os.getpid()
+    seen: Set[int] = set()
+    while pid in parents and pid not in seen:
+        seen.add(pid)
+        pid = parents[pid][0]
+        if pid in parents:
+            labels |= _labels_of(parents[pid][1])
+    return labels
 
 
 def running_agents() -> Set[str]:
@@ -1841,6 +1880,7 @@ __all__ = [
     "AGENT_PROCESSES",
     "running_agents",
     "agents_still_running",
+    "calling_agents",
     "PathMapper",
     "claude_slug",
     "AgentFile",
