@@ -1792,6 +1792,21 @@ class TestRelink(SmartDriveTestCase):
 
         self.assertEqual([(e.old, e.new, e.kind) for e in entries], [(str(old_server), str(new_server), "same-name")])
 
+    def test_42_find_moved_matches_names_in_either_unicode_form(self) -> None:
+        drive = self.test_dir / "drive_nfd"
+        # On disk the way macOS lists exFAT names (decomposed); agents remember them composed
+        new_dir = drive / "02_Code" / unicodedata.normalize("NFD", "Dự án web")
+        (new_dir / unicodedata.normalize("NFD", "Tài liệu")).mkdir(parents=True)
+        old_dir = unicodedata.normalize("NFC", str(drive / "Dự án web"))
+        (self.fake_home / ".claude.json").write_text(
+            json.dumps({"projects": {old_dir: {}, unicodedata.normalize("NFC", old_dir + os.sep + "Tài liệu"): {}}}),
+            encoding="utf-8",
+        )
+
+        entries = find_moved(root=str(drive), home=self.fake_home, skip_dirs=[])
+
+        self.assertEqual([(e.old, e.new, e.kind) for e in entries], [(old_dir, str(new_dir), "same-name")])
+
 
 if __name__ == "__main__":
     unittest.main()
