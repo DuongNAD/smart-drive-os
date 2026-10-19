@@ -2257,6 +2257,52 @@ class TestRelink(SmartDriveTestCase):
         # --apply relinks (and asks) itself, so it points nowhere
         self.assertEqual(footer({**name_only, **ambiguous}, "--apply"), [])
 
+    @unittest.skipUnless(shutil.which("git"), "git is required for nested worktree repair test")
+    def test_31_nested_repo_worktree_repaired_when_container_moved(self) -> None:
+        old_container = self.test_dir / "container"
+        old_repo = old_container / "repoA"
+        new_container = self.test_dir / "03_Development_Projects" / "container"
+        old_repo.mkdir(parents=True)
+        new_container.parent.mkdir(parents=True, exist_ok=True)
+
+        external_wt = self.fake_home / ".codex" / "worktrees" / "wt_ext"
+        external_wt.parent.mkdir(parents=True, exist_ok=True)
+
+        def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                ["git", "-C", str(cwd), *args],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=True,
+            )
+
+        _git(old_repo, "init")
+        _git(old_repo, "config", "user.email", "test@example.com")
+        _git(old_repo, "config", "user.name", "Test User")
+        (old_repo / "README.md").write_text("# Nested repo\n", encoding="utf-8")
+        _git(old_repo, "add", "README.md")
+        _git(old_repo, "commit", "-m", "initial")
+        _git(old_repo, "worktree", "add", str(external_wt), "-b", "wt-ext")
+
+        os.rename(old_container, new_container)
+        report = relink(
+            [(str(old_container), str(new_container))],
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+        )
+        new_repo = new_container / "repoA"
+        self.assertIn(str(new_repo), report.worktrees)
+
+        status_proc = subprocess.run(
+            ["git", "-C", str(external_wt), "status"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(status_proc.returncode, 0, status_proc.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

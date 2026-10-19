@@ -1550,25 +1550,87 @@ def _run_git_repair(git_bin: str, repo_dir: Path, extra_args: Sequence[str], rep
     return False
 
 
+_WORKTREE_SKIP_DIRS: Set[str] = {
+    "node_modules",
+    ".venv",
+    "venv",
+    "env",
+    "__pycache__",
+    "target",
+    "dist",
+    "build",
+    "system volume information",
+}
+_MAX_WORKTREE_SCAN_DIRS = 200
+
+
+def _collect_worktree_candidate_dirs(
+    candidates: Sequence[str],
+    max_depth: int = 2,
+    max_dirs: int = _MAX_WORKTREE_SCAN_DIRS,
+) -> List[Path]:
+    """Returns existing directories from candidates plus nested subdirectories up to max_depth."""
+    unique_dirs: List[Path] = []
+    seen: Set[str] = set()
+
+    def _add(p: Path) -> bool:
+        norm = str(p).rstrip("\\/") if len(str(p)) > 3 else str(p)
+        key = norm.casefold() if _CASE_INSENSITIVE else norm
+        if key in seen:
+            return False
+        seen.add(key)
+        unique_dirs.append(Path(norm))
+        return True
+
+    for path_str in candidates:
+        if not path_str:
+            continue
+        norm = path_str.rstrip("\\/") if len(path_str) > 3 else path_str
+        root_path = Path(norm)
+        if not _is_dir(root_path):
+            continue
+        _add(root_path)
+
+        scanned = 0
+        queue: List[Tuple[Path, int]] = [(root_path, 0)]
+        while queue and scanned < max_dirs:
+            cur_dir, depth = queue.pop(0)
+            if depth >= max_depth:
+                continue
+            try:
+                with os.scandir(cur_dir) as it:
+                    entries = sorted(list(it), key=lambda e: e.name.casefold())
+            except OSError:
+                continue
+            for entry in entries:
+                name = entry.name
+                if not name or name.startswith((".", "$")) or name.casefold() in _WORKTREE_SKIP_DIRS:
+                    continue
+                if _is_link_entry(entry):
+                    continue
+                try:
+                    if not entry.is_dir(follow_symlinks=False):
+                        continue
+                except OSError:
+                    continue
+                scanned += 1
+                child_path = Path(entry.path)
+                _add(child_path)
+                if scanned >= max_dirs:
+                    break
+                if depth + 1 < max_depth:
+                    queue.append((child_path, depth + 1))
+
+    return unique_dirs
+
+
 def _repair_worktrees(
     new_candidates: Sequence[str],
     mapper: PathMapper,
     report: RelinkReport,
 ) -> None:
-    """Repairs git worktrees for moved repositories and linked worktrees."""
-    unique_dirs: List[Path] = []
-    seen: Set[str] = set()
-    for path_str in new_candidates:
-        if not path_str:
-            continue
-        norm = path_str.rstrip("\\/") if len(path_str) > 3 else path_str
-        key = norm.casefold() if _CASE_INSENSITIVE else norm
-        if key in seen:
-            continue
-        seen.add(key)
-        p = Path(norm)
-        if _is_dir(p):
-            unique_dirs.append(p)
+    """Repairs git worktrees for moved repositories and linked worktrees (including nested repos up to depth 2)."""
+    unique_dirs = _collect_worktree_candidate_dirs(new_candidates)
 
     main_repos: List[Tuple[Path, List[str]]] = []
     linked_worktrees: List[Path] = []
