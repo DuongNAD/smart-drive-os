@@ -200,6 +200,19 @@ CLAUDE_MD_TEMPLATE = """# CLAUDE.md - AI Coding Instructions for SSD Workspace
 """
 
 
+def find_enclosing_code_dir(path: str) -> Optional[str]:
+    """Returns the enclosing directory that contains a `smart_drive/` package folder, if any."""
+    curr = os.path.abspath(path)
+    while True:
+        if os.path.isdir(os.path.join(curr, "smart_drive")):
+            return curr
+        parent = os.path.dirname(curr)
+        if not parent or parent == curr:
+            break
+        curr = parent
+    return None
+
+
 class DriveInitializer:
     """Initializes drive root with taxonomies, shields, manifests, and search index."""
 
@@ -219,6 +232,12 @@ class DriveInitializer:
     ) -> Dict[str, Any]:
         """Initializes target path with selected profile."""
         root = os.path.abspath(target_path or self.target_path)
+        code_dir = find_enclosing_code_dir(root)
+        if code_dir is not None:
+            raise ValueError(
+                f"Refusing to initialize SmartDrive workspace inside code directory '{code_dir}' "
+                "(contains 'smart_drive/'). Initialize the volume root instead."
+            )
         os.makedirs(root, exist_ok=True)
 
         if profile not in PROFILES:

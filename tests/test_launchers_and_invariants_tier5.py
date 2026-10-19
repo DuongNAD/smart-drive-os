@@ -217,6 +217,49 @@ class TestLauncherSecurityAndHardcodedPaths(unittest.TestCase):
                 )
                 self.assertEqual(proc.returncode, 0, f"Quick_Audit.bat failed: {proc.stdout}\n{proc.stderr}")
                 self.assertIn("OBSERVED_SMART_DRIVE_ROOT=\n", proc.stdout.replace("\r\n", "\n"))
+
+                # Launcher copied to drive root (no smart_drive/ beside it) sets SMART_DRIVE_ROOT to drive root
+                root_bat = temp_drive / "Quick_Audit.bat"
+                shutil.copy2(LAUNCHERS_DIR / "Quick_Audit.bat", root_bat)
+                env_with_pypath = dict(env)
+                env_with_pypath["PYTHONPATH"] = str(repo_dir)
+                proc_root = subprocess.run(
+                    ["cmd.exe", "/c", str(root_bat)],
+                    input="\r\n",
+                    text=True,
+                    capture_output=True,
+                    env=env_with_pypath,
+                    cwd=str(temp_drive),
+                    timeout=15,
+                    check=False,
+                )
+                self.assertEqual(proc_root.returncode, 0, f"Root Quick_Audit.bat failed: {proc_root.stdout}\n{proc_root.stderr}")
+                expected_root = os.path.normcase(os.path.abspath(str(temp_drive)).rstrip("\\/"))
+                observed_lines = [
+                    line.split("=", 1)[1]
+                    for line in proc_root.stdout.replace("\r\n", "\n").splitlines()
+                    if line.startswith("OBSERVED_SMART_DRIVE_ROOT=")
+                ]
+                self.assertEqual(len(observed_lines), 1)
+                self.assertEqual(os.path.normcase(os.path.abspath(observed_lines[0]).rstrip("\\/")), expected_root)
+
+                # Pre-set SMART_DRIVE_ROOT is preserved without being overwritten
+                preset_dir = temp_drive / "preset_custom_root"
+                preset_dir.mkdir(exist_ok=True)
+                env_preset = dict(env_with_pypath)
+                env_preset["SMART_DRIVE_ROOT"] = str(preset_dir)
+                proc_preset = subprocess.run(
+                    ["cmd.exe", "/c", str(root_bat)],
+                    input="\r\n",
+                    text=True,
+                    capture_output=True,
+                    env=env_preset,
+                    cwd=str(temp_drive),
+                    timeout=15,
+                    check=False,
+                )
+                self.assertEqual(proc_preset.returncode, 0)
+                self.assertIn(f"OBSERVED_SMART_DRIVE_ROOT={preset_dir}\n", proc_preset.stdout.replace("\r\n", "\n"))
             else:
                 sh_copy = repo_dir / "Quick_Audit.sh"
                 shutil.copy2(LAUNCHERS_DIR / "Quick_Audit.sh", sh_copy)
@@ -232,6 +275,49 @@ class TestLauncherSecurityAndHardcodedPaths(unittest.TestCase):
                 )
                 self.assertEqual(proc.returncode, 0, f"Quick_Audit.sh failed: {proc.stdout}\n{proc.stderr}")
                 self.assertIn("OBSERVED_SMART_DRIVE_ROOT=\n", proc.stdout)
+
+                # Launcher copied to drive root (no smart_drive/ beside it) sets SMART_DRIVE_ROOT to drive root
+                root_sh = temp_drive / "Quick_Audit.sh"
+                shutil.copy2(LAUNCHERS_DIR / "Quick_Audit.sh", root_sh)
+                env_with_pypath = dict(env)
+                env_with_pypath["PYTHONPATH"] = str(repo_dir)
+                proc_root = subprocess.run(
+                    ["/bin/bash", str(root_sh)],
+                    input="\n",
+                    text=True,
+                    capture_output=True,
+                    env=env_with_pypath,
+                    cwd=str(temp_drive),
+                    timeout=15,
+                    check=False,
+                )
+                self.assertEqual(proc_root.returncode, 0, f"Root Quick_Audit.sh failed: {proc_root.stdout}\n{proc_root.stderr}")
+                expected_root = os.path.realpath(str(temp_drive)).rstrip("/")
+                observed_lines = [
+                    line.split("=", 1)[1]
+                    for line in proc_root.stdout.splitlines()
+                    if line.startswith("OBSERVED_SMART_DRIVE_ROOT=")
+                ]
+                self.assertEqual(len(observed_lines), 1)
+                self.assertEqual(os.path.realpath(observed_lines[0]).rstrip("/"), expected_root)
+
+                # Pre-set SMART_DRIVE_ROOT is preserved without being overwritten
+                preset_dir = temp_drive / "preset_custom_root"
+                preset_dir.mkdir(exist_ok=True)
+                env_preset = dict(env_with_pypath)
+                env_preset["SMART_DRIVE_ROOT"] = str(preset_dir)
+                proc_preset = subprocess.run(
+                    ["/bin/bash", str(root_sh)],
+                    input="\n",
+                    text=True,
+                    capture_output=True,
+                    env=env_preset,
+                    cwd=str(temp_drive),
+                    timeout=15,
+                    check=False,
+                )
+                self.assertEqual(proc_preset.returncode, 0)
+                self.assertIn(f"OBSERVED_SMART_DRIVE_ROOT={preset_dir}\n", proc_preset.stdout)
         finally:
             shutil.rmtree(temp_drive, ignore_errors=True)
 

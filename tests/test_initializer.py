@@ -196,6 +196,62 @@ class TestCrossFeatureInteractionsAfterInit(SmartDriveTestCase):
             self.assertEqual(result.total_count, 0)
             self.assertEqual(result.matches, [])
 
+    def test_init_from_repo_on_unmarked_drive_initializes_drive_root_not_repo(self) -> None:
+        """Running init without --root from <drive>/repo on an unmarked drive initializes <drive>, never <drive>/repo."""
+        import argparse
+        import io
+        from unittest.mock import patch
+        from smart_drive.cli.cmd_init import cmd_init
+        from smart_drive.core.fsinfo import FilesystemInfo
+
+        fake_drive = self.test_dir / "fresh_unmarked_drive"
+        repo_dir = fake_drive / "repo"
+        (repo_dir / "smart_drive").mkdir(parents=True)
+        (repo_dir / "smart_drive" / "__init__.py").write_text("", encoding="utf-8")
+
+        fs_info = FilesystemInfo(
+            path=str(repo_dir),
+            fs_type="exfat",
+            block_size=524288,
+            mount_point=str(fake_drive),
+            source="mock",
+        )
+        args = argparse.Namespace(
+            path=None,
+            root=None,
+            profile="general-workspace",
+            force=False,
+            json=False,
+        )
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(repo_dir)
+            with patch.dict(
+                os.environ,
+                {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": "", "SMART_DRIVE_NO_PROBE": "1"},
+                clear=False,
+            ):
+                with patch("smart_drive.cli.cmd_init.detect_filesystem", return_value=fs_info):
+                    buf = io.StringIO()
+                    with patch("sys.stdout", buf):
+                        rc = cmd_init(args)
+                    out = buf.getvalue()
+        finally:
+            os.chdir(old_cwd)
+
+        self.assertEqual(rc, 0, f"cmd_init failed: {out}")
+        self.assertIn(str(fake_drive), out)
+        self.assertTrue((fake_drive / "01_AI_Models").is_dir())
+        self.assertTrue((fake_drive / ".metadata_never_index").is_file())
+        self.assertFalse((repo_dir / "01_AI_Models").exists(), "Must never initialize inside <drive>/repo")
+        self.assertFalse((repo_dir / ".metadata_never_index").exists(), "Must never create shields inside <drive>/repo")
+
+        # Direct initialization inside a directory containing smart_drive/ must be refused
+        with self.assertRaises(ValueError):
+            DriveInitializer(str(repo_dir)).initialize()
+
 
 if __name__ == "__main__":
     unittest.main()
+
