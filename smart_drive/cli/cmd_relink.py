@@ -15,6 +15,7 @@ from smart_drive.core.relink import (
     MovedFolder,
     RelinkReport,
     agents_still_running,
+    calling_agents,
     find_moved,
     last_moves,
     record_moves,
@@ -95,10 +96,20 @@ def print_found(
 def _wait_for_busy_agents(moves: Sequence[Move], root: Optional[str], wait_minutes: float) -> bool:
     """Previews relink and waits for any busy coding agents to close. Returns False on timeout."""
     preview = relink(moves, root=root, dry_run=True)
-    if not preview.agents:
+    affected = set(preview.agents)
+    if not affected:
         return True
+    own = sorted(affected & calling_agents())
+    if own:
+        # An agent that runs this command waits for relink, so relink must not wait for it.
+        them = "it" if len(own) == 1 else "them"
+        sys.stderr.write(
+            f"relink: this command runs inside {', '.join(own)}, so it cannot wait for {them} to close; "
+            f"restart {them} afterwards.\n"
+        )
+        affected -= set(own)
     # An unreadable process list is no proof that the agents closed, so it counts as still running.
-    busy = agents_still_running(preview.agents)
+    busy = agents_still_running(affected)
     if not busy:
         return True
 
@@ -110,7 +121,7 @@ def _wait_for_busy_agents(moves: Sequence[Move], root: Optional[str], wait_minut
             sys.stderr.write(f"relink: timed out waiting for {', '.join(busy)} to close; no files were modified.\n")
             return False
         time.sleep(2)
-        busy = agents_still_running(preview.agents)
+        busy = agents_still_running(affected)
     return True
 
 

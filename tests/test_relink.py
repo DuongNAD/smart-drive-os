@@ -60,8 +60,13 @@ class TestRelink(SmartDriveTestCase):
         self._proc_patcher.start()
         self._temp_patcher = patch("smart_drive.core.relink.tempfile.gettempdir", return_value=str(self.fake_temp))
         self._temp_patcher.start()
+        # The suite itself may run inside a coding agent, which --wait would then skip
+        self._caller_patcher = patch("smart_drive.cli.cmd_relink.calling_agents", return_value=set())
+        self._caller_patcher.start()
 
     def tearDown(self) -> None:
+        if hasattr(self, "_caller_patcher"):
+            self._caller_patcher.stop()
         if hasattr(self, "_temp_patcher"):
             self._temp_patcher.stop()
         if hasattr(self, "_proc_patcher"):
@@ -1717,6 +1722,50 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(rc, 0, err_buf.getvalue())
         # The listing that timed out did not count as "closed": relink polled again before writing
         self.assertEqual(sleeps, [2, 2])
+        self.assertIn(str(new_dir), json.loads(claude_file.read_text(encoding="utf-8"))["projects"])
+
+    def test_40_wait_skips_the_agent_that_runs_relink(self) -> None:
+        # `ps -A -o pid=,ppid=,comm=` as seen from a shell of Claude Code inside Claude desktop
+        tree = (
+            "1 0 /sbin/launchd\n"
+            "500 1 /Applications/Claude.app/Contents/MacOS/Claude\n"
+            "600 500 /Users/me/Library/Application Support/Claude/claude-code/claude.app/Contents/MacOS/claude\n"
+            "650 1 /Applications/Cursor.app/Contents/MacOS/Cursor\n"
+            f"700 600 /bin/zsh\n{os.getpid()} 700 python3\n"
+        )
+        listing = subprocess.CompletedProcess([], 0, stdout=tree, stderr="")
+        with (
+            patch.dict(os.environ, {"CLAUDECODE": ""}),
+            patch.object(sys, "platform", "darwin"),
+            patch("smart_drive.core.relink.subprocess.run", return_value=listing),
+        ):
+            self.assertEqual(relink_core.calling_agents(), {"Claude Code", "Claude desktop"})
+        with patch.dict(os.environ, {"CLAUDECODE": "1"}), patch.object(sys, "platform", "win32"):
+            self.assertEqual(relink_core.calling_agents(), {"Claude Code", "Claude desktop"})
+
+        drive = self.create_mock_drive()
+        old_dir, new_dir = drive / "self_app", drive / "03_Development_Projects" / "self_app"
+        new_dir.mkdir(parents=True, exist_ok=True)
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(json.dumps({"projects": {str(old_dir): {}}}), encoding="utf-8")
+
+        sleeps: list[float] = []
+        err_buf = io.StringIO()
+        with (
+            patch.dict(os.environ, self._cli_env()),
+            patch("smart_drive.cli.cmd_relink.calling_agents", return_value={"Claude Code", "Claude desktop"}),
+            patch("smart_drive.core.relink._running_processes", return_value={"claude"}),
+            patch("smart_drive.cli.cmd_relink.time.sleep", side_effect=sleeps.append),
+            patch("smart_drive.cli.cmd_relink.time.monotonic", side_effect=[0.0, 1e9]),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(err_buf),
+        ):
+            rc = cli_main(["relink", str(old_dir), str(new_dir), "--wait", "--root", str(drive)])
+
+        self.assertEqual(rc, 0, err_buf.getvalue())
+        self.assertEqual(sleeps, [])
+        # Only Claude Code's own file changes here, so only Claude Code is named
+        self.assertIn("runs inside Claude Code, so it cannot wait for it to close", err_buf.getvalue())
         self.assertIn(str(new_dir), json.loads(claude_file.read_text(encoding="utf-8"))["projects"])
 
 
