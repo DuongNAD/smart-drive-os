@@ -1788,6 +1788,204 @@ def _relink_virtualenvs(
             )
 
 
+_PY_QUOTED_STR_RE = re.compile(r"'((?:[^'\\\r\n]|\\.)*)'|\"((?:[^\"\\\r\n]|\\.)*)\"")
+
+
+def _process_editable_finder_file(
+    af: AgentFile,
+    mapper: PathMapper,
+    report: RelinkReport,
+) -> Tuple[Optional[bytes], int]:
+    """Reads and rewrites path literals in a PEP 660 __editable___*_finder.py file."""
+    try:
+        raw_bytes = af.path.read_bytes()
+    except OSError as err:
+        report.errors.append({"file": str(af.path), "error": str(err)})
+        return None, 0
+
+    has_bom = raw_bytes.startswith(b"\xef\xbb\xbf")
+    try:
+        text = raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as err:
+        report.warnings.append(f"{af.path}: invalid UTF-8 ({err})")
+        return None, 0
+
+    if not mapper.mentions(text):
+        return None, 0
+
+    total_count = 0
+
+    def _replace_str(match: re.Match[str]) -> str:
+        nonlocal total_count
+        single = match.group(1)
+        if single is not None:
+            quote = "'"
+            raw_inner = single
+        else:
+            quote = '"'
+            raw_inner = match.group(2) or ""
+        unescaped = raw_inner.replace("\\\\", "\\")
+        mapped = mapper.map(unescaped)
+        if mapped is None:
+            return match.group(0)
+        total_count += 1
+        escaped = mapped.replace("\\", "\\\\") if "\\\\" in raw_inner else mapped
+        return f"{quote}{escaped}{quote}"
+
+    new_text = _PY_QUOTED_STR_RE.sub(_replace_str, text)
+    if total_count == 0:
+        return None, 0
+
+    prefix = b"\xef\xbb\xbf" if has_bom else b""
+    return prefix + new_text.encode("utf-8"), total_count
+
+
+def _global_site_packages(
+    resolved_home: Path,
+    resolved_app_data: Path,
+    use_env: bool,
+    site_packages: Optional[Sequence[Union[str, Path]]] = None,
+) -> List[Path]:
+    """Discovers global and user Python site-packages directories (or returns injected site_packages)."""
+    raw_candidates: List[Path] = []
+    if site_packages is not None:
+        raw_candidates.extend(Path(sp) for sp in site_packages)
+    else:
+        scan_system = use_env
+        if scan_system:
+            try:
+                temp_root = os.path.normcase(os.path.abspath(tempfile.gettempdir()))
+                home_norm = os.path.normcase(os.path.abspath(str(resolved_home)))
+                if home_norm == temp_root or home_norm.startswith(temp_root + os.sep):
+                    scan_system = False
+            except OSError:
+                scan_system = False
+
+        if scan_system:
+            prefixes: List[Path] = [Path(sys.base_prefix), Path(sys.prefix)]
+            if sys.platform == "win32":
+                py_bin = shutil.which("py")
+                if py_bin:
+                    try:
+                        done = subprocess.run(
+                            [py_bin, "-0p"],
+                            capture_output=True,
+                            text=True,
+                            encoding="utf-8",
+                            errors="replace",
+                            timeout=5,
+                            stdin=subprocess.DEVNULL,
+                            check=False,
+                        )
+                        if done.returncode == 0:
+                            for line in done.stdout.splitlines():
+                                m = re.search(r"([A-Za-z]:[\\/].+)$", line)
+                                if m:
+                                    cand = Path(m.group(1).strip().strip('"'))
+                                    pref = cand.parent if cand.suffix.lower() == ".exe" or _is_file(cand) else cand
+                                    prefixes.append(pref)
+                    except (OSError, subprocess.SubprocessError):
+                        pass
+
+            for pref in prefixes:
+                raw_candidates.append(pref / "Lib" / "site-packages")
+                lib_dir = pref / "lib"
+                if _is_dir(lib_dir):
+                    try:
+                        raw_candidates.extend(sorted(lib_dir.glob("python*/site-packages")))
+                    except OSError:
+                        pass
+
+            try:
+                import site as _site_mod
+
+                user_sp = _site_mod.getusersitepackages()
+                if isinstance(user_sp, str) and user_sp:
+                    raw_candidates.append(Path(user_sp))
+            except Exception:
+                pass
+
+        for py_root in (resolved_app_data / "Python", resolved_home / "AppData" / "Roaming" / "Python"):
+            if _is_dir(py_root):
+                try:
+                    raw_candidates.extend(sorted(py_root.glob("Python*/site-packages")))
+                except OSError:
+                    pass
+        local_lib = resolved_home / ".local" / "lib"
+        if _is_dir(local_lib):
+            try:
+                raw_candidates.extend(sorted(local_lib.glob("python*/site-packages")))
+            except OSError:
+                pass
+        mac_py = resolved_home / "Library" / "Python"
+        if _is_dir(mac_py):
+            try:
+                raw_candidates.extend(sorted(mac_py.glob("*/lib/python/site-packages")))
+            except OSError:
+                pass
+
+    deduped: List[Path] = []
+    seen: Set[str] = set()
+    for sp in raw_candidates:
+        if not _is_dir(sp):
+            continue
+        norm = os.path.normcase(os.path.abspath(str(sp)))
+        if norm in seen:
+            continue
+        seen.add(norm)
+        deduped.append(sp)
+    return deduped
+
+
+def _relink_editable_installs(
+    mapper: PathMapper,
+    resolved_home: Path,
+    resolved_app_data: Path,
+    use_env: bool,
+    dry_run: bool,
+    report: RelinkReport,
+    site_packages: Optional[Sequence[Union[str, Path]]] = None,
+) -> None:
+    """Rewrites editable install references (*.pth, __editable__*, direct_url.json, *.egg-link) in global/user site-packages."""
+    for sp in _global_site_packages(resolved_home, resolved_app_data, use_env, site_packages=site_packages):
+        candidates: List[AgentFile] = []
+        try:
+            for f in sorted(sp.glob("*.pth")) + sorted(sp.glob("*.egg-link")):
+                if _is_file(f) and not f.name.endswith(BACKUP_SUFFIX):
+                    candidates.append(AgentFile(path=f, agent="Python editable", kind="lines", backup=True))
+            for f in sorted(sp.glob("__editable___*_finder.py")):
+                if _is_file(f) and not f.name.endswith(BACKUP_SUFFIX):
+                    candidates.append(AgentFile(path=f, agent="Python editable", kind="finder_py", backup=True))
+            for f in sorted(sp.glob("*.dist-info/direct_url.json")):
+                if _is_file(f) and not f.name.endswith(BACKUP_SUFFIX):
+                    candidates.append(AgentFile(path=f, agent="Python editable", kind="json", backup=True))
+        except OSError:
+            continue
+
+        for af in candidates:
+            try:
+                if af.kind == "lines":
+                    new_bytes, count = _process_lines_file(af, mapper, report)
+                elif af.kind == "finder_py":
+                    new_bytes, count = _process_editable_finder_file(af, mapper, report)
+                elif af.kind == "json":
+                    new_bytes, count = _process_json_file(af, mapper, report, [])
+                else:
+                    continue
+                if new_bytes is None or count == 0:
+                    continue
+                if dry_run:
+                    report.updated.append({"file": str(af.path), "agent": af.agent, "paths": count})
+                elif _write_agent_file(af, new_bytes, report):
+                    report.updated.append({"file": str(af.path), "agent": af.agent, "paths": count})
+                else:
+                    report.warnings.append(
+                        f"Could not update editable install {af.path}; run `pip install -e <new_path>`."
+                    )
+            except Exception as err:
+                report.errors.append({"file": str(af.path), "error": str(err)})
+
+
 _PS_UPDATE_SHORTCUT_SCRIPT = (
     "$ErrorActionPreference = 'Stop'; "
     "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
@@ -1949,6 +2147,7 @@ def relink(
     dry_run: bool = False,
     home: Optional[Path] = None,
     app_data: Optional[Path] = None,
+    site_packages: Optional[Sequence[Union[str, Path]]] = None,
 ) -> RelinkReport:
     """Rewrites paths remembered by coding agents after folders have been moved."""
     report = RelinkReport(dry_run=dry_run)
@@ -1956,7 +2155,7 @@ def relink(
     if not mapper:
         return report
 
-    resolved_home, _, use_env = _resolve_locations(home, app_data)
+    resolved_home, resolved_app_data, use_env = _resolve_locations(home, app_data)
     claude_originals: List[str] = []
 
     for af in agent_files(root=root, home=home, app_data=app_data):
@@ -1991,6 +2190,15 @@ def relink(
     history_candidates = [old for old, _ in moves] + claude_originals
     _relink_history(history_candidates, moves, mapper, resolved_home, dry_run, report)
     _relink_shortcuts(moves, mapper, resolved_home, use_env, dry_run, report)
+    _relink_editable_installs(
+        mapper,
+        resolved_home,
+        resolved_app_data,
+        use_env,
+        dry_run,
+        report,
+        site_packages=site_packages,
+    )
 
     if not dry_run:
         worktree_candidates = [new for _, new in moves]

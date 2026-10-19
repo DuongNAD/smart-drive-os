@@ -2326,6 +2326,65 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(report.agents.get("Python venv"), 1)
         self.assertTrue(any(str(venv_dir) in w and "console scripts" in w for w in report.warnings))
 
+    def test_33_global_site_packages_editable_install_relinked(self) -> None:
+        fake_sp = self.test_dir / "global_site_packages"
+        dist_info = fake_sp / "charforge-0.1.0.dist-info"
+        dist_info.mkdir(parents=True)
+
+        pth_file = fake_sp / "__editable__.charforge-0.1.0.pth"
+        pth_file.write_text("E:\\project\\pygmalion-mcp\\src\n", encoding="utf-8")
+
+        direct_url = dist_info / "direct_url.json"
+        direct_url.write_text(
+            '{"dir_info": {"editable": true}, "url": "file:///E:/project/pygmalion-mcp"}\n',
+            encoding="utf-8",
+        )
+
+        finder_py = fake_sp / "__editable___other_0_1_0_finder.py"
+        finder_py.write_text(
+            "MAPPING: dict[str, str] = {'other': 'E:\\\\project\\\\other\\\\src'}\n",
+            encoding="utf-8",
+        )
+
+        egg_link = fake_sp / "legacy.egg-link"
+        egg_link.write_text("E:\\project\\legacy\n.\n", encoding="utf-8")
+
+        dry_report = relink(
+            [("E:\\project", "E:\\03_Development_Projects\\project")],
+            dry_run=True,
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            site_packages=[fake_sp],
+        )
+        self.assertEqual(dry_report.agents.get("Python editable"), 4)
+        self.assertEqual(pth_file.read_text(encoding="utf-8").strip(), "E:\\project\\pygmalion-mcp\\src")
+
+        report = relink(
+            [("E:\\project", "E:\\03_Development_Projects\\project")],
+            dry_run=False,
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            site_packages=[fake_sp],
+        )
+        self.assertEqual(report.agents.get("Python editable"), 4)
+        self.assertEqual(
+            pth_file.read_text(encoding="utf-8").strip(),
+            "E:\\03_Development_Projects\\project\\pygmalion-mcp\\src",
+        )
+        self.assertTrue(Path(str(pth_file) + BACKUP_SUFFIX).is_file())
+        self.assertEqual(
+            json.loads(direct_url.read_text(encoding="utf-8"))["url"],
+            "file:///E:/03_Development_Projects/project/pygmalion-mcp",
+        )
+        self.assertIn(
+            "E:\\\\03_Development_Projects\\\\project\\\\other\\\\src",
+            finder_py.read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            egg_link.read_text(encoding="utf-8").splitlines()[0],
+            "E:\\03_Development_Projects\\project\\legacy",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
