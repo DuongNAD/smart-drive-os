@@ -1972,6 +1972,32 @@ class TestRelink(SmartDriveTestCase):
         entries = find_moved(root=str(drive), home=self.fake_home, app_data=self.fake_appdata)
         self.assertEqual([(e.old, e.new, e.kind) for e in entries], [(str(deleted), str(other), "name-only")])
 
+    def test_50_find_apply_with_nothing_sure_never_says_paths_are_up_to_date(self) -> None:
+        drive = self.test_dir / "drive_unsure"
+        (drive / "02_Code" / "unsure_app").mkdir(parents=True)
+        claude_file = self.fake_home / ".claude.json"
+        claude_file.write_text(
+            json.dumps({"projects": {str(drive / "unsure_app"): {}, str(drive / "gone_app"): {}}}), encoding="utf-8"
+        )
+
+        out_buf = io.StringIO()
+        with patch.dict(os.environ, self._cli_env()), contextlib.redirect_stdout(out_buf):
+            rc = cli_main(["relink", "--find", "--apply", "--root", str(drive)])
+
+        self.assertEqual(rc, 0, out_buf.getvalue())
+        # The agents still remember the two stale folders listed above it
+        self.assertIn("Nothing to relink: no folder is marked ✓.", out_buf.getvalue())
+        self.assertNotIn("all coding agent paths are up to date", out_buf.getvalue())
+
+        claude_file.write_text(json.dumps({"projects": {str(drive / "02_Code" / "unsure_app"): {}}}), encoding="utf-8")
+        out_buf = io.StringIO()
+        with patch.dict(os.environ, self._cli_env()), contextlib.redirect_stdout(out_buf):
+            rc = cli_main(["relink", "--find", "--apply", "--root", str(drive)])
+
+        self.assertEqual(rc, 0, out_buf.getvalue())
+        self.assertIn("No stale paths: every folder the coding agents remember exists.", out_buf.getvalue())
+        self.assertNotIn("Nothing to relink", out_buf.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

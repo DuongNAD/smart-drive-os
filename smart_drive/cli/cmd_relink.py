@@ -159,6 +159,7 @@ def cmd_relink(args: argparse.Namespace) -> int:
 
         entries = find_moved(root=root)
         report: Optional[RelinkReport] = None
+        sure_moves: List[Move] = []
 
         if not as_json:
             print_found(entries, show_apply_footer=not apply_mode)
@@ -186,6 +187,9 @@ def cmd_relink(args: argparse.Namespace) -> int:
                 "skipped_unmounted": dict(getattr(entries, "skipped_unmounted", {})),
             }
             print(json.dumps(payload, indent=2, ensure_ascii=False))
+        elif report is not None and entries and not sure_moves:
+            # print_relink would say every path is up to date, under the stale folders listed above
+            print("  Nothing to relink: no folder is marked ✓.")
         elif report is not None:
             print_relink(report)
 
