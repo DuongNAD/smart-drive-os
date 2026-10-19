@@ -647,6 +647,45 @@ def _process_json_file(
     return serialized, count
 
 
+_TOML_UNESCAPES = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r", '"': '"', "\\": "\\"}
+_TOML_ESCAPES = {value: "\\" + name for name, value in _TOML_UNESCAPES.items()}
+
+
+def _toml_unescape(body: str) -> Optional[str]:
+    """The value of a TOML basic string from its body, or None if the body has an escape TOML 1.0 rejects."""
+    out: List[str] = []
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch != "\\":
+            out.append(ch)
+            i += 1
+            continue
+        name = body[i + 1 : i + 2]
+        if name in _TOML_UNESCAPES:
+            out.append(_TOML_UNESCAPES[name])
+            i += 2
+        elif name in ("u", "U"):
+            digits = body[i + 2 : i + (6 if name == "u" else 10)]
+            if len(digits) != (4 if name == "u" else 8) or not all(c in "0123456789abcdefABCDEF" for c in digits):
+                return None
+            code = int(digits, 16)
+            if code > 0x10FFFF or 0xD800 <= code <= 0xDFFF:
+                return None
+            out.append(chr(code))
+            i += 2 + len(digits)
+        else:
+            return None
+    return "".join(out)
+
+
+def _toml_escape(value: str) -> str:
+    """value as the body of a TOML basic string."""
+    return "".join(
+        _TOML_ESCAPES.get(ch) or (f"\\u{ord(ch):04X}" if ord(ch) < 0x20 or ord(ch) == 0x7F else ch) for ch in value
+    )
+
+
 def _process_toml_file(
     af: AgentFile,
     mapper: PathMapper,
@@ -693,13 +732,12 @@ def _process_toml_file(
                 return match.group(0)
 
             double = match.group(2)
-            if double is not None:
-                unescaped = re.sub(r"\\(.)", r"\1", double)
-                mapped, origs = mapper._map_value_with_originals(unescaped)
+            value = _toml_unescape(double) if double is not None else None
+            if value is not None:
+                mapped, origs = mapper._map_value_with_originals(value)
                 if mapped is not None:
                     line_count += len(origs)
-                    escaped = mapped.replace("\\", "\\\\").replace('"', '\\"')
-                    return f'"{escaped}"'
+                    return f'"{_toml_escape(mapped)}"'
             return match.group(0)
 
         new_line = _TOML_QUOTED_RE.sub(_replace_match, line)

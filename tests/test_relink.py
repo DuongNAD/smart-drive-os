@@ -34,6 +34,11 @@ from smart_drive.core.relink import (
 )
 from tests.helpers import SmartDriveTestCase, run_smart_drive_cli
 
+try:
+    import tomllib
+except ImportError:  # Python < 3.11
+    tomllib = None  # type: ignore[assignment]
+
 
 class TestRelink(SmartDriveTestCase):
     """Comprehensive tests for PathMapper, agent config relinking, history, git worktrees, venvs, and CLI."""
@@ -1510,6 +1515,27 @@ class TestRelink(SmartDriveTestCase):
         self.assertNotIn(msix_cfg, paths)
         self.assertEqual(paths[1:], expected_sessions)
         self.assertEqual(len(files), 501)
+
+    def test_31_codex_toml_escapes_survive_the_rewrite(self) -> None:
+        codex_file = self.fake_home / ".codex" / "config.toml"
+        codex_file.parent.mkdir(parents=True, exist_ok=True)
+        codex_file.write_text(
+            "[mcp_servers.x]\n"
+            r'command = "D:\\proj\\Caf\u00e9\\run.exe"' "\n"
+            r'cwd = "D:\\proj\\tab\there"' "\n",
+            encoding="utf-8",
+        )
+
+        relink([("D:\\proj", "D:\\03_Development_Projects\\proj")], home=self.fake_home, app_data=self.fake_appdata)
+
+        after = codex_file.read_text(encoding="utf-8")
+        self.assertIn(r'command = "D:\\03_Development_Projects\\proj\\Café\\run.exe"', after)
+        # A tab cannot be part of a Windows path, so this string is not one and stays as written
+        self.assertIn(r'cwd = "D:\\proj\\tab\there"', after)
+        if tomllib is not None:
+            server = tomllib.loads(after)["mcp_servers"]["x"]
+            self.assertEqual(server["command"], "D:\\03_Development_Projects\\proj\\Café\\run.exe")
+            self.assertEqual(server["cwd"], "D:\\proj\\tab\there")
 
 
 if __name__ == "__main__":
