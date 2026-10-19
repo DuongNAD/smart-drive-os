@@ -69,14 +69,17 @@ def print_found(
         print("No stale paths: every folder the coding agents remember exists.")
     else:
         has_sure = False
+        has_unsure = False
         for entry in entries:
             agents_str = ", ".join(entry.agents)
             if entry.kind in ("journal", "same-name"):
                 has_sure = True
                 print(f"  ✓ {entry.old} -> {entry.new}  ({entry.kind}; {agents_str})")
             elif entry.kind == "renamed":
+                has_unsure = True
                 print(f'  ? {entry.old} -> {entry.new}  (renamed? check it, then run: smart-drive relink "{entry.old}" "{entry.new}")')
             elif entry.kind == "name-only":
+                has_unsure = True
                 print(
                     f"  ? {entry.old} -> {entry.new}  (only the name matches; if you moved it there, run: "
                     f'smart-drive relink "{entry.old}" "{entry.new}")'
@@ -91,6 +94,11 @@ def print_found(
 
         if has_sure and show_apply_footer:
             print("Run `smart-drive relink --find --apply` to relink the ✓ folders.")
+        if has_unsure and show_apply_footer:
+            if has_sure:
+                print("Add `--ask` to also be asked about each ? folder with one candidate.")
+            else:
+                print("Run `smart-drive relink --find --apply --ask` to be asked about each ? folder with one candidate.")
 
     if skipped_unmounted:
         total_skipped = sum(skipped_unmounted.values())

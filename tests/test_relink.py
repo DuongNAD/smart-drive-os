@@ -2226,6 +2226,37 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(sleeps, [2])
         self.assertEqual(json.loads(claude_file.read_text(encoding="utf-8"))["projects"], {str(moved): {}})
 
+    def test_56_find_points_to_ask_when_a_question_mark_match_has_one_candidate(self) -> None:
+        drive = self.test_dir / "drive_ask_hint"
+        (drive / "02_Code" / "demo").mkdir(parents=True)
+        (drive / "03_Development_Projects" / "sure_app" / "src").mkdir(parents=True)
+        (drive / "03_Development_Projects" / "amb_app").mkdir(parents=True)
+        (drive / "05_Dev_Toolbox" / "amb_app").mkdir(parents=True)
+        sure = {str(drive / "sure_app"): {}, str(drive / "sure_app" / "src"): {}}
+        name_only = {str(drive / "demo"): {}}
+        ambiguous = {str(drive / "amb_app"): {}}
+        claude_file = self.fake_home / ".claude.json"
+        sure_hint = "Run `smart-drive relink --find --apply` to relink the ✓ folders."
+        also_hint = "Add `--ask` to also be asked about each ? folder with one candidate."
+        ask_hint = "Run `smart-drive relink --find --apply --ask` to be asked about each ? folder with one candidate."
+
+        def footer(projects: dict[str, dict], *flags: str) -> list[str]:
+            claude_file.write_text(json.dumps({"projects": projects}), encoding="utf-8")
+            out_buf = io.StringIO()
+            with patch.dict(os.environ, self._cli_env()), contextlib.redirect_stdout(out_buf):
+                rc = cli_main(["relink", "--find", *flags, "--root", str(drive)])
+            self.assertEqual(rc, 0, out_buf.getvalue())
+            # Entry lines are indented; the footer is not
+            return [line for line in out_buf.getvalue().splitlines() if not line.startswith("  ")]
+
+        self.assertEqual(footer({**sure, **name_only, **ambiguous}), [sure_hint, also_hint])
+        self.assertEqual(footer({**name_only, **ambiguous}), [ask_hint])
+        self.assertEqual(footer(sure), [sure_hint])
+        # Several candidates leave nothing to answer y/N to
+        self.assertEqual(footer(ambiguous), [])
+        # --apply relinks (and asks) itself, so it points nowhere
+        self.assertEqual(footer({**name_only, **ambiguous}, "--apply"), [])
+
 
 if __name__ == "__main__":
     unittest.main()
