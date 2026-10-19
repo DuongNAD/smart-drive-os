@@ -249,6 +249,85 @@ class TestSystemRefIndexAndBoundaries(unittest.TestCase):
             (app_dir / "unins000.exe").write_bytes(b"MZ")
             self.assertEqual(looks_like_installed_app(app_dir), "unins000.exe")
 
+    def test_desktop_resolved_from_user_shell_folders_and_common_desktop(self) -> None:
+        with TempWorkspace(prefix="test_usf_desktop_") as tmp:
+            fake_userprofile = tmp / "User"
+            onedrive_desktop = fake_userprofile / "OneDrive" / "Máy tính"
+            legacy_desktop = fake_userprofile / "Desktop"
+            common_desktop = tmp / "PublicDesktop"
+
+            onedrive_desktop.mkdir(parents=True, exist_ok=True)
+            legacy_desktop.mkdir(parents=True, exist_ok=True)
+            common_desktop.mkdir(parents=True, exist_ok=True)
+
+            (onedrive_desktop / "OneDriveApp.lnk").write_bytes(
+                _build_lnk_bytes(r"E:\OneDriveApp\app.exe", use_unicode=True)
+            )
+            # Shortcut in %USERPROFILE%\Desktop must NOT be scanned when User Shell Folders defines Desktop
+            (legacy_desktop / "LegacyApp.lnk").write_bytes(
+                _build_lnk_bytes(r"E:\LegacyApp\app.exe", use_unicode=True)
+            )
+            (common_desktop / "CommonApp.lnk").write_bytes(
+                _build_lnk_bytes(r"E:\CommonApp\app.exe", use_unicode=True)
+            )
+
+            mock_tree = {
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders": {
+                    "Desktop": r"%USERPROFILE%\OneDrive\Máy tính",
+                },
+                r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders": {
+                    "Common Desktop": r"%PUBLIC_DESKTOP%",
+                },
+            }
+            reader = RegistryReader(
+                tree=mock_tree,
+                env={
+                    "USERPROFILE": str(fake_userprofile),
+                    "PUBLIC_DESKTOP": str(common_desktop),
+                },
+            )
+
+            idx = SystemRefIndex.collect(home=fake_userprofile, reader=reader)
+            self.assertEqual(len(idx.refs_under(r"E:\OneDriveApp")), 1)
+            self.assertEqual(len(idx.refs_under(r"E:\CommonApp")), 1)
+            self.assertEqual(idx.refs_under(r"E:\LegacyApp"), [])
+
+    def test_desktop_walk_depth_limit_and_max_shortcut_files_per_dir(self) -> None:
+        from unittest.mock import patch
+        import smart_drive.core.system_refs as sr_mod
+
+        with TempWorkspace(prefix="test_depth_cap_") as tmp:
+            desktop = tmp / "Desktop"
+            lvl2 = desktop / "lvl2"
+            lvl3 = lvl2 / "lvl3"
+            lvl4 = lvl3 / "lvl4"
+            lvl4.mkdir(parents=True, exist_ok=True)
+
+            # Depth 1 (Desktop), Depth 2 (Desktop/lvl2), Depth 3 (Desktop/lvl2/lvl3) are scanned; Depth 4 is skipped
+            (desktop / "d1.lnk").write_bytes(_build_lnk_bytes(r"E:\D1\a.exe", use_unicode=True))
+            (lvl2 / "d2.lnk").write_bytes(_build_lnk_bytes(r"E:\D2\a.exe", use_unicode=True))
+            (lvl3 / "d3.lnk").write_bytes(_build_lnk_bytes(r"E:\D3\a.exe", use_unicode=True))
+            (lvl4 / "d4.lnk").write_bytes(_build_lnk_bytes(r"E:\D4\a.exe", use_unicode=True))
+
+            idx = SystemRefIndex.collect(home=tmp, reader={})
+            self.assertEqual(len(idx.refs_under(r"E:\D1")), 1)
+            self.assertEqual(len(idx.refs_under(r"E:\D2")), 1)
+            self.assertEqual(len(idx.refs_under(r"E:\D3")), 1)
+            self.assertEqual(idx.refs_under(r"E:\D4"), [])
+
+            # Hitting MAX_SHORTCUT_FILES in Desktop stops only Desktop and still scans Start Menu
+            start_menu = tmp / "Start Menu"
+            start_menu.mkdir(parents=True, exist_ok=True)
+            (start_menu / "sm.lnk").write_bytes(_build_lnk_bytes(r"E:\StartMenuApp\sm.exe", use_unicode=True))
+
+            with patch.object(sr_mod, "MAX_SHORTCUT_FILES", 2):
+                idx_capped = SystemRefIndex.collect(home=tmp, reader={})
+
+            # Start Menu shortcut was still collected despite Desktop hitting MAX_SHORTCUT_FILES=2
+            self.assertEqual(len(idx_capped.refs_under(r"E:\StartMenuApp")), 1)
+            desktop_shortcuts = [r for r in idx_capped.refs if r.kind == "shortcut" and "Start Menu" not in r.source]
+            self.assertEqual(len(desktop_shortcuts), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

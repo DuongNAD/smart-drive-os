@@ -46,7 +46,7 @@ except ImportError:  # Python < 3.11: only the line-level duplicate guard protec
     tomllib = None  # type: ignore[assignment]
 
 from smart_drive.core.root import same_file
-from smart_drive.core.system_refs import SystemRefIndex, parse_lnk_file
+from smart_drive.core.system_refs import RegistryReader, SystemRefIndex, parse_lnk_file
 
 Move = Tuple[str, str]
 BACKUP_SUFFIX = ".bak.smart-drive"
@@ -1753,7 +1753,10 @@ def _relink_shortcuts(
         except OSError:
             effective_home = None
 
-    ref_index = SystemRefIndex.collect(home=effective_home, reader={})
+    shortcut_refs: List[Any] = []
+    shortcut_reader = RegistryReader(tree={}) if effective_home is not None else RegistryReader()
+    SystemRefIndex._collect_shortcuts(effective_home, shortcut_refs, reader=shortcut_reader)
+    ref_index = SystemRefIndex(shortcut_refs)
     matched_shortcuts: List[Tuple[Path, str, str, str]] = []
     seen_lnks: Set[str] = set()
 
