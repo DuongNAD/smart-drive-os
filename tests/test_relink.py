@@ -2303,6 +2303,29 @@ class TestRelink(SmartDriveTestCase):
         )
         self.assertEqual(status_proc.returncode, 0, status_proc.stderr)
 
+    def test_32_nested_virtualenv_pth_rewritten_when_container_moved(self) -> None:
+        old_container = self.test_dir / "container_venv"
+        new_container = self.test_dir / "03_Development_Projects" / "container_venv"
+        venv_dir = new_container / "app" / ".venv"
+        if sys.platform == "win32":
+            sp_dir = venv_dir / "Lib" / "site-packages"
+        else:
+            sp_dir = venv_dir / "lib" / "python3.11" / "site-packages"
+        sp_dir.mkdir(parents=True, exist_ok=True)
+        (venv_dir / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+
+        pth_file = sp_dir / "_app.pth"
+        pth_file.write_text(f"{old_container / 'app' / 'src'}\n", encoding="utf-8")
+
+        report = relink(
+            [(str(old_container), str(new_container))],
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+        )
+        self.assertEqual(pth_file.read_text(encoding="utf-8").splitlines(), [str(new_container / "app" / "src")])
+        self.assertEqual(report.agents.get("Python venv"), 1)
+        self.assertTrue(any(str(venv_dir) in w and "console scripts" in w for w in report.warnings))
+
 
 if __name__ == "__main__":
     unittest.main()
