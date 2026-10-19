@@ -197,6 +197,44 @@ class TestInviolableWhitelistGuards(SmartDriveTestCase):
             self.assertEqual(rec_del.status, "BLOCKED")
             self.assertTrue((root / fname).exists(), f"{fname} was deleted!")
 
+    def test_common_game_library_folders_protected_from_move_and_clean(self) -> None:
+        """All common game library folders are recognized by is_protected_root_dir and ignored by clean dry-run."""
+        game_folders = [
+            "steamapps",
+            "steam",
+            "epic games",
+            "xboxgames",
+            "battle.net",
+            "gog games",
+            "gog galaxy",
+            "ea games",
+            "electronic arts",
+            "ubisoft",
+            "ubisoft game launcher",
+            "garena",
+            "bluestacks",
+            "games",
+        ]
+        for folder in game_folders:
+            self.assertTrue(is_protected_root_dir(folder), f"{folder} must be protected")
+            self.assertTrue(is_protected_root_dir(folder.upper()), f"{folder.upper()} must be protected")
+            self.assertTrue(is_protected_root_dir(f"E:\\{folder}\\sub\\file.txt"), f"Nested path in {folder} must be protected")
+
+        root = self.test_dir
+        epic_sub = root / "Epic Games" / "x"
+        epic_sub.mkdir(parents=True, exist_ok=True)
+        (epic_sub / "a.log").write_text("log data", encoding="utf-8")
+        (epic_sub / "hs_err_pid123.log").write_text("crash log", encoding="utf-8")
+        (epic_sub / "cache.tmp").write_text("temp cache", encoding="utf-8")
+        (epic_sub / ".DS_Store").write_bytes(b"\x00\x00\x00\x01Bud1")
+
+        detector = JunkDetector(str(root), max_tier=JunkTier.TIER_3_SENSITIVE)
+        junk_paths = {item.rel_path for item in detector.find_junk()}
+        self.assertFalse(
+            any(p.lower().startswith("epic games/") for p in junk_paths),
+            f"Files inside Epic Games should never be flagged by clean: {junk_paths}",
+        )
+
 
 
 class TestPurgeEngineExecution(SmartDriveTestCase):

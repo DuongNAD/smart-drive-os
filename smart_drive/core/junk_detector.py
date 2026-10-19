@@ -187,6 +187,8 @@ class JunkDetector:
                 return None
             if not is_dir and is_protected_root_file(clean_name):
                 return None
+        elif norm_rel and is_protected_root_dir(norm_rel):
+            return None
 
         # ----------------------------------------------------------------------
         # HARD SAFEGUARD 3: Learning Unit Protection (Aurora & Polaris)

@@ -177,6 +177,20 @@ PROTECTED_ROOT_DIRS: FrozenSet[str] = frozenset({
     "program files (x86)",
     # Game & Application Directories
     "steamlibrary",
+    "steamapps",
+    "steam",
+    "epic games",
+    "xboxgames",
+    "battle.net",
+    "gog games",
+    "gog galaxy",
+    "ea games",
+    "electronic arts",
+    "ubisoft",
+    "ubisoft game launcher",
+    "garena",
+    "bluestacks",
+    "games",
     "riot games",
     "ldplayer",
     "sql2022",
@@ -606,6 +620,8 @@ def match_junk_rule(
             return None
         if not is_dir and is_protected_root_file(clean_name):
             return None
+    elif rel_path and is_protected_root_dir(rel_path):
+        return None
 
     # Evaluate rules
     for rule in JUNK_RULES:
