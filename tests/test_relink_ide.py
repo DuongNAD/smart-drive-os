@@ -110,20 +110,20 @@ class TestRelinkIDE(SmartDriveTestCase):
     def test_02_vscode_storage_json_vscdb_and_jetbrains_xml_dry_run_and_apply(self) -> None:
         # Prepare moved folders
         if sys.platform in ("win32", "darwin"):
-            old_proj = "E:\\project"
-            new_proj = "E:\\03_Development_Projects\\project"
-            old_uri_pct = "file:///e%3A/project/openclaw"
-            new_uri_pct = "file:///e%3A/03_Development_Projects/project/openclaw"
-            old_uri_colon = "file:///E:/project/demo/main.py"
-            new_uri_colon = "file:///E:/03_Development_Projects/project/demo/main.py"
-            old_ws_uri = "file:///e%3A/project/multi.code-workspace"
-            new_ws_uri = "file:///e%3A/03_Development_Projects/project/multi.code-workspace"
-            untouched_uri = "file:///e%3A/other_folder/keep"
-            jb_old_slash = "E:/project/Project_NWC"
-            jb_new_slash = "E:/03_Development_Projects/project/Project_NWC"
-            jb_old_bslash = "E:\\project\\Project_NWC"
-            jb_new_bslash = "E:\\03_Development_Projects\\project\\Project_NWC"
-            jb_untouched = "E:/other_folder/keep"
+            old_proj = "E:\\__sd_mock_drive__\\project"
+            new_proj = "E:\\__sd_mock_drive__\\03_Development_Projects\\project"
+            old_uri_pct = "file:///e%3A/__sd_mock_drive__/project/openclaw"
+            new_uri_pct = "file:///e%3A/__sd_mock_drive__/03_Development_Projects/project/openclaw"
+            old_uri_colon = "file:///E:/__sd_mock_drive__/project/demo/main.py"
+            new_uri_colon = "file:///E:/__sd_mock_drive__/03_Development_Projects/project/demo/main.py"
+            old_ws_uri = "file:///e%3A/__sd_mock_drive__/project/multi.code-workspace"
+            new_ws_uri = "file:///e%3A/__sd_mock_drive__/03_Development_Projects/project/multi.code-workspace"
+            untouched_uri = "file:///e%3A/__sd_mock_drive__/other_folder/keep"
+            jb_old_slash = "E:/__sd_mock_drive__/project/Project_NWC"
+            jb_new_slash = "E:/__sd_mock_drive__/03_Development_Projects/project/Project_NWC"
+            jb_old_bslash = "E:\\__sd_mock_drive__\\project\\Project_NWC"
+            jb_new_bslash = "E:\\__sd_mock_drive__\\03_Development_Projects\\project\\Project_NWC"
+            jb_untouched = "E:/__sd_mock_drive__/other_folder/keep"
         else:
             old_proj = "/mnt/ssd/project"
             new_proj = "/mnt/ssd/03_Development_Projects/project"
@@ -431,13 +431,13 @@ class TestRelinkIDE(SmartDriveTestCase):
         obs_dir.mkdir(parents=True, exist_ok=True)
         obs_file = obs_dir / "obsidian.json"
 
-        old_vault = "E:\\Obsidian" if sys.platform == "win32" else "/mnt/ssd/Obsidian"
+        old_vault = "E:\\__sd_mock_drive__\\Obsidian" if sys.platform == "win32" else "/mnt/ssd/Obsidian"
         new_vault = (
-            "E:\\02_Learning_Materials\\Obsidian"
+            "E:\\__sd_mock_drive__\\02_Learning_Materials\\Obsidian"
             if sys.platform == "win32"
             else "/mnt/ssd/02_Learning_Materials/Obsidian"
         )
-        keep_vault = "E:\\KeepNotes" if sys.platform == "win32" else "/mnt/ssd/KeepNotes"
+        keep_vault = "E:\\__sd_mock_drive__\\KeepNotes" if sys.platform == "win32" else "/mnt/ssd/KeepNotes"
 
         payload = {
             "vaults": {
@@ -474,19 +474,19 @@ class TestRelinkIDE(SmartDriveTestCase):
         viet_lnk = desktop / "VietApp.lnk"
         keep_lnk = desktop / "KeepApp.lnk"
 
-        old_tricky_dir = "E:\\tool ’ ‘ ‚ ' $( ` ;"
-        new_tricky_dir = "E:\\05_Dev_Toolbox\\tool ’ ‘ ‚ ' $( ` ;"
-        old_viet_dir = "E:\\Dự án ‛"
-        new_viet_dir = "E:\\03_Development_Projects\\Dự án ‛"
+        old_tricky_dir = "E:\\__sd_mock_drive__\\tool ’ ‘ ‚ ' $( ` ;"
+        new_tricky_dir = "E:\\__sd_mock_drive__\\05_Dev_Toolbox\\tool ’ ‘ ‚ ' $( ` ;"
+        old_viet_dir = "E:\\__sd_mock_drive__\\Dự án ‛"
+        new_viet_dir = "E:\\__sd_mock_drive__\\03_Development_Projects\\Dự án ‛"
 
-        moved_lnk.write_bytes(_build_lnk_bytes(r"E:\tool\bin\run.exe", use_unicode=True))
+        moved_lnk.write_bytes(_build_lnk_bytes(r"E:\__sd_mock_drive__\tool\bin\run.exe", use_unicode=True))
         tricky_lnk.write_bytes(_build_lnk_bytes(old_tricky_dir + r"\bin\run.exe", use_unicode=True))
         viet_lnk_orig_bytes = _build_lnk_bytes(old_viet_dir + r"\app.exe", use_unicode=True)
         viet_lnk.write_bytes(viet_lnk_orig_bytes)
-        keep_lnk.write_bytes(_build_lnk_bytes(r"E:\keep\app.exe", use_unicode=True))
+        keep_lnk.write_bytes(_build_lnk_bytes(r"E:\__sd_mock_drive__\keep\app.exe", use_unicode=True))
 
         moves = [
-            (r"E:\tool", r"E:\05_Dev_Toolbox\tool"),
+            (r"E:\__sd_mock_drive__\tool", r"E:\__sd_mock_drive__\05_Dev_Toolbox\tool"),
             (old_tricky_dir, new_tricky_dir),
             (old_viet_dir, new_viet_dir),
         ]
