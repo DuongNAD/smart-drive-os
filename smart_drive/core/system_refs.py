@@ -698,9 +698,18 @@ class SystemRefIndex:
 
 def format_protected_by_system_entry(folder: Union[str, Path], refs: Sequence[SystemRef]) -> Dict[str, Any]:
     """Formats a folder and up to 3 representative references for JSON output."""
+    unique_refs: List[Dict[str, str]] = []
+    seen = set()
+    for r in refs:
+        key = (r.kind, r.source)
+        if key not in seen:
+            seen.add(key)
+            unique_refs.append({"kind": r.kind, "source": r.source})
+            if len(unique_refs) >= 3:
+                break
     return {
         "path": str(folder),
-        "refs": [{"kind": r.kind, "source": r.source} for r in list(refs)[:3]],
+        "refs": unique_refs,
     }
 
 

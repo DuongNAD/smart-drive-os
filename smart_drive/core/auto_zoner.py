@@ -30,6 +30,11 @@ from smart_drive.core.academic_classifier import AcademicClassifier
 from smart_drive.core.exfat_compat import ExFatEngine
 from smart_drive.core.fsinfo import detect_filesystem
 from smart_drive.core.learning_units import find_unit_root
+from smart_drive.core.system_refs import (
+    SystemRefIndex,
+    format_protected_by_system_entry,
+    summarize_system_refs,
+)
 
 # Inviolable execution root self-defense anchors
 _CURRENT_FILE = Path(__file__).resolve()
@@ -116,7 +121,12 @@ class AutoZoner:
         ".git", "package.json", "pyproject.toml", "cargo.toml", "go.mod", "pom.xml", "cmakelists.txt"
     })
 
-    def __init__(self, root: str, cluster_size: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        root: str,
+        cluster_size: Optional[int] = None,
+        system_refs: Optional[SystemRefIndex] = None,
+    ) -> None:
         self.root = os.path.abspath(root)
         self.compat = ExFatEngine()
         if cluster_size is None:
@@ -124,6 +134,11 @@ class AutoZoner:
             self.cluster_size = info.block_size if info.block_size > 0 else CLUSTER_SIZE_BYTES
         else:
             self.cluster_size = cluster_size
+
+        self._system_refs: Optional[SystemRefIndex] = system_refs
+        self.protected_by_system: List[Dict[str, Any]] = []
+        self._protected_by_system_keys: Set[str] = set()
+        self._protected_summaries: Dict[str, str] = {}
 
         # Inviolable execution root self-defense anchors
         self._self_ancestors: Set[Path] = set(_CURRENT_FILE.parents)
@@ -141,6 +156,33 @@ class AutoZoner:
             _SMART_DRIVE_REPO_DIR.name.lower(),
             _SMART_DRIVE_PKG_DIR.name.lower(),
         }
+
+    @property
+    def system_refs(self) -> SystemRefIndex:
+        """Lazily collects OS/application references once per AutoZoner instance."""
+        if self._system_refs is None:
+            self._system_refs = SystemRefIndex.collect()
+        return self._system_refs
+
+    def _is_protected_by_system(self, item_path: str) -> bool:
+        """Checks if a directory is referenced by Windows/system or contains an uninstaller."""
+        refs = self.system_refs.check_folder(item_path)
+        if not refs:
+            return False
+        norm_key = os.path.normcase(os.path.abspath(item_path))
+        if norm_key not in self._protected_by_system_keys:
+            self._protected_by_system_keys.add(norm_key)
+            self.protected_by_system.append(format_protected_by_system_entry(item_path, refs))
+            self._protected_summaries[norm_key] = summarize_system_refs(refs)
+        return True
+
+    def describe_protected_by_system(self, item_path: str) -> str:
+        """Returns the human-readable summary of why `item_path` is protected by the system."""
+        norm_key = os.path.normcase(os.path.abspath(item_path))
+        if norm_key in self._protected_summaries:
+            return self._protected_summaries[norm_key]
+        refs = self.system_refs.check_folder(item_path)
+        return summarize_system_refs(refs)
 
     def ensure_taxonomies_exist(self) -> List[str]:
         """Ensures the 6 core taxonomy directories exist on disk."""
@@ -222,6 +264,10 @@ class AutoZoner:
         if base_name.startswith("."):
             return None
 
+        # 1b. System reference guard: Never move folders that OS services, PATH, installed apps, or shortcuts depend on
+        if is_dir and self._is_protected_by_system(item_path):
+            return None
+
         # 2. Directory Classification
         if is_dir:
             academic_res = AcademicClassifier.classify_folder(base_name)
@@ -298,6 +344,9 @@ class AutoZoner:
         """Scans the specified directory (defaults to drive root) and generates a ZoningPlan."""
         target_dir = os.path.abspath(scan_dir or self.root)
         plan: List[ZoningAction] = []
+        self.protected_by_system = []
+        self._protected_by_system_keys = set()
+        self._protected_summaries = {}
 
         try:
             with os.scandir(target_dir) as it:
@@ -378,6 +427,8 @@ class AutoZoner:
                 continue
             if find_unit_root(action.src_path, self.root) is not None:
                 continue
+            if (action.is_dir or os.path.isdir(action.src_path)) and self._is_protected_by_system(action.src_path):
+                continue
 
             if not os.path.exists(action.src_path):
                 continue
@@ -410,6 +461,7 @@ class AutoZoner:
             "total_slack_rebalanced": total_slack_rebalanced,
             "moved": moved,
             "errors": errors,
+            "protected_by_system": list(self.protected_by_system),
         }
 
 

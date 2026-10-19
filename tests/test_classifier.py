@@ -880,6 +880,62 @@ class TestClassifierEdgeCases(unittest.TestCase):
             self.assertTrue((moved_dir / "index.js").exists())
             self.assertFalse(incoming_repo.exists())
 
+    def test_system_referenced_and_uninstaller_folders_skipped_by_classifier(self) -> None:
+        from smart_drive.core.system_refs import SystemRef, SystemRefIndex
+
+        with TempWorkspace(prefix="test_sys_refs_cls_") as tmp:
+            git_dir = tmp / "Git"
+            git_dir.mkdir()
+            (git_dir / "package.json").write_text('{"name": "git-tools"}', encoding="utf-8")
+
+            sql_dir = tmp / "SQL"
+            sql_dir.mkdir()
+            (sql_dir / "manual.pdf").write_bytes(b"%PDF-1.7\n%%EOF\n")
+
+            app_dir = tmp / "CustomTool"
+            app_dir.mkdir()
+            (app_dir / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+            (app_dir / "unins000.exe").write_bytes(b"MZ")
+
+            real_repo = tmp / "my_project"
+            real_repo.mkdir()
+            (real_repo / "package.json").write_text('{"name": "my_project"}', encoding="utf-8")
+
+            fake_refs = SystemRefIndex([
+                SystemRef(kind="path", source="PATH (User)", target=str(git_dir / "cmd")),
+                SystemRef(kind="service", source="service MSSQLSERVER", target=str(sql_dir / "Binn" / "sqlservr.exe")),
+            ])
+
+            engine = ClassifierEngine(root_path=tmp, system_refs=fake_refs)
+            self.assertIsNone(engine.inspect_path(git_dir))
+            self.assertIsNone(engine.inspect_path(sql_dir))
+            self.assertIsNone(engine.inspect_path(app_dir))
+
+            classified = engine.scan_and_classify(tmp)
+            self.assertEqual([r.name for r in classified], ["my_project"])
+
+            by_name = {os.path.basename(item["path"]): item["refs"] for item in engine.protected_by_system}
+            self.assertIn("Git", by_name)
+            self.assertIn("SQL", by_name)
+            self.assertIn("CustomTool", by_name)
+
+            # Even if passed a stale ClassificationResult for Git, execute_relocation refuses to move it
+            stale_res = ClassificationResult(
+                source_path=git_dir,
+                name="Git",
+                is_dir=True,
+                format_type="Node Project",
+                category="03_Development_Projects",
+                subcategory="Git",
+                recommended_path="03_Development_Projects/Git",
+                confidence=0.95,
+                reason="stale",
+                size_bytes=0,
+            )
+            actions = engine.execute_relocation([stale_res], dry_run=False)
+            self.assertEqual(len(actions), 0)
+            self.assertTrue(git_dir.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

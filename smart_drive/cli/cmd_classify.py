@@ -70,6 +70,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             dry_run=False,
             results=results,
             actions=actions,
+            protected_by_system=list(engine.protected_by_system),
         )
 
         if as_json:
@@ -85,6 +86,9 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
         print(f"\nSmartDrive-OS Classification & Auto-Tagging [APPLIED]")
         print("=" * 90)
+        for item in engine.protected_by_system:
+            p = item["path"]
+            print(f"  Skipped {p} — used by {engine.describe_protected_by_system(p)}")
         for a in moved:
             suffix = " (Renamed to prevent overwrite)" if a.collision_resolved else ""
             print(f"  ✓ Moved: {os.path.basename(str(a.source_path))} -> {a.relative_target}{suffix}")
@@ -114,6 +118,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             dry_run=True,
             results=results,
             actions=actions,
+            protected_by_system=list(engine.protected_by_system),
         )
 
         if as_json:
@@ -122,6 +127,9 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
         print(f"\nSmartDrive-OS Classification & Auto-Tagging [DRY-RUN SIMULATION]")
         print("=" * 90)
+        for item in engine.protected_by_system:
+            p = item["path"]
+            print(f"  Skipped {p} — used by {engine.describe_protected_by_system(p)}")
         print(f"{'Source File':<36} {'-> Target Destination':<40} {'Status'}")
         print("-" * 90)
         for a in actions:
@@ -144,6 +152,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             dry_run=False,
             results=results,
             actions=[],
+            protected_by_system=list(engine.protected_by_system),
         )
 
         if as_json:
@@ -153,6 +162,9 @@ def cmd_classify(args: argparse.Namespace) -> int:
         print(f"\nSmartDrive-OS Intelligent Classifier (v1.1.0)")
         print(f"Scan Root: {target} (Total Items: {len(results)})")
         print("=" * 95)
+        for item in engine.protected_by_system:
+            p = item["path"]
+            print(f"  Skipped {p} — used by {engine.describe_protected_by_system(p)}")
         print(f"{'File / Directory':<34} {'Format':<18} {'Confidence':<12} {'Target Taxonomy'}")
         print("-" * 95)
         for r in results:
