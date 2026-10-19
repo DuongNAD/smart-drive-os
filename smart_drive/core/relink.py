@@ -199,7 +199,7 @@ class PathMapper:
     """Rewrites paths under moved folders while preserving separator and casing style."""
 
     def __init__(self, moves: Iterable[Move]) -> None:
-        rules: List[Tuple[Tuple[str, ...], Tuple[str, List[str]], Tuple[str, List[str]]]] = []
+        rules: List[Tuple[Tuple[str, ...], Tuple[str, ...], Tuple[str, List[str]], Tuple[str, List[str]]]] = []
         seen_keys: Set[Tuple[str, ...]] = set()
         needles: Set[str] = set()
         has_non_ascii = False
@@ -219,7 +219,7 @@ class PathMapper:
             if old_k == new_k or old_k in seen_keys:
                 continue
             seen_keys.add(old_k)
-            rules.append((old_k, (old_anchor, old_names), (new_anchor, new_names)))
+            rules.append((old_k, new_k, (old_anchor, old_names), (new_anchor, new_names)))
             last_name = old_names[-1]
             if not last_name.isascii():
                 has_non_ascii = True
@@ -253,9 +253,13 @@ class PathMapper:
         if not names:
             return None
         key = _key(anchor, names)
-        for old_key, (old_anchor, old_names), (new_anchor, new_names) in self._rules:
+        for old_key, new_key, (old_anchor, old_names), (new_anchor, new_names) in self._rules:
             if key[:len(old_key)] != old_key:
                 continue
+            if len(new_key) > len(old_key) and new_key[:len(old_key)] == old_key and key[:len(new_key)] == new_key:
+                # The new place lies inside the old one (OLD -> OLD/sub) and this path is there already:
+                # mapping it again would add one more level each time relink runs.
+                return None
             sep = "/" if anchor == "/" or "\\" not in text else "\\"
             tail = sep.join(new_names + names[len(old_key) - 1:])
             mapped = "/" + tail if new_anchor == "/" else new_anchor + sep + tail
