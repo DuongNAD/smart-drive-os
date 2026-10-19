@@ -28,7 +28,7 @@ def _purge(
     """Deletes or quarantines the detected junk through the PurgeEngine (all its safety guards apply).
 
     Returns (deleted_count, one result dict per item, batch_id). Each result carries the engine's own status:
-    DELETED, BLOCKED (the safety guard refused: expected, not an error) or FAILED (the OS refused).
+    DELETED, QUARANTINED, BLOCKED (the safety guard refused: expected, not an error) or FAILED (the OS refused).
     Shared by the text and JSON output modes so that `--apply` does the same thing whichever way the
     result is printed.
     """
@@ -41,12 +41,16 @@ def _purge(
         size = getattr(j, "size", 0) or j.get("size", 0)
         tier_val = getattr(j, "tier", None) if hasattr(j, "tier") else (j.get("tier") if isinstance(j, dict) else None)
         success, reason = purge_engine.delete_item(path, size=size, is_dir=is_dir, tier=tier_val)
-        if success:
-            deleted_count += 1
         status = purge_engine.audit_records[-1].status if purge_engine.audit_records else ("DELETED" if success else "FAILED")
+        rec_size = purge_engine.audit_records[-1].size if purge_engine.audit_records else int(size or 0)
+        is_deleted = status == "DELETED"
+        if is_deleted:
+            deleted_count += 1
         results.append({
             "rel_path": getattr(j, "rel_path", j.get("rel_path", "")),
-            "deleted": bool(success),
+            "deleted": is_deleted,
+            "quarantined": status == "QUARANTINED",
+            "size": rec_size,
             "status": status,
             "reason": reason,
         })
@@ -57,9 +61,27 @@ def _purge(
 
 def _tally(results: List[Dict[str, Any]]) -> Tuple[int, int, int]:
     """(deleted, blocked by the safety guard, failed) over the results of `_purge`."""
-    deleted = sum(1 for r in results if r["deleted"])
-    blocked = sum(1 for r in results if r["status"] == "BLOCKED")
-    return deleted, blocked, len(results) - deleted - blocked
+    deleted = sum(1 for r in results if r.get("status") == "DELETED" or (r.get("deleted") and r.get("status") != "QUARANTINED"))
+    quarantined = sum(1 for r in results if r.get("status") == "QUARANTINED" or r.get("quarantined"))
+    blocked = sum(1 for r in results if r.get("status") == "BLOCKED")
+    return deleted, blocked, len(results) - deleted - quarantined - blocked
+
+
+def _tally_space(results: List[Dict[str, Any]]) -> Tuple[int, int, int, int]:
+    """Returns (deleted_count, freed_bytes, quarantined_count, quarantined_bytes)."""
+    deleted_count = 0
+    freed_bytes = 0
+    quarantined_count = 0
+    quarantined_bytes = 0
+    for r in results:
+        sz = int(r.get("size", 0) or 0)
+        if r.get("status") == "QUARANTINED" or r.get("quarantined"):
+            quarantined_count += 1
+            quarantined_bytes += sz
+        elif r.get("status") == "DELETED" or r.get("deleted"):
+            deleted_count += 1
+            freed_bytes += sz
+    return deleted_count, freed_bytes, quarantined_count, quarantined_bytes
 
 
 def _unpack_purge_result(
@@ -156,11 +178,15 @@ def cmd_clean(args: argparse.Namespace) -> int:
         }
         if not is_dry_run:
             # `--apply --json` used to print dry_run=false and return without deleting anything.
-            deleted_count, results, batch_id = _unpack_purge_result(
+            _, results, batch_id = _unpack_purge_result(
                 _purge(root, junk_items, log_path, quarantine=quarantine)
             )
             _, blocked_count, failed_count = _tally(results)
+            deleted_count, freed_bytes, quarantined_count, quarantined_bytes = _tally_space(results)
             data["deleted_count"] = deleted_count
+            data["freed_bytes"] = freed_bytes
+            data["quarantined_count"] = quarantined_count
+            data["quarantined_bytes"] = quarantined_bytes
             data["blocked_count"] = blocked_count
             data["failed_count"] = failed_count
             data["batch_id"] = batch_id
@@ -197,18 +223,27 @@ def cmd_clean(args: argparse.Namespace) -> int:
         print("\n[DRY RUN] No files were deleted. Run with --apply to execute purge.")
         return 0
 
-    deleted_count, results, batch_id = _unpack_purge_result(
+    _, results, batch_id = _unpack_purge_result(
         _purge(root, junk_items, log_path, quarantine=quarantine)
     )
     _, blocked_count, failed_count = _tally(results)
-    if not blocked_count and not failed_count:
-        print(f"✓ Purged {deleted_count} junk files successfully.")
-        if quarantine and batch_id:
-            print(f"  Quarantined in .smart_drive/quarantine/{batch_id} (restore with: smart-drive clean --restore {batch_id})")
-        return 0
-    print(f"{'✓' if not failed_count else '✗'} Purged {deleted_count} of {len(results)} junk files.")
-    if quarantine and batch_id:
-        print(f"  Quarantined in .smart_drive/quarantine/{batch_id}")
+    deleted_count, freed_bytes, quarantined_count, quarantined_bytes = _tally_space(results)
+    status_mark = "✓" if not failed_count else "✗"
+
+    if deleted_count > 0 or quarantined_count == 0:
+        if not blocked_count and not failed_count:
+            print(f"✓ Deleted {deleted_count} item(s), freed {freed_bytes / (1024*1024):.2f} MB")
+        else:
+            print(f"{status_mark} Deleted {deleted_count} of {len(results)} item(s), freed {freed_bytes / (1024*1024):.2f} MB")
+
+    if quarantined_count > 0:
+        print(
+            f"{status_mark} Quarantined {quarantined_count} item(s), {quarantined_bytes / (1024*1024):.2f} MB — "
+            "space is freed only after: smart-drive clean --purge-quarantine --older-than 30 --apply"
+        )
+        if batch_id:
+            print(f"  Restore with: smart-drive clean --restore {batch_id}")
+
     if blocked_count:
         print(f"  {blocked_count} item(s) kept by the safety guard (protected paths).")
     failures = [r for r in results if r["status"] == "FAILED"]

@@ -146,10 +146,10 @@ class TestCliEndToEnd(SmartDriveTestCase):
             self.assertGreater(dry_data["junk_count"], 0)
             self.assertTrue(junk_ds_store.is_file(), "Dry run must NOT delete files")
 
-            # 2. Apply: purges junk files
+            # 2. Apply: deletes Tier 1 junk files
             res_apply = run_smart_drive_cli(["clean", "--root", str(ws), "--apply"])
             self.assertEqual(res_apply.returncode, 0)
-            self.assertIn("Purged", res_apply.stdout)
+            self.assertIn("Deleted", res_apply.stdout)
             self.assertFalse(junk_ds_store.exists(), ".DS_Store should be purged")
 
             # Inviolable controls must remain intact
