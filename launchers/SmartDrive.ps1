@@ -5,13 +5,16 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 # Tier 1: Directory & Root Resolution
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (Test-Path (Join-Path $ScriptDir "smart_drive")) {
-    $DriveRoot = $ScriptDir
+    $CODE_DIR = $ScriptDir
 } elseif (Test-Path (Join-Path (Split-Path -Parent $ScriptDir) "smart_drive")) {
-    $DriveRoot = Split-Path -Parent $ScriptDir
+    $CODE_DIR = Split-Path -Parent $ScriptDir
 } else {
-    $DriveRoot = $ScriptDir
+    $CODE_DIR = $ScriptDir
+    if (-not $env:SMART_DRIVE_ROOT) {
+        $env:SMART_DRIVE_ROOT = $ScriptDir
+    }
 }
-Set-Location $DriveRoot
+Set-Location $CODE_DIR
 
 # Tier 2: Python 3.9+ Discovery & Version Check
 $PythonCmd = $null
@@ -50,11 +53,10 @@ $env:PYTHONUTF8 = "1"
 $env:PYTHONDONTWRITEBYTECODE = "1"
 $env:GIT_TERMINAL_PROMPT = "0"
 $env:GIT_CONFIG_NOSYSTEM = "1"
-$env:SMART_DRIVE_ROOT = $DriveRoot
 if ($env:PYTHONPATH) {
-    $env:PYTHONPATH = "$DriveRoot;$env:PYTHONPATH"
+    $env:PYTHONPATH = "$CODE_DIR;$env:PYTHONPATH"
 } else {
-    $env:PYTHONPATH = "$DriveRoot"
+    $env:PYTHONPATH = "$CODE_DIR"
 }
 
 function Run-SmartDrive {
@@ -73,7 +75,8 @@ while ($true) {
     Write-Host "  SmartDrive-OS: Master 1-Touch Control Center" -ForegroundColor Cyan
     Write-Host "  Autonomous Storage Management for External SSDs" -ForegroundColor Cyan
     Write-Host "========================================================" -ForegroundColor Cyan
-    Write-Host "  Drive Root: $DriveRoot"
+    $DriveRootDisplay = if ($env:SMART_DRIVE_ROOT) { $env:SMART_DRIVE_ROOT } else { "(auto)" }
+    Write-Host "  Drive Root: $DriveRootDisplay"
     Write-Host "========================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  [1] Initialize Drive & Presets (smart-drive init)"

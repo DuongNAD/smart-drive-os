@@ -160,21 +160,81 @@ class TestLauncherSecurityAndHardcodedPaths(unittest.TestCase):
                     )
 
     def test_portable_root_resolution_logic(self):
-        """Verify that every script dynamically resolves its DRIVE_ROOT based on smart_drive directory location."""
+        """Verify that every script resolves CODE_DIR for PYTHONPATH/cd without pinning SMART_DRIVE_ROOT to the repo."""
         for name in ALL_20_LAUNCHER_NAMES:
             content = (LAUNCHERS_DIR / name).read_text(encoding="utf-8")
+            self.assertNotIn('SMART_DRIVE_ROOT="$DRIVE_ROOT"', content)
+            self.assertNotIn('SMART_DRIVE_ROOT="$CODE_DIR"', content)
+            self.assertNotIn('SMART_DRIVE_ROOT=%DRIVE_ROOT%', content)
+            self.assertNotIn('SMART_DRIVE_ROOT=%CODE_DIR%', content)
+            self.assertNotIn('$env:SMART_DRIVE_ROOT = $DriveRoot', content)
+            self.assertNotIn('$env:SMART_DRIVE_ROOT = $CODE_DIR', content)
             if name.endswith((".sh", ".command")):
                 self.assertIn("smart_drive", content)
-                self.assertIn("DRIVE_ROOT", content)
-                self.assertIn('cd "$DRIVE_ROOT"', content)
+                self.assertIn("CODE_DIR", content)
+                self.assertIn('cd "$CODE_DIR"', content)
             elif name.endswith(".bat"):
                 self.assertIn("smart_drive", content)
-                self.assertIn("DRIVE_ROOT", content)
-                self.assertIn('cd /d "%DRIVE_ROOT%"', content)
+                self.assertIn("CODE_DIR", content)
+                self.assertIn('cd /d "%CODE_DIR%"', content)
             elif name.endswith(".ps1"):
                 self.assertIn("smart_drive", content)
-                self.assertIn("DriveRoot", content)
-                self.assertIn("Set-Location $DriveRoot", content)
+                self.assertIn("CODE_DIR", content)
+                self.assertIn("Set-Location $CODE_DIR", content)
+
+    def test_launcher_in_repo_does_not_pin_smart_drive_root_to_repo(self):
+        """When a launcher runs inside <drive>/03_Development_Projects/smart-drive-os, SMART_DRIVE_ROOT stays unpinned."""
+        temp_drive = Path(tempfile.mkdtemp(prefix="test_launcher_root_"))
+        try:
+            repo_dir = temp_drive / "03_Development_Projects" / "smart-drive-os"
+            pkg_dir = repo_dir / "smart_drive"
+            pkg_dir.mkdir(parents=True)
+            (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
+            (pkg_dir / "__main__.py").write_text(
+                "import os\n"
+                "print('OBSERVED_SMART_DRIVE_ROOT=' + os.environ.get('SMART_DRIVE_ROOT', ''))\n"
+                "print('OBSERVED_CWD=' + os.getcwd())\n",
+                encoding="utf-8",
+            )
+
+            env = {k: v for k, v in os.environ.items() if k not in ("SMART_DRIVE_ROOT", "KINGSTON_SSD_ROOT")}
+            # Ensure sys.executable's directory is first on PATH so python/py is found quickly
+            py_dir = str(Path(sys.executable).resolve().parent)
+            env["PATH"] = py_dir + os.pathsep + env.get("PATH", "")
+
+            if sys.platform == "win32":
+                bat_copy = repo_dir / "Quick_Audit.bat"
+                shutil.copy2(LAUNCHERS_DIR / "Quick_Audit.bat", bat_copy)
+                proc = subprocess.run(
+                    ["cmd.exe", "/c", str(bat_copy)],
+                    input="\r\n",
+                    text=True,
+                    capture_output=True,
+                    env=env,
+                    cwd=str(temp_drive),
+                    timeout=15,
+                    check=False,
+                )
+                self.assertEqual(proc.returncode, 0, f"Quick_Audit.bat failed: {proc.stdout}\n{proc.stderr}")
+                self.assertIn("OBSERVED_SMART_DRIVE_ROOT=\n", proc.stdout.replace("\r\n", "\n"))
+            else:
+                sh_copy = repo_dir / "Quick_Audit.sh"
+                shutil.copy2(LAUNCHERS_DIR / "Quick_Audit.sh", sh_copy)
+                proc = subprocess.run(
+                    ["/bin/bash", str(sh_copy)],
+                    input="\n",
+                    text=True,
+                    capture_output=True,
+                    env=env,
+                    cwd=str(temp_drive),
+                    timeout=15,
+                    check=False,
+                )
+                self.assertEqual(proc.returncode, 0, f"Quick_Audit.sh failed: {proc.stdout}\n{proc.stderr}")
+                self.assertIn("OBSERVED_SMART_DRIVE_ROOT=\n", proc.stdout)
+        finally:
+            shutil.rmtree(temp_drive, ignore_errors=True)
+
 
 
 class TestLauncherPythonVersionCheck(unittest.TestCase):

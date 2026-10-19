@@ -5,13 +5,14 @@ title SmartDrive-OS - Master 1-Touch Control Center
 
 :: Tier 1: Directory & Root Resolution
 if exist "%~dp0smart_drive" (
-    set "DRIVE_ROOT=%~dp0"
+    set "CODE_DIR=%~dp0"
 ) else if exist "%~dp0..\smart_drive" (
-    set "DRIVE_ROOT=%~dp0..\"
+    set "CODE_DIR=%~dp0..\"
 ) else (
-    set "DRIVE_ROOT=%~dp0"
+    set "CODE_DIR=%~dp0"
+    if not defined SMART_DRIVE_ROOT set "SMART_DRIVE_ROOT=%~dp0"
 )
-cd /d "%DRIVE_ROOT%"
+cd /d "%CODE_DIR%"
 
 :: Tier 2: Python 3.9+ Discovery & Version Check
 set "PYTHON_CMD="
@@ -42,11 +43,10 @@ set "PYTHONUTF8=1"
 set "PYTHONDONTWRITEBYTECODE=1"
 set "GIT_TERMINAL_PROMPT=0"
 set "GIT_CONFIG_NOSYSTEM=1"
-set "SMART_DRIVE_ROOT=%DRIVE_ROOT%"
 if defined PYTHONPATH (
-    set "PYTHONPATH=%DRIVE_ROOT%;%PYTHONPATH%"
+    set "PYTHONPATH=%CODE_DIR%;%PYTHONPATH%"
 ) else (
-    set "PYTHONPATH=%DRIVE_ROOT%"
+    set "PYTHONPATH=%CODE_DIR%"
 )
 
 :: Tier 4: Execution (Master 1-Touch Menu Loop)
@@ -56,7 +56,11 @@ echo ========================================================
 echo   SmartDrive-OS: Master 1-Touch Control Center
 echo   Autonomous Storage Management for External SSDs
 echo ========================================================
-echo   Drive Root: %DRIVE_ROOT%
+if defined SMART_DRIVE_ROOT (
+    echo   Drive Root: !SMART_DRIVE_ROOT!
+) else (
+    echo   Drive Root: ^(auto^)
+)
 echo ========================================================
 echo.
 echo   [1] Initialize Drive & Presets (smart-drive init)

@@ -4,13 +4,16 @@
 # Tier 1: Directory & Root Resolution
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 if [ -d "$DIR/smart_drive" ]; then
-    DRIVE_ROOT="$DIR"
+    CODE_DIR="$DIR"
 elif [ -d "$DIR/../smart_drive" ]; then
-    DRIVE_ROOT="$( cd "$DIR/.." >/dev/null 2>&1 && pwd )"
+    CODE_DIR="$( cd "$DIR/.." >/dev/null 2>&1 && pwd )"
 else
-    DRIVE_ROOT="$DIR"
+    CODE_DIR="$DIR"
+    if [ -z "${SMART_DRIVE_ROOT:-}" ]; then
+        export SMART_DRIVE_ROOT="$DIR"
+    fi
 fi
-cd "$DRIVE_ROOT" || exit 1
+cd "$CODE_DIR" || exit 1
 
 # Tier 2: Python 3.9+ Discovery & Version Check
 PYTHON_CMD=""
@@ -41,8 +44,7 @@ export PYTHONUTF8="1"
 export PYTHONDONTWRITEBYTECODE="1"
 export GIT_TERMINAL_PROMPT="0"
 export GIT_CONFIG_NOSYSTEM="1"
-export SMART_DRIVE_ROOT="$DRIVE_ROOT"
-export PYTHONPATH="$DRIVE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$CODE_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 # Tier 4: Execution (Master 1-Touch Menu Loop)
 while true; do
@@ -51,7 +53,7 @@ while true; do
     echo "  SmartDrive-OS: Master 1-Touch Control Center"
     echo "  Autonomous Storage Management for External SSDs"
     echo "========================================================"
-    echo "  Drive Root: $DRIVE_ROOT"
+    echo "  Drive Root: ${SMART_DRIVE_ROOT:-(auto)}"
     echo "========================================================"
     echo ""
     echo "  [1] Initialize Drive & Presets (smart-drive init)"
