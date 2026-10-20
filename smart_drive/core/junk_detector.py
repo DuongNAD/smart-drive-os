@@ -26,12 +26,16 @@ from smart_drive.core.config import (
     JunkRule,
     JunkTier,
     calculate_allocated_bytes,
+    is_inside_dependency_tree,
     is_protected_root_dir,
     is_protected_root_file,
     match_junk_rule,
 )
 from smart_drive.core.learning_units import find_unit_root
 from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOptions, measure_tree
+
+# Why an entry that looks like junk was kept (JunkDetector.kept maps each reason to how many entries it kept)
+KEPT_DEPENDENCY_TREE = "dependency_tree"  # inside node_modules, site-packages...: installed packages, not leftovers
 
 
 def _drop_items_inside_junk_dirs(items: List["JunkItem"]) -> List["JunkItem"]:
@@ -122,6 +126,8 @@ class JunkDetector:
     4. Anti-indexing shield protection (.metadata_never_index, no_log).
     5. Inviolable root file and root directory protection.
     6. Hardware-accurate 512KB cluster allocation math.
+    7. Entries that only look like junk are kept, and counted by reason in ``kept``: Tier 2-3 matches inside
+       dependency trees (node_modules, site-packages...) are installed packages, not leftovers.
     """
 
     def __init__(
@@ -134,6 +140,8 @@ class JunkDetector:
         self.max_tier = max_tier
         self.cluster_size = cluster_size
         self._name_matchers, self._always_check = self._compile_name_matchers(max_tier)
+        # Entries that matched a junk rule by name but were kept anyway: reason -> count (reset by find_junk)
+        self.kept: Dict[str, int] = {}
 
     @staticmethod
     def _compile_name_matchers(max_tier: JunkTier) -> Tuple[Dict[bool, Optional["re.Pattern[str]"]], Dict[bool, bool]]:
@@ -181,6 +189,20 @@ class JunkDetector:
             return rel.replace("\\", "/")
         except ValueError:
             return target_path.replace("\\", "/")
+
+    def _keep_reason(self, path: str, tier: JunkTier) -> Optional[str]:
+        """Why an entry whose name matches a rule of ``tier`` is still not junk, or None when it is."""
+        if tier >= JunkTier.TIER_2_DEV_CACHE and is_inside_dependency_tree(path):
+            return KEPT_DEPENDENCY_TREE
+        return None
+
+    def _note_if_kept(self, path: str, tier: JunkTier) -> bool:
+        """Applies the location checks to a name match; True (and counted in ``kept``) when the entry is to be kept."""
+        reason = self._keep_reason(path, tier)
+        if reason is None:
+            return False
+        self.kept[reason] = self.kept.get(reason, 0) + 1
+        return True
 
     def inspect_file(
         self,
@@ -246,6 +268,8 @@ class JunkDetector:
             )
             if is_polaris_cache:
                 if self.max_tier >= JunkTier.TIER_2_DEV_CACHE:
+                    if self._note_if_kept(path, JunkTier.TIER_2_DEV_CACHE):
+                        return None
                     allocated_bytes = 0 if is_dir else calculate_allocated_bytes(size, self.cluster_size)
                     return JunkItem(
                         path=os.path.abspath(path),
@@ -271,8 +295,13 @@ class JunkDetector:
             max_tier=self.max_tier,
             is_root_level=is_root_level,
             rel_path=norm_rel,
+            check_location=False,  # _note_if_kept applies the location checks, and counts what they keep
         )
         if not rule:
+            return None
+
+        # A name that matches is not yet junk: where the entry lives can say otherwise
+        if self._note_if_kept(path, rule.tier):
             return None
 
         # Calculate allocated cluster bytes
@@ -314,6 +343,7 @@ class JunkDetector:
         """
         scan_root = os.path.realpath(os.path.abspath(sub_path or self.drive_root))
         junk_items: List[JunkItem] = []
+        self.kept = {}
 
         # Only exclude version control, agent working directories, and SmartDrive metadata/quarantine during scan;
         # allow scanner to inspect system junk directories like $RECYCLE.BIN, .Trashes

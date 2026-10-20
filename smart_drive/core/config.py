@@ -592,18 +592,45 @@ JUNK_RULES: Tuple[JunkRule, ...] = (
 )
 
 
+# Folders where a package manager puts the packages it installs. What lies inside is somebody else's code, shipped
+# the way it must be: a `dist/` or `build/` there is the package's compiled code, not leftover output, and deleting
+# it breaks every project that uses the package (and `npm install` does not notice). Tier 2-3 rules therefore never
+# match inside one; OS metadata and bytecode (Tier 1) are the only junk still reported there.
+DEPENDENCY_TREE_DIR_NAMES: FrozenSet[str] = frozenset({
+    "node_modules", "bower_components", "jspm_packages", ".pnpm-store",    # JavaScript
+    "site-packages", "dist-packages", "__pypackages__", ".venv", "venv",   # Python
+    "vendor",                                                              # Composer, Go modules, Bundler
+})
+
+
+def is_inside_dependency_tree(path: str, include_last: bool = False) -> bool:
+    """True when a folder on the way to ``path`` is one that holds installed packages (``node_modules``...).
+
+    ``path`` may be absolute or relative, with either kind of separator; names are compared without regard to
+    letter case. Its last component is the entry itself and does not count, unless ``include_last`` is set (for a
+    folder whose own contents are asked about, such as a scan root).
+    """
+    parts = [part for part in path.replace("\\", "/").lower().split("/") if part]
+    if not include_last:
+        parts = parts[:-1]
+    return any(part in DEPENDENCY_TREE_DIR_NAMES for part in parts)
+
+
 def match_junk_rule(
     name: str,
     is_dir: bool,
     max_tier: JunkTier = JunkTier.TIER_1_SAFE,
     is_root_level: bool = False,
     rel_path: Optional[str] = None,
+    check_location: bool = True,
 ) -> Optional[JunkRule]:
     """Matches a file or directory name against known junk rules up to max_tier.
 
     Enforces inviolable protections:
     - Never flags anti-indexing markers (.metadata_never_index, no_log).
     - Never flags protected root files or root directories.
+    - Never matches a Tier 2-3 rule inside a dependency tree (node_modules, site-packages...), when rel_path says
+      where the entry is.
 
     Args:
         name: Filename or directory name.
@@ -611,12 +638,17 @@ def match_junk_rule(
         max_tier: Maximum allowed tier (e.g. TIER_1_SAFE, TIER_2_DEV_CACHE, TIER_3_SENSITIVE).
         is_root_level: True if this item resides directly at the drive root.
         rel_path: Optional relative path from drive root.
+        check_location: False to match by name and path only. JunkDetector sets it so that it can apply the
+            location checks itself, and say which one kept an entry.
 
     Returns:
         Matching JunkRule if matched and allowed, else None.
     """
     clean_name = name.strip()
     name_lower = clean_name.lower()
+
+    if check_location and rel_path and is_inside_dependency_tree(rel_path):
+        max_tier = min(max_tier, JunkTier.TIER_1_SAFE)
 
     # Hard Inviolable Check: Anti-indexing markers
     if clean_name in {ANTI_INDEXING_ROOT_FILE, "no_log"}:
@@ -739,6 +771,8 @@ __all__ = [
     "JunkRule",
     "JUNK_RULES",
     "match_junk_rule",
+    "DEPENDENCY_TREE_DIR_NAMES",
+    "is_inside_dependency_tree",
     # Scanner exclusions
     "DEFAULT_EXCLUDE_DIRS",
 ]
