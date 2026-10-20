@@ -518,7 +518,9 @@ Chạy thủ công trước mỗi bản phát hành; vượt ngân sách thì s�
 - **Khu cách ly**: mã đợt theo giờ máy cục bộ (lệch khi đổi giờ mùa hè/múi giờ); manifest ghi sau khi đổi tên, nằm ngoài `try`;
   hai tiến trình trong cùng một giây dùng chung đợt; `clean --purge-quarantine --apply` mặc định `--older-than 0` (cần xác minh).
 - **MCP**: `ssd_check_safety` đọc `E:x` như đường dẫn tương đối của gốc; gốc lưu trữ được báo là an toàn. Mô tả công cụ
-  `ssd_find_duplicates` vẫn ghi "512KB physical cluster" (bị `test_mcp_grade_a` ghim).
+  `ssd_find_duplicates` vẫn ghi "512KB physical cluster" (bị `test_mcp_grade_a` ghim). `ssd_audit` vẫn tính slack theo cluster
+  512 KB trong khi `smart-drive audit` đã dùng cluster thật của ổ (trên `E:`: 119 MB slack "giả định" cho 4 MB dữ liệu) —
+  nên thống nhất qua cùng helper ở `fsinfo.py`, hoặc trả cả hai con số.
 - **`dup`**: bản cài portable không đăng ký với Windows (ví dụ SonarQube trong `E:\tool`) vẫn có `.jar` trùng được liệt kê;
   cần dùng lại heuristic "thư mục ứng dụng" của `classify` hoặc cho người dùng tự loại trừ. Biểu thức "cluster đã phát hiện,
   nếu không thì 512 KB" lặp ở `cmd_audit`, `cmd_checkup`, `cmd_dup`, `server.py`: gom vào một helper trong `fsinfo.py`.
