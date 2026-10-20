@@ -17,6 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import List, Set
+from unittest.mock import patch
 
 from smart_drive.cli.main import main
 from smart_drive.core.config import (
@@ -27,6 +28,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.junk_detector import KEPT_DEPENDENCY_TREE, JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine
+from smart_drive.core.system_refs import SystemRefIndex
 
 
 class TreeCase(unittest.TestCase):
@@ -41,7 +43,7 @@ class TreeCase(unittest.TestCase):
         return path
 
     def detect(self, tier: JunkTier = JunkTier.TIER_3_SENSITIVE) -> JunkDetector:
-        detector = JunkDetector(str(self.root), max_tier=tier)
+        detector = JunkDetector(str(self.root), max_tier=tier, system_refs=SystemRefIndex([]))
         self.found = {item.rel_path.replace("\\", "/") for item in detector.find_junk()}
         return detector
 
@@ -172,19 +174,19 @@ class TestDetectorKeepsInstalledPackages(TreeCase):
         (inner / "dist").mkdir(parents=True)
         (inner / "dist" / "index.js").write_text("x", encoding="utf-8")
         (inner / "package.json").write_text("{}", encoding="utf-8")
-        found: List[str] = [i.rel_path for i in JunkDetector(str(inner), max_tier=JunkTier.TIER_2_DEV_CACHE).find_junk()]
+        found: List[str] = [i.rel_path for i in JunkDetector(str(inner), max_tier=JunkTier.TIER_2_DEV_CACHE, system_refs=SystemRefIndex([])).find_junk()]
         self.assertEqual(found, [])
 
     def test_the_count_of_kept_entries_starts_over_for_every_scan(self) -> None:
         self.write("proj/node_modules/pkg/dist/index.js")
-        detector = JunkDetector(str(self.root), max_tier=JunkTier.TIER_2_DEV_CACHE)
+        detector = JunkDetector(str(self.root), max_tier=JunkTier.TIER_2_DEV_CACHE, system_refs=SystemRefIndex([]))
         detector.find_junk()
         detector.find_junk()
         self.assertEqual(detector.kept, {KEPT_DEPENDENCY_TREE: 1})
 
     def test_nothing_is_counted_for_tiers_that_were_not_asked_for(self) -> None:
         self.write("proj/node_modules/pkg/dist/index.js")
-        detector = JunkDetector(str(self.root), max_tier=JunkTier.TIER_1_SAFE)
+        detector = JunkDetector(str(self.root), max_tier=JunkTier.TIER_1_SAFE, system_refs=SystemRefIndex([]))
         self.assertEqual(detector.find_junk(), [])
         self.assertEqual(detector.kept, {})
 
@@ -229,8 +231,9 @@ class TestPurgeEngineRefusesDependencyTrees(TreeCase):
 class TestCleanCommandKeepsInstalledPackages(TreeCase):
     def run_clean(self, *extra: str) -> dict:
         out = io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-            code = main(["clean", "--root", str(self.root), "--json", *extra])
+        with patch.object(SystemRefIndex, "collect", return_value=SystemRefIndex([])):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                code = main(["clean", "--root", str(self.root), "--json", *extra])
         self.assertEqual(code, 0, out.getvalue())
         return json.loads(out.getvalue())
 
