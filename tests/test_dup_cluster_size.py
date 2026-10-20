@@ -9,6 +9,7 @@ when the cluster size cannot be read.
 from __future__ import annotations
 
 import contextlib
+import importlib
 import io
 import json
 import shutil
@@ -26,6 +27,11 @@ from smart_drive.core.fsinfo import FilesystemInfo
 from smart_drive.core.system_refs import RegistryReader, SystemRefIndex
 from smart_drive.mcp.server import SmartDriveMCPServer
 from tests.helpers import SmartDriveTestCase
+
+# `smart_drive.cli` re-exports the `main` function, so the attribute `smart_drive.cli.main` is that function and not the
+# submodule. Python 3.9 resolves patch("smart_drive.cli.main.x") by walking attributes and lands on the function; 3.11+
+# imports the dotted name and lands on the module. Patching the module object itself works on both.
+CLI_MAIN = importlib.import_module("smart_drive.cli.main")
 
 # Two copies of 5,000 bytes: they take two 4 KB clusters (3,192 B of slack) or one 512 KB cluster (519,288 B of it)
 PAYLOAD = b"B" * 5000
@@ -53,7 +59,7 @@ class _Drive(unittest.TestCase):
 class TestDupCommand(_Drive):
     def run_dup(self, detected: FilesystemInfo, *flags: str) -> Tuple[str, Any]:
         out = io.StringIO()
-        with patch("smart_drive.cli.main.detect_filesystem", return_value=detected) as detect:
+        with patch.object(CLI_MAIN, "detect_filesystem", return_value=detected) as detect:
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
                 code = main(["dup", "--root", str(self.root), *flags])
         self.assertEqual(code, 0)
