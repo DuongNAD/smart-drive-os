@@ -298,6 +298,76 @@ class TestUndo(SmartDriveTestCase):
         self.assertEqual(code2, 0)
         self.assertEqual(json.loads(out2)["status"], "nothing_to_undo")
 
+    def test_06_partly_failed_undo_keeps_failed_items_undoable(self) -> None:
+        """Items that could not be moved back stay undoable; the next undo does not skip to an older batch."""
+        from smart_drive.cli import cmd_undo as cmd_undo_module
+
+        drive = self.create_mock_drive()
+        notes = drive / "02_Learning_Knowledge" / "Notes"
+        notes.mkdir(parents=True)
+
+        earlier_old = drive / "earlier.txt"
+        earlier_new = notes / "earlier.txt"
+        earlier_new.write_text("earlier", encoding="utf-8")
+        record_moves(str(drive), [(str(earlier_old), str(earlier_new))], "organize")
+
+        a_old, a_new = drive / "a.txt", notes / "a.txt"
+        b_old, b_new = drive / "b.txt", notes / "b.txt"
+        a_new.write_text("a", encoding="utf-8")
+        b_new.write_text("b", encoding="utf-8")
+        record_moves(str(drive), [(str(a_old), str(a_new)), (str(b_old), str(b_new))], "classify")
+
+        real_move = cmd_undo_module._move
+
+        def locked_b(src: str, dest: str) -> None:
+            if src.endswith("b.txt"):
+                raise OSError("file is locked")
+            real_move(src, dest)
+
+        with patch("smart_drive.cli.cmd_undo._move", side_effect=locked_b):
+            code, out, _ = self._run_cli(["undo", "--root", str(drive), "--apply", "--json"])
+        data = json.loads(out)
+        self.assertEqual(code, 1)
+        self.assertEqual(data["status"], "partial_failure")
+        self.assertEqual((data["restored_count"], data["failed_count"]), (1, 1))
+        self.assertTrue(a_old.is_file())
+        self.assertTrue(b_new.is_file())
+
+        # What is left of the batch is still the next thing to undo, not the earlier batch
+        remaining = last_undoable_moves(str(drive))
+        self.assertIsNotNone(remaining)
+        self.assertEqual(remaining["tool"], "classify")
+        self.assertEqual(remaining["moves"], [(str(b_old), str(b_new))])
+
+        code2, out2, err2 = self._run_cli(["undo", "--root", str(drive), "--apply", "--json"])
+        self.assertEqual(code2, 0, err2)
+        self.assertEqual(json.loads(out2)["status"], "applied")
+        self.assertTrue(b_old.is_file())
+        self.assertTrue(earlier_new.is_file(), "earlier batch must not be touched until the failed items are restored")
+
+        code3, out3, err3 = self._run_cli(["undo", "--root", str(drive), "--apply", "--json"])
+        self.assertEqual(code3, 0, err3)
+        self.assertEqual(json.loads(out3)["restored_count"], 1)
+        self.assertTrue(earlier_old.is_file())
+
+    def test_07_text_output_does_not_claim_success_when_nothing_was_restored(self) -> None:
+        drive = self.create_mock_drive()
+        old_file = drive / "locked.txt"
+        new_file = drive / "02_Learning_Knowledge" / "Notes" / "locked.txt"
+        new_file.parent.mkdir(parents=True, exist_ok=True)
+        new_file.write_text("locked content", encoding="utf-8")
+        record_moves(str(drive), [(str(old_file), str(new_file))], "classify")
+
+        with patch("smart_drive.cli.cmd_undo._move", side_effect=OSError("Permission denied")):
+            code, out, _ = self._run_cli(["undo", "--root", str(drive), "--apply"])
+            code_j, out_j, _ = self._run_cli(["undo", "--root", str(drive), "--apply", "--json"])
+        self.assertEqual(code, 1)
+        self.assertNotIn("Undo applied", out)
+        self.assertIn("Undo failed", out)
+        self.assertEqual(json.loads(out_j)["status"], "failed")
+        # Nothing was restored, so the same batch is still pending
+        self.assertEqual(last_undoable_moves(str(drive))["moves"], [(str(old_file), str(new_file))])
+
 
 if __name__ == "__main__":
     unittest.main()

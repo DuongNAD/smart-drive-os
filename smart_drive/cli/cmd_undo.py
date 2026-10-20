@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Tuple
 from smart_drive.cli.cmd_organize import get_default_db_path
 from smart_drive.cli.cmd_relink import print_relink
 from smart_drive.core.auto_zoner import _move
-from smart_drive.core.relink import after_moves, last_undoable_moves, relink, running_agents
+from smart_drive.core.relink import after_moves, last_undoable_moves, record_moves, relink, running_agents
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
@@ -141,6 +141,13 @@ def cmd_undo(args: argparse.Namespace) -> int:
             })
 
     relinked = after_moves(root, executed_moves, "undo") if executed_moves else None
+    if executed_moves and errors:
+        # The journal now treats the whole batch as undone; keep the items that could not
+        # be moved back undoable as a batch of their own so a retry (or the next undo) finds them.
+        try:
+            record_moves(root, [(e["dest"], e["src"]) for e in errors], batch_tool)
+        except OSError as err:
+            sys.stderr.write(f"  ! Could not journal the items left to undo: {err}\n")
 
     db_path = os.path.abspath(get_default_db_path(root))
     inc_res: Any = None
@@ -160,7 +167,7 @@ def cmd_undo(args: argparse.Namespace) -> int:
 
     if as_json:
         print(json.dumps({
-            "status": "applied" if not errors else "partial_failure",
+            "status": "applied" if not errors else ("partial_failure" if executed_moves else "failed"),
             "dry_run": False,
             "root": root,
             "undoes": batch_time,
@@ -178,7 +185,14 @@ def cmd_undo(args: argparse.Namespace) -> int:
         }, indent=2, ensure_ascii=False))
         return exit_code
 
-    print(f"✓ Undo applied ({batch_tool} @ {batch_time}):")
+    if not errors:
+        print(f"✓ Undo applied ({batch_tool} @ {batch_time}):")
+    elif executed_moves:
+        print(f"! Undo only partly applied ({batch_tool} @ {batch_time}): {len(errors)} item(s) could not be restored.")
+        print("  They stay undoable: fix the cause (for example close the app using them) and run `smart-drive undo --apply` again.")
+    else:
+        print(f"✗ Undo failed ({batch_tool} @ {batch_time}): nothing was restored.")
+        print("  Fix the cause (for example close the app using the items) and run `smart-drive undo --apply` again.")
     print(f"  - Restored items: {len(executed_moves)}")
     for src, dest in executed_moves:
         print(f"    {src} -> {dest}")
