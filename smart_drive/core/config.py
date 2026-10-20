@@ -198,11 +198,12 @@ PROTECTED_ROOT_DIRS: FrozenSet[str] = frozenset({
     "ldplayer",
     "sql2022",
     "downloads",
+    # Install folders of FC Online (formerly FIFA Online 4, "FO4"), which Garena publishes in Vietnam: Garena names
+    # a game's folder after its app ID (32837 for FC Online, as in Garena\Games\32837) and "fo4" is the game's short
+    # name (the installer is GarenaPC_FO4VN_Installer_*.exe). Generic for players there, not one person's folders.
     "32837",
     "fo4",
-    # Active Services & Databases
-    "dbi202_vupt/mssql16.mssqlserver",
-    "dbi202_vupt\\mssql16.mssqlserver",
+    # Active Services & Databases (a SQL Server instance folder is protected wherever it lies)
     "mssql16.mssqlserver",
     "mssqlserver",
     "mssql",
@@ -248,7 +249,7 @@ def is_protected_root_dir(dir_name: str) -> bool:
         return True
 
     # 3. Check compound path segments and subpaths for non-taxonomy protected entities
-    # (e.g., "DBI202_VuPT/MSSQL16.MSSQLSERVER", or inside system/app/service dirs)
+    # (e.g., "Courses/MSSQL16.MSSQLSERVER", or inside system/app/service dirs)
     # Inner items inside taxonomies (e.g. 01_AI_Models/llama3.gguf) are NOT root dirs.
     parts = norm_lower.split("/")
     for part in parts:
@@ -762,11 +763,12 @@ DEFAULT_EXCLUDE_DIRS: FrozenSet[str] = frozenset({
     "LDPlayer",
     "SQL2022",
     "Downloads",
+    # Install folders of FC Online (formerly FIFA Online 4, "FO4"), which Garena publishes in Vietnam: Garena names
+    # a game's folder after its app ID (32837 for FC Online, as in Garena\Games\32837) and "fo4" is the game's short
+    # name (the installer is GarenaPC_FO4VN_Installer_*.exe). Generic for players there, not one person's folders.
     "32837",
     "fo4",
-    # Active Services & Databases
-    "DBI202_VuPT/MSSQL16.MSSQLSERVER",
-    "DBI202_VuPT\\MSSQL16.MSSQLSERVER",
+    # Active Services & Databases (the scanner skips a SQL Server instance folder under any parent)
     "MSSQL16.MSSQLSERVER",
     "MSSQLSERVER",
     "MSSQL",

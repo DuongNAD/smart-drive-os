@@ -7,8 +7,9 @@ Tests:
 - Prevention of self-relocation disaster scenario when running from drive root.
 - Protection of Windows system dirs (WindowsApps, WpSystem, DeliveryOptimization, etc.).
 - Protection of game/app libraries (SteamLibrary, Riot Games, LDPlayer, SQL2022, Downloads, 32837, fo4).
-- Protection of active database services (DBI202_VuPT\\MSSQL16.MSSQLSERVER, MSSQLSERVER, MSSQL).
+- Protection of active database services (Course_DB\\MSSQL16.MSSQLSERVER, MSSQLSERVER, MSSQL).
 - Compound path resolution in is_protected_root_dir.
+- No personal folder name in the shipped protection lists: the generic SQL Server instance name covers any parent.
 - FastDirectoryScanner pre-probe directory exclusion (zero syscalls on excluded entries).
 - FastDirectoryScanner quiet permission handling (DEBUG vs WARNING log levels).
 - SecurityGuard integration blocking deletion of protected apps and services.
@@ -189,8 +190,8 @@ class TestWindowsAppsAndServicesProtection(SmartDriveTestCase):
         "MSSQL16.MSSQLSERVER",
         "MSSQLSERVER",
         "MSSQL",
-        "DBI202_VuPT/MSSQL16.MSSQLSERVER",
-        "DBI202_VuPT\\MSSQL16.MSSQLSERVER",
+        "Course_DB/MSSQL16.MSSQLSERVER",
+        "Course_DB\\MSSQL16.MSSQLSERVER",
     ]
 
     def test_is_protected_root_dir_for_all_targets(self) -> None:
@@ -278,11 +279,11 @@ class TestCompoundPathProtection(SmartDriveTestCase):
     """Test resolution of compound and nested paths in config and scanner."""
 
     def test_compound_database_path_resolution(self) -> None:
-        """DBI202_VuPT/MSSQL16.MSSQLSERVER is recognized with slashes and backslashes."""
-        self.assertTrue(is_protected_root_dir("DBI202_VuPT/MSSQL16.MSSQLSERVER"))
-        self.assertTrue(is_protected_root_dir("DBI202_VuPT\\MSSQL16.MSSQLSERVER"))
-        self.assertTrue(is_protected_root_dir("D:/DBI202_VuPT/MSSQL16.MSSQLSERVER"))
-        self.assertTrue(is_protected_root_dir("D:\\DBI202_VuPT\\MSSQL16.MSSQLSERVER"))
+        """Course_DB/MSSQL16.MSSQLSERVER is recognized with slashes and backslashes."""
+        self.assertTrue(is_protected_root_dir("Course_DB/MSSQL16.MSSQLSERVER"))
+        self.assertTrue(is_protected_root_dir("Course_DB\\MSSQL16.MSSQLSERVER"))
+        self.assertTrue(is_protected_root_dir("D:/Course_DB/MSSQL16.MSSQLSERVER"))
+        self.assertTrue(is_protected_root_dir("D:\\Course_DB\\MSSQL16.MSSQLSERVER"))
 
     def test_taxonomy_inner_items_not_protected_as_root(self) -> None:
         """Items inside standard taxonomies are NOT protected root directories."""
@@ -313,6 +314,62 @@ class TestCompoundPathProtection(SmartDriveTestCase):
         exclude_lower = {d.lower() for d in DEFAULT_EXCLUDE_DIRS}
         for item in required_excludes:
             self.assertIn(item.lower(), exclude_lower, f"Missing {item} from DEFAULT_EXCLUDE_DIRS")
+
+
+class TestNoPersonalFolderNames(SmartDriveTestCase):
+    """The shipped lists name no one's own folder: the generic SQL Server instance name covers any parent."""
+
+    # Parts of the name of one user's own course folder, which once sat in both lists next to the instance name
+    PERSONAL_NAME_PARTS = ("dbi202", "vupt")
+
+    def test_no_entry_of_the_shipped_lists_names_a_personal_folder(self) -> None:
+        """No entry of PROTECTED_ROOT_DIRS or DEFAULT_EXCLUDE_DIRS contains a personal folder name."""
+        for label, entries in (
+            ("PROTECTED_ROOT_DIRS", PROTECTED_ROOT_DIRS),
+            ("DEFAULT_EXCLUDE_DIRS", DEFAULT_EXCLUDE_DIRS),
+        ):
+            for entry in entries:
+                for part in self.PERSONAL_NAME_PARTS:
+                    self.assertNotIn(part, entry.lower(), f"{label} entry {entry!r} names a personal folder")
+
+    def test_instance_folder_is_protected_under_any_parent(self) -> None:
+        """The generic entry protects the instance folder wherever it lies, in either spelling of the path."""
+        for path in (
+            "AnyCourse/MSSQL16.MSSQLSERVER",
+            "D:\\Some\\Deep\\Path\\MSSQL16.MSSQLSERVER",
+            "E:/x/MSSQL16.MSSQLSERVER",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(is_protected_root_dir(path))
+        # Only the instance folder is protected: the folder around it is an ordinary one
+        self.assertFalse(is_protected_root_dir("AnyCourse"))
+
+    def test_scanner_skips_the_instance_folder_under_any_parent(self) -> None:
+        """FastDirectoryScanner lists the course folder and its notes, but not the instance folder or its files."""
+        root = self.test_dir / "any_parent"
+        course_dir = root / "AnyCourse"
+        instance_dir = course_dir / "MSSQL16.MSSQLSERVER"
+        instance_dir.mkdir(parents=True)
+        (course_dir / "notes.pdf").write_bytes(b"%PDF mock")
+        (instance_dir / "master.mdf").write_bytes(b"\x00" * 1024)
+
+        rel_paths = {e.rel_path for e in FastDirectoryScanner(str(root)).scan_iter()}
+
+        self.assertEqual(rel_paths, {"AnyCourse", "AnyCourse/notes.pdf"})
+
+    def test_security_guard_refuses_to_delete_the_instance_folder_under_any_parent(self) -> None:
+        """SecurityGuard blocks the deletion of the instance folder and of a database file inside it."""
+        guard = SecurityGuard(str(self.test_dir))
+        instance_dir = self.test_dir / "AnyCourse" / "MSSQL16.MSSQLSERVER"
+        instance_dir.mkdir(parents=True)
+        (instance_dir / "master.mdf").write_bytes(b"\x00" * 1024)
+
+        for target in (instance_dir, instance_dir / "master.mdf"):
+            with self.subTest(target=target.name):
+                is_prot, reason = guard.is_protected(str(target))
+                self.assertTrue(is_prot, f"SecurityGuard failed to mark {target.name} as protected: {reason}")
+                with self.assertRaises(SecurityViolationError, msg=f"SecurityGuard allowed deletion of {target.name}"):
+                    guard.validate_deletion(str(target))
 
 
 class TestScannerDefenseAndQuietErrors(SmartDriveTestCase):
@@ -355,11 +412,11 @@ class TestScannerDefenseAndQuietErrors(SmartDriveTestCase):
         self.assertNotIn("SteamLibrary", probed_entries, "is_symlink was called on excluded SteamLibrary!")
 
     def test_scanner_compound_path_exclusion(self) -> None:
-        """Scanner supports compound path segment exclusions like DBI202_VuPT/MSSQL16.MSSQLSERVER."""
+        """Scanner skips a database directory nested under a course folder, like Course_DB/MSSQL16.MSSQLSERVER."""
         root = self.test_dir / "compound_test"
         root.mkdir()
 
-        course_dir = root / "DBI202_VuPT"
+        course_dir = root / "Course_DB"
         course_dir.mkdir()
         (course_dir / "lecture.pdf").write_bytes(b"%PDF mock")
 
@@ -371,11 +428,11 @@ class TestScannerDefenseAndQuietErrors(SmartDriveTestCase):
         entries = list(scanner.scan_iter())
         rel_paths = {e.rel_path for e in entries}
 
-        self.assertIn("DBI202_VuPT", rel_paths)
-        self.assertIn("DBI202_VuPT/lecture.pdf", rel_paths)
+        self.assertIn("Course_DB", rel_paths)
+        self.assertIn("Course_DB/lecture.pdf", rel_paths)
         # Database directory and its contents must be excluded
-        self.assertNotIn("DBI202_VuPT/MSSQL16.MSSQLSERVER", rel_paths)
-        self.assertNotIn("DBI202_VuPT/MSSQL16.MSSQLSERVER/master.mdf", rel_paths)
+        self.assertNotIn("Course_DB/MSSQL16.MSSQLSERVER", rel_paths)
+        self.assertNotIn("Course_DB/MSSQL16.MSSQLSERVER/master.mdf", rel_paths)
 
     def test_scanner_quiet_permission_handling(self) -> None:
         """PermissionError on system/proprietary directories is logged at DEBUG, not WARNING."""
@@ -385,7 +442,7 @@ class TestScannerDefenseAndQuietErrors(SmartDriveTestCase):
             # 1. PermissionError on WindowsApps
             scanner._record_error("D:\\WindowsApps", "PERMISSION_DENIED", PermissionError("Access is denied"))
             # 2. PermissionError on SQL Server log
-            scanner._record_error("D:\\DBI202_VuPT\\MSSQL16.MSSQLSERVER\\log.ldf", "PERMISSION_DENIED", PermissionError("Locked"))
+            scanner._record_error("D:\\Course_DB\\MSSQL16.MSSQLSERVER\\log.ldf", "PERMISSION_DENIED", PermissionError("Locked"))
             # 3. STAT_FAILED with PermissionError
             scanner._record_error("D:\\System Volume Information", "STAT_FAILED", PermissionError("Access is denied"))
 

@@ -97,7 +97,7 @@ class TestAutoZonerSelfDefenseAndProtectedDirs(unittest.TestCase):
         self.assertTrue(is_protected_root_dir("LDPlayer"))
         self.assertTrue(is_protected_root_dir("32837"))
         self.assertTrue(is_protected_root_dir("smart-drive-os"))
-        self.assertTrue(is_protected_root_dir("DBI202_VuPT/MSSQL16.MSSQLSERVER"))
+        self.assertTrue(is_protected_root_dir("Courses/MSSQL16.MSSQLSERVER"))
         self.assertTrue(is_protected_root_dir("D:\\WindowsApps"))
         self.assertTrue(is_protected_root_dir("D:\\SteamLibrary"))
 
