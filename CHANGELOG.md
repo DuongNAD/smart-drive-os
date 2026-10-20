@@ -55,6 +55,8 @@ in the same release.
   dry-run footer, `checkup`, the READMEs and the agent instructions now say so, and `checkup` recommends the dry run
   (`smart-drive clean --tier 2`) before the cleanup instead of jumping to `--apply`.
 - `dup` hashes up to 8 files at a time, hands the results back in discovery order, and stops promptly on Ctrl-C.
+- `dup`, `checkup --dup` and the MCP tool `ssd_find_duplicates` work out the slack at the volume's own allocation unit
+  (4 KB on NTFS) instead of always 512 KB; 512 KB stays the fallback when the size cannot be read.
 - `audit` models the volume's own cluster size in every output mode instead of always 512 KB, and the docs call exFAT
   with 512 KB clusters the design target, not a fact about every folder. (#10)
 - `checkup` scores and recommends only the stale references that point into the drive being checked; the rest stay
@@ -88,6 +90,18 @@ in the same release.
   report the real space. (#11)
 - `dup` does not enter dependency, environment and cache trees (including the caches tagged with `CACHEDIR.TAG`) or the
   folders Windows and installed apps depend on, and no longer scans for more than 15 minutes in silence.
+- The Tier 3 rule for Unix core dumps (`core.*`) also matched source and data files such as `core.py`, `core.js` and
+  `core.css` (334 files on the test drive), so `clean --tier 3 --apply` would have moved them to the quarantine. It now
+  matches only `core` and `core.<pid>`.
+- `organize`, `undo` and `classify` failed with "Access is denied" when a git `fsmonitor` daemon (a repository with
+  `core.fsmonitor=true`, started by any `git status`, `ls-files` or `diff`) held a folder inside the one being moved.
+  They now stop the daemons of the repositories inside, and of their linked worktrees, before renaming; every git command
+  smart-drive runs passes `-c core.fsmonitor=false`, so it never starts one; dry runs list the daemons that would be
+  stopped; and a refused move says what may hold the folder (on Windows, with the process names the Restart Manager
+  reports).
+- `ssd_clean` and `ssd_find_duplicates` called with a `sub_dir` inside an installed app or a dependency tree now judge
+  the folders above it the way a scan of the whole drive does instead of scanning it; `ssd_clean` reports what it kept,
+  and `ssd_find_duplicates` drops files below `min_size` before hashing them.
 - The MCP tools accept absolute paths when the storage root is a drive root (`E:\` or `/`). Containment is decided on
   the resolved path, so `/data/drive/../x` is no longer called safe for the root `/data/drive`.
 - `SmartDrive.bat` printed "'Presets' is not recognized as an internal or external command" and cut five menu lines at
