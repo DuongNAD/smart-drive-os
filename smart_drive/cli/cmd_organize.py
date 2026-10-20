@@ -11,6 +11,7 @@ import sys
 from smart_drive.cli.cmd_relink import print_relink
 from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.config import JunkTier
+from smart_drive.core.git_locks import watching_repositories
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine, SecurityGuard
 from smart_drive.core.relink import after_moves, relink, running_agents
@@ -130,6 +131,8 @@ def cmd_organize(args: argparse.Namespace) -> int:
     # Dry-run mode
     preview = relink([(a.src_path, a.dest_path) for a in plan], root=root, dry_run=True) if plan else None
     busy_apps = preview.busy_apps if preview else sorted(running_agents())
+    # Only looks (`git fsmonitor--daemon status`); --apply stops these daemons right before it moves their folders
+    fsmonitor_to_stop = watching_repositories([a.src_path for a in plan if a.is_dir]) if plan else []
     if getattr(args, "json", False):
         print(json.dumps({
             "status": "dry_run",
@@ -138,6 +141,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
             "planned_actions": [a.to_dict() for a in plan],
             "protected_by_system": zoner.protected_by_system,
             "busy_apps": busy_apps,
+            "fsmonitor_to_stop": fsmonitor_to_stop,
             "relink_preview": preview.to_dict() if preview else None,
             "anti_indexing_shields": shields,
             "note": "Use --apply to execute relocation."
@@ -159,6 +163,10 @@ def cmd_organize(args: argparse.Namespace) -> int:
         if preview and (preview.changed or preview.warnings or preview.errors or preview.busy_apps):
             print("Coding agents that will follow these moves:")
             print_relink(preview)
+        if fsmonitor_to_stop:
+            print("Git fsmonitor daemons that will be stopped first (each would keep its folder from being moved):")
+            for repo in fsmonitor_to_stop:
+                print(f"  {repo}")
         print("Run with --apply to execute the relocation safely.")
     else:
         print("  ✓ No loose or unorganized items detected. SSD taxonomy is already well-organized!")

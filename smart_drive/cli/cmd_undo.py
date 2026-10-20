@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Tuple
 from smart_drive.cli.cmd_organize import get_default_db_path
 from smart_drive.cli.cmd_relink import print_relink
 from smart_drive.core.auto_zoner import _move
+from smart_drive.core.git_locks import watching_repositories
 from smart_drive.core.move_hint import explain_refused_move
 from smart_drive.core.relink import after_moves, last_undoable_moves, record_moves, relink, running_agents
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
@@ -75,6 +76,8 @@ def cmd_undo(args: argparse.Namespace) -> int:
     if not apply_mode:
         preview = relink(valid_pairs, root=root, dry_run=True) if valid_pairs else None
         busy_apps = preview.busy_apps if preview else sorted(running_agents())
+        # Only looks (`git fsmonitor--daemon status`); --apply stops these daemons right before it moves their folders
+        fsmonitor_to_stop = watching_repositories([src for src, _dest in valid_pairs]) if valid_pairs else []
         if as_json:
             print(json.dumps({
                 "status": "dry_run",
@@ -88,6 +91,7 @@ def cmd_undo(args: argparse.Namespace) -> int:
                 "conflicts": conflicts,
                 "conflict_count": len(conflicts),
                 "busy_apps": busy_apps,
+                "fsmonitor_to_stop": fsmonitor_to_stop,
                 "relink_preview": preview.to_dict() if preview else None,
                 "note": "Use --apply to execute undo.",
             }, indent=2, ensure_ascii=False))
@@ -107,6 +111,10 @@ def cmd_undo(args: argparse.Namespace) -> int:
         if preview and (preview.changed or preview.warnings or preview.errors or preview.busy_apps):
             print("Coding agents that will follow these moves:")
             print_relink(preview)
+        if fsmonitor_to_stop:
+            print("Git fsmonitor daemons that will be stopped first (each would keep its folder from being moved):")
+            for repo in fsmonitor_to_stop:
+                print(f"  {repo}")
         if valid_pairs:
             print("Run with --apply to execute the undo.")
         return 0
