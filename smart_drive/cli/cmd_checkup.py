@@ -300,7 +300,7 @@ def run_checkup(
             title = f"Preview {junk_count} junk item(s) that clean can remove ({_format_bytes(junk_bytes)})"
             desc = (
                 "Regenerable Tier 1-2 items: OS metadata, bytecode, caches, project build/dist folders. "
-                "--apply deletes them for good (no quarantine), so read the dry-run list first."
+                "--apply deletes them permanently (no quarantine), so read the dry-run list first."
             )
         candidate_steps.append({
             "priority": 90 if junk_bytes >= 50 * (1024 ** 2) else 75,
