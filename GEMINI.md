@@ -12,7 +12,7 @@ Allocation Unit: exFAT with 524,288 bytes (512 KB) is the design target; this fo
 - Run `smart-drive gitignore audit` before committing.
 
 ## MCP Ecosystem Setup
-- First time on a machine: run `python3 -m smart_drive setup --json` (Windows: `python -m smart_drive setup --json` or `py -m smart_drive setup --json` when `python` is not on `PATH`). It installs nothing until the user agrees: it exits 4 and lists the MCP servers (name + what each does). Show that list to the user with your own question/confirmation prompt, ask which to install, then run `python -m smart_drive setup --only <approved,names> --yes` to fetch and register them with the installed coding agents. Never pass `--yes` without the user's answer. `--dry-run` previews; `--check --json` reports state (exit code 3 = setup needed).
+- First time on a machine: run `python3 -m smart_drive setup --json` (Windows: `python -m smart_drive setup --json` or `py -m smart_drive setup --json` when `python` is not on `PATH`). It installs nothing until the user agrees: it exits 4 and lists the MCP servers (name + what each does + the coding agents it would be added to). Show that list to the user with your own question/confirmation prompt, ask which to install or add, then run `python -m smart_drive setup --only <approved,names> --yes` to fetch and register them with the installed coding agents. Never pass `--yes` without the user's answer. `--dry-run` previews; `--check --json` reports state (exit code 3 = setup needed).
 
 ## Atomic Commit & Verification Discipline
 - Make small, self-contained commits (one logical fix or feature per commit: `fix(scope): ...`, `feat(scope): ...`).

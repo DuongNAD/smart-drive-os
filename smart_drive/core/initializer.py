@@ -146,7 +146,7 @@ Workspace: External High-Speed SSD. exFAT with a 512 KB allocation unit is the d
 - Gitignore governance: run `smart-drive gitignore audit` before committing.
 
 ## 3. First-Time Setup (MCP ecosystem)
-- Run once per machine: `smart-drive setup --json`. It installs nothing until the user agrees: it exits 4 and lists the MCP servers (name + what each does). Show that list to the user with your own question/confirmation prompt, ask which to install, then run `smart-drive setup --only <approved,names> --yes`. Never pass `--yes` without the user's answer. `--dry-run` previews, `--check --json` reports state (exit code 3 = setup needed).
+- Run once per machine: `smart-drive setup --json`. It installs nothing until the user agrees: it exits 4 and lists the MCP servers (name + what each does + the coding agents it would be added to). Show that list to the user with your own question/confirmation prompt, ask which to install or add, then run `smart-drive setup --only <approved,names> --yes`. Never pass `--yes` without the user's answer. `--dry-run` previews, `--check --json` reports state (exit code 3 = setup needed).
 - Needs Node >= 22.4 and git. Once approved it fetches the MCP servers (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira) and registers them with the installed coding agents.
 
 ## 4. Atomic Commit & Verification Discipline
@@ -180,7 +180,7 @@ Allocation Unit: exFAT with 524,288 bytes (512 KB) is the design target; this fo
 - Run `smart-drive gitignore audit` before committing.
 
 ## MCP Ecosystem Setup
-- Run `smart-drive setup --json` once per machine. It installs nothing until the user agrees: it exits 4 and lists the MCP servers (name + what each does). Show that list to the user with your own question/confirmation prompt, ask which to install, then run `smart-drive setup --only <approved,names> --yes` to fetch and register them. Never pass `--yes` without the user's answer. `--dry-run` previews.
+- Run `smart-drive setup --json` once per machine. It installs nothing until the user agrees: it exits 4 and lists the MCP servers (name + what each does + the coding agents it would be added to). Show that list to the user with your own question/confirmation prompt, ask which to install or add, then run `smart-drive setup --only <approved,names> --yes` to fetch and register them. Never pass `--yes` without the user's answer. `--dry-run` previews.
 
 ## Atomic Commit & Verification Discipline
 - Make small, self-contained commits (one logical fix or feature per commit: `fix(scope): ...`, `feat(scope): ...`).
@@ -199,7 +199,7 @@ CLAUDE_MD_TEMPLATE = """# CLAUDE.md - AI Coding Instructions for SSD Workspace
 - Clean junk with `smart-drive clean` (dry-run by default; `--apply` deletes regenerable Tier 1-2 junk at once, and only `--tier 3` junk such as logs, temp files, and dumps goes to a restorable quarantine: `--list-quarantine` and `--restore latest` inspect/restore).
 - Run `smart-drive gitignore audit` before committing.
 - Commit in small, atomic steps: one logical fix or feature per commit (`fix(scope): ...`, `feat(scope): ...`), paired with a regression test in the same commit, and run the test suite before committing.
-- First time on a machine: run `smart-drive setup --json`. It installs nothing until the user agrees: it exits 4 and lists the MCP servers (name + what each does). Show that list to the user with your own question/confirmation prompt, ask which to install, then run `smart-drive setup --only <approved,names> --yes`. Never pass `--yes` without the user's answer. `--dry-run` previews.
+- First time on a machine: run `smart-drive setup --json`. It installs nothing until the user agrees: it exits 4 and lists the MCP servers (name + what each does + the coding agents it would be added to). Show that list to the user with your own question/confirmation prompt, ask which to install or add, then run `smart-drive setup --only <approved,names> --yes`. Never pass `--yes` without the user's answer. `--dry-run` previews.
 """
 
 

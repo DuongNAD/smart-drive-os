@@ -402,6 +402,8 @@ class TestCli(TempRootCase):
             self.assertEqual(item["action"], "download and register")
             self.assertTrue(item["repo"].startswith("https://github.com/"), item)
             self.assertTrue(item["description"], item)
+            self.assertEqual(item["status"], "missing")
+            self.assertEqual(item["agents"], ["Claude Code"])
         self.assertEqual([i["name"] for i in report["consent"] if i["control_plane"]], [CONTROL_PLANE])
         self.assertEqual(report["next_steps"][0], bootstrap.CONSENT_STEP)
         self.assertIn("setup --only <names> --yes", report["next_steps"][0])
@@ -557,6 +559,161 @@ class TestCli(TempRootCase):
         self.assertNotIn("is added too", out)  # constellation is already installed
         self.assertEqual(self.registered(run), ["constellation", "polaris", "vega", SELF_NAME])
 
+    # -- servers that are downloaded and in the manifest, but not yet in every coding agent ------------
+
+    def downloaded(self, in_agents: Dict[str, List[str]]) -> FakeRun:
+        """Every server is downloaded and in the manifest ("ok"); the agents hold only ``in_agents``."""
+        (self.home / ".cursor").mkdir(parents=True, exist_ok=True)
+        run = FakeRun()
+        self.assertEqual(self.run_cli(self.apply("--yes"), run)[0], 0)
+        run.agent_servers = {agent: set(names) | {SELF_NAME} for agent, names in in_agents.items()}
+        run.calls.clear()
+        return run
+
+    def missing_polaris_and_vega(self) -> FakeRun:
+        """Claude Code lacks polaris; Cursor lacks polaris and vega."""
+        return self.downloaded(
+            {
+                "claude": [n for n in MEMBER_NAMES if n != "polaris"],
+                "cursor": [n for n in MEMBER_NAMES if n not in ("polaris", "vega")],
+            }
+        )
+
+    def assert_nothing_registered(self, run: FakeRun, before: bytes) -> None:
+        self.assertTrue(all("--dry-run" in argv for argv in run.matching("register")))
+        self.assertNotIn("polaris", run.agent_servers["claude"])
+        self.assertNotIn("polaris", run.agent_servers["cursor"])
+        self.assertNotIn("vega", run.agent_servers["cursor"])
+        self.assertEqual(self.manifest_file.read_bytes(), before)
+
+    def test_ok_servers_that_would_be_added_to_an_agent_need_consent(self) -> None:
+        run = self.missing_polaris_and_vega()
+        before = self.manifest_file.read_bytes()
+
+        code, out, err = self.run_cli(self.apply("--json"), run)
+
+        self.assertEqual(code, 4, out + err)
+        self.assertEqual(self.prompts, [])
+        self.assertEqual(err, "")
+        self.assert_nothing_registered(run, before)
+        report = json.loads(out)
+        self.assertTrue(report["needs_consent"])
+        self.assertFalse(report["ok"])
+        consent = {item["name"]: item for item in report["consent"]}
+        self.assertEqual(list(consent), ["polaris", "vega"])
+        self.assertEqual(consent["polaris"]["agents"], ["Claude Code", "Cursor IDE"])
+        self.assertEqual(consent["vega"]["agents"], ["Cursor IDE"])
+        for item in consent.values():
+            self.assertEqual((item["status"], item["action"]), ("ok", "register"))
+            self.assertFalse(item["control_plane"])
+        self.assertEqual(report["registration"]["added"], {n: i["agents"] for n, i in consent.items()})
+        self.assertEqual(report["next_steps"][0], bootstrap.CONSENT_STEP)
+
+    def test_the_text_output_says_which_agents_would_get_the_server(self) -> None:
+        run = self.missing_polaris_and_vega()
+        code, out, _err = self.run_cli(self.apply(), run)
+        self.assertEqual(code, 4)
+        self.assertIn("1. polaris - Evidence-based", out)
+        self.assertIn("2. vega - ", out)
+        self.assertIn("already downloaded: https://github.com/DuongNAD/polaris-mcp", out)
+        self.assertIn("add to: Claude Code, Cursor IDE", out)
+        self.assertIn("add to: Cursor IDE", out)
+        self.assertNotIn("download and register", out)
+        self.assertIn("Next      Ask the user which of these MCP servers to install", out)
+
+    def test_yes_with_only_registers_just_the_approved_ones(self) -> None:
+        run = self.missing_polaris_and_vega()
+        code, out, err = self.run_cli(self.apply("--only", "polaris", "--yes"), run)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.registered(run), ["polaris", SELF_NAME])
+        self.assertIn("polaris", run.agent_servers["claude"])
+        self.assertIn("polaris", run.agent_servers["cursor"])
+        self.assertNotIn("vega", run.agent_servers["cursor"])
+
+    def test_a_pick_at_the_terminal_registers_only_the_chosen_servers(self) -> None:
+        run = self.missing_polaris_and_vega()
+        code, out, err = self.run_cli(self.apply(), run, answers=["1"])
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(len(self.prompts), 1)
+        self.assertIn("add to: Claude Code, Cursor IDE", out)
+        self.assertEqual(run.matching("clone"), [])
+        self.assertIn("polaris", self.registered(run))
+        self.assertNotIn("vega", self.registered(run))
+        self.assertIn("polaris", run.agent_servers["cursor"])
+        self.assertNotIn("vega", run.agent_servers["cursor"])
+
+    def test_declining_at_the_terminal_registers_nothing(self) -> None:
+        run = self.missing_polaris_and_vega()
+        before = self.manifest_file.read_bytes()
+        code, out, err = self.run_cli(self.apply(), run, answers=["n"])
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("Nothing was installed", out)
+        self.assert_nothing_registered(run, before)
+
+    def test_an_installed_constellation_is_registered_only_when_picked(self) -> None:
+        run = self.downloaded(
+            {
+                "claude": [n for n in MEMBER_NAMES if n not in ("constellation", "polaris")],
+                "cursor": MEMBER_NAMES,
+            }
+        )
+        code, out, err = self.run_cli(self.apply(), run, answers=["polaris"])
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("1. constellation", out)
+        self.assertNotIn("is added too", out)  # it is installed already: nothing to set up first
+        self.assertEqual(self.registered(run).count("polaris"), 1)
+        self.assertNotIn("constellation", self.registered(run))
+        self.assertNotIn("constellation", run.agent_servers["claude"])
+
+    def test_nothing_to_create_needs_no_consent(self) -> None:
+        run = self.downloaded({"claude": MEMBER_NAMES, "cursor": MEMBER_NAMES})
+        code, out, err = self.run_cli(self.apply("--json"), run)
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("needs_consent", json.loads(out))
+        code, out, err = self.run_cli(self.apply(), run, answers=["n"])
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.prompts, [])
+        real = [argv for argv in run.matching("register") if "--dry-run" not in argv]
+        self.assertEqual(len(real), 2)  # both runs went through
+
+    def test_a_change_to_an_entry_an_agent_already_has_stays_automatic(self) -> None:
+        run = FakeRun()
+        self.assertEqual(self.run_cli(self.apply("--yes"), run)[0], 0)
+        run.register_diffs = [
+            {"agent": "Cursor IDE", "file": "mcp.json", "action": "update", "changes": ["~ Update server 'polaris'"]}
+        ]
+        code, out, err = self.run_cli(self.apply("--json"), run)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.prompts, [])
+        report = json.loads(out)
+        self.assertNotIn("needs_consent", report)
+        self.assertEqual(report["registration"]["files"][0]["update"], 1)
+        self.assertEqual(report["registration"]["added"], {})
+
+    def test_a_create_that_names_no_server_asks_about_every_server(self) -> None:
+        run = FakeRun()
+        self.assertEqual(self.run_cli(self.apply("--yes"), run)[0], 0)
+        run.register_diffs = [
+            {"agent": "Cursor IDE", "file": "mcp.json", "action": "create", "changes": ["a wording we do not know"]}
+        ]
+        code, out, _err = self.run_cli(self.apply("--json"), run)
+        self.assertEqual(code, 4)
+        consent = json.loads(out)["consent"]
+        self.assertEqual([item["name"] for item in consent], MEMBER_NAMES)
+        for item in consent:
+            self.assertEqual(item["agents"], ["Cursor IDE"])
+
+    def test_check_and_dry_run_still_only_report(self) -> None:
+        run = self.missing_polaris_and_vega()
+        before = self.manifest_file.read_bytes()
+        code, out, _err = self.run_cli(self.apply("--check", "--json"), run, answers=["a"])
+        self.assertEqual(code, 3)
+        self.assertNotIn("needs_consent", json.loads(out))
+        code, out, _err = self.run_cli(self.apply("--dry-run"), run, answers=["a"])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.prompts, [])
+        self.assert_nothing_registered(run, before)
+
     # -- after a full install -------------------------------------------------------------------
 
     def test_a_second_run_needs_no_consent(self) -> None:
@@ -624,6 +781,74 @@ class TestConsentHelpers(unittest.TestCase):
         self.assertEqual(no_clone, ["aurora-slides", "vega"])
         self.assertIn("orion", [i["name"] for i in bootstrap.consent_items(plan, repair=True)])
 
+    def test_consent_items_include_ok_servers_that_would_be_added_to_an_agent(self) -> None:
+        plan = {
+            "target_agents": ["claude", "cursor"],
+            "members": [
+                {"name": "constellation", "status": "ok"},
+                {"name": "polaris", "status": "ok"},
+                {"name": "vega", "status": "ok"},
+                {"name": "orion", "status": "missing"},
+                {"name": "sirius", "status": "found"},
+            ],
+            "registration": {"added": {"polaris": ["Cursor IDE", "OpenAI Codex"], "sirius": ["Cursor IDE"]}},
+        }
+        items = {i["name"]: i for i in bootstrap.consent_items(plan)}
+        self.assertEqual(list(items), ["polaris", "orion", "sirius"])
+        self.assertEqual(items["polaris"]["agents"], ["Cursor IDE", "OpenAI Codex"])
+        self.assertEqual((items["polaris"]["status"], items["polaris"]["action"]), ("ok", "register"))
+        self.assertEqual(items["orion"]["agents"], ["Claude Code", "Cursor"])  # every agent setup targets
+        self.assertEqual(items["sirius"]["agents"], ["Cursor IDE"])
+        self.assertEqual([i["name"] for i in bootstrap.consent_items(plan, no_clone=True)], ["polaris", "sirius"])
+
+    def test_consent_lines_name_the_agents(self) -> None:
+        item = {
+            "name": "polaris",
+            "description": "Research",
+            "repo": "https://example.com/polaris",
+            "action": "register",
+            "control_plane": False,
+            "agents": ["Cursor IDE", "OpenAI Codex"],
+        }
+        self.assertEqual(
+            bootstrap.format_consent([item]),
+            [
+                "  1. polaris - Research",
+                "       register: https://example.com/polaris",
+                "       add to: Cursor IDE, OpenAI Codex",
+            ],
+        )
+        self.assertEqual(len(bootstrap.format_consent([{**item, "agents": []}])), 2)
+        # nothing is fetched for a server that is downloaded already
+        ok = bootstrap.format_consent([{**item, "status": "ok"}])
+        self.assertEqual(ok[1], "       already downloaded: https://example.com/polaris")
+
+    def test_summarise_diffs_names_the_servers_a_registration_would_add(self) -> None:
+        def diff(agent: str, action: str, *changes: str) -> Dict[str, Any]:
+            return {"agent": agent, "file": agent + ".json", "action": action, "changes": list(changes)}
+
+        payload = {
+            "diffs": [
+                diff("Claude Code", "create", "+ Add server 'polaris': {}"),
+                diff("Claude Code", "noop", "No change for server 'vega'"),
+                diff("Cursor IDE", "create", "+ Add server 'polaris': {}"),
+                diff("Cursor IDE", "create", "+ Add server 'vega': {}"),
+                diff("Cursor IDE", "update", "~ Update server 'orion'"),
+                diff("Cursor IDE", "delete", "- Remove server 'sirius'"),
+            ]
+        }
+        summary = bootstrap._summarise_diffs(payload)
+        self.assertEqual(summary["added"], {"polaris": ["Claude Code", "Cursor IDE"], "vega": ["Cursor IDE"]})
+        self.assertEqual(summary["counts"], {"create": 3, "update": 1, "noop": 1, "delete": 1})
+        # a create that names no server is blamed on every candidate
+        unnamed = {"diffs": [diff("Cursor IDE", "create", "something else")]}
+        self.assertEqual(
+            bootstrap._summarise_diffs(unnamed, ["polaris", "vega"])["added"],
+            {"polaris": ["Cursor IDE"], "vega": ["Cursor IDE"]},
+        )
+        self.assertEqual(bootstrap._summarise_diffs(unnamed)["added"], {})
+        self.assertEqual(bootstrap._summarise_diffs(None)["added"], {})
+
     def test_exit_code_4_means_the_user_must_decide(self) -> None:
         plan = {"blocked": False, "errors": [], "mode": "dry-run", "needs_setup": True, "next_steps": ["x"]}
         report = bootstrap.consent_report(plan, [])
@@ -637,6 +862,7 @@ class TestAgentInstructions(unittest.TestCase):
     ASK_FIRST = (
         "It installs nothing until the user agrees",
         "exits 4",
+        "the coding agents it would be added to",
         "your own question/confirmation prompt",
         "--only <approved,names> --yes",
         "Never pass `--yes` without the user's answer",
