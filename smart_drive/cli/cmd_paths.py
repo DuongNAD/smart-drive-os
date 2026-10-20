@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from smart_drive.cli.cmd_relink import print_relink
 from smart_drive.core.relink import (
@@ -148,6 +148,20 @@ def _locate_missing_target(
     }
 
 
+def _drive_membership(root: Optional[str]) -> Callable[[str], bool]:
+    """Returns a test for "this path is the drive root or lies inside it" (spelled and cased as relink compares)."""
+    parsed_root = _split(os.path.abspath(root)) if root else None
+    if parsed_root is None:
+        return lambda path: True
+    root_key = _key(*parsed_root)
+
+    def on_drive(path: str) -> bool:
+        parsed = _split(path)
+        return parsed is not None and _is_under(_key(*parsed), root_key)
+
+    return on_drive
+
+
 def inspect_broken_paths(
     root: Optional[str] = None,
     home: Optional[Path] = None,
@@ -255,10 +269,26 @@ def inspect_broken_paths(
     )
     total_broken = len(ide_entries) + len(broken_shortcuts) + len(broken_path_entries)
 
+    # Which of them involve this drive: a stale reference to C:\Users\x\old-project is the computer's business,
+    # and nothing done on the drive can repair it. (Without a root there is no way to tell: all count.)
+    on_drive = _drive_membership(root)
+    ide_on_drive = [on_drive(e.old) for e in ide_entries]
+    shortcut_on_drive = [on_drive(s["missing_folder"]) or on_drive(s["shortcut"]) for s in broken_shortcuts]
+    path_on_drive = [on_drive(p["missing_folder"]) for p in broken_path_entries]
+    fixable_on_drive = sum(
+        1 for e, here in zip(ide_entries, ide_on_drive)
+        if here and e.kind in ("journal", "same-name") and e.new is not None
+    ) + sum(
+        1 for s, here in zip(broken_shortcuts, shortcut_on_drive)
+        if here and s["kind"] in ("journal", "same-name") and s["suggested_folder"] is not None
+    )
+
     return {
         "root": root,
         "total_broken": total_broken,
         "fixable_count": fixable_ide + fixable_shortcuts,
+        "on_drive_count": sum(ide_on_drive) + sum(shortcut_on_drive) + sum(path_on_drive),
+        "fixable_on_drive_count": fixable_on_drive,
         "ide_and_agents": [e.to_dict() for e in ide_entries],
         "shortcuts": broken_shortcuts,
         "path_entries": broken_path_entries,
