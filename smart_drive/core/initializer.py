@@ -129,7 +129,7 @@ PROFILES = {
 AGENTS_MD_TEMPLATE = """# AGENTS.md - Autonomous AI Coding Agent Manifest
 
 Target: Autonomous AI Coding Agents (Antigravity 2.0, Claude Code, Codex, GLM, Cursor, Windsurf).
-Workspace: External High-Speed SSD (exFAT, Allocation Unit: 512 KB).
+Workspace: External High-Speed SSD. exFAT with a 512 KB allocation unit is the design target; this folder may sit on another filesystem, so run `smart-drive status` to see the real one.
 
 ## 1. Fast-Path Protocol (<10ms)
 - Never traverse disk with recursive find or grep.
@@ -168,8 +168,8 @@ Coding agents, IDEs, and shortcuts remember projects and MCP servers by absolute
 
 GEMINI_MD_TEMPLATE = """# GEMINI.md - SSD Workspace Guidelines & Directives
 
-Environment: High-Speed External SSD (exFAT).
-Allocation Unit: 524,288 bytes (512 KB).
+Environment: High-Speed External SSD.
+Allocation Unit: exFAT with 524,288 bytes (512 KB) is the design target; this folder may sit on another filesystem, so run `smart-drive status` to see the real one.
 
 ## Automated SSD Health Check
 - Run `smart-drive sentinel` or `smart-drive agent-check` to verify mount, shields, and index; run `smart-drive checkup` for a 1-screen `0–100` health score and next steps, or `smart-drive audit --html` for an offline HTML treemap.
@@ -190,7 +190,7 @@ Allocation Unit: 524,288 bytes (512 KB).
 
 CLAUDE_MD_TEMPLATE = """# CLAUDE.md - AI Coding Instructions for SSD Workspace
 
-- Filesystem: exFAT (512KB clusters).
+- Filesystem: exFAT with 512 KB clusters is the design target; this folder may sit on another filesystem, so run `smart-drive status` to see the real one.
 - Avoid loose micro-files to minimize cluster slack waste.
 - Search files using `smart-drive search "<query>"`.
 - Search lessons and research with `smart-drive search --kind slide|fact|capture "<query>"` (MCP ssd_search kind/content).

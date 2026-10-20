@@ -1,7 +1,7 @@
 # GEMINI.md - SSD Workspace Guidelines & Directives
 
-Environment: High-Speed External SSD (exFAT).
-Allocation Unit: 524,288 bytes (512 KB).
+Environment: High-Speed External SSD.
+Allocation Unit: exFAT with 524,288 bytes (512 KB) is the design target; this folder may sit on another filesystem, so run `smart-drive status` to see the real one.
 
 ## Automated SSD Health Check
 - Run `smart-drive sentinel` or `smart-drive agent-check` to verify mount, shields, and index; run `smart-drive checkup` for a 1-screen `0–100` health score and next steps, or `smart-drive audit --html` for an offline HTML treemap.

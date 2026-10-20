@@ -1,7 +1,7 @@
 # AGENTS.md - Autonomous AI Coding Agent Manifest
 
 Target: Autonomous AI Coding Agents (Antigravity 2.0, Claude Code, Codex, GLM, Cursor, Windsurf).
-Workspace: External High-Speed SSD (exFAT, Allocation Unit: 512 KB).
+Workspace: External High-Speed SSD. exFAT with a 512 KB allocation unit is the design target; this folder may sit on another filesystem, so run `smart-drive status` to see the real one.
 
 ## 1. Fast-Path Protocol (<10ms)
 - Never traverse disk with recursive find or grep.

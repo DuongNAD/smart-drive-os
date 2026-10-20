@@ -1,6 +1,6 @@
 # CLAUDE.md - AI Coding Instructions for SSD Workspace
 
-- Filesystem: exFAT (512KB clusters).
+- Filesystem: exFAT with 512 KB clusters is the design target; this folder may sit on another filesystem, so run `smart-drive status` to see the real one.
 - Avoid loose micro-files to minimize cluster slack waste.
 - Search files using `smart-drive search "<query>"`.
 - Search lessons and research with `smart-drive search --kind slide|fact|capture "<query>"` (MCP ssd_search kind/content).
