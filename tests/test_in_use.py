@@ -10,6 +10,7 @@ open) and reports the deepest entries that fail.
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 import os
 import shutil
@@ -21,7 +22,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, Iterator, List, Optional
 from unittest.mock import patch
 
 from smart_drive.core import in_use
@@ -29,6 +30,7 @@ from smart_drive.core.in_use import ERROR_SHARING_VIOLATION, MAX_REPORTED, _exte
 from tests.open_handles import EXPLORER_WATCH_ACCESS, OpenHandle
 
 ON_WINDOWS = sys.platform == "win32"
+WALK_THREAD = "smart-drive-in-use"  # the name find_in_use gives the thread of its walk
 
 
 def _force_remove(func: Any, path: str, _exc: Any) -> None:
@@ -37,6 +39,29 @@ def _force_remove(func: Any, path: str, _exc: Any) -> None:
         func(path)
     except OSError:
         pass
+
+
+@contextlib.contextmanager
+def thread_waits_limited_to(limit: float) -> Iterator[List[Optional[float]]]:
+    """Waits for a thread the way Python 3.9 does on Windows, whatever Python this is.
+
+    There, joining a thread for more than ``threading.TIMEOUT_MAX`` seconds (4_294_967, about 49 days) raises
+    OverflowError ("timeout value is too large"), while newer versions take far longer waits. ``limit`` stands in for
+    TIMEOUT_MAX, so that a budget of a few seconds already lies above it. Yields the waits asked for by the thread of
+    a walk, in order.
+    """
+    real_join = threading.Thread.join
+    asked: List[Optional[float]] = []
+
+    def join(self: threading.Thread, timeout: Optional[float] = None) -> None:
+        if timeout is not None and timeout > threading.TIMEOUT_MAX:
+            raise OverflowError("timeout value is too large")
+        if self.name == WALK_THREAD:
+            asked.append(timeout)
+        real_join(self, timeout)
+
+    with patch.object(threading, "TIMEOUT_MAX", limit), patch.object(threading.Thread, "join", join):
+        yield asked
 
 
 class FakeDisk:
@@ -313,6 +338,26 @@ class TestTimeBox(TreeCase):
             found = find_in_use(self.p("top"), opener=opener, budget=0.2)
         self.assertLess(time.monotonic() - started, 5.0)
         self.assertEqual(found, [held_folder], "what was found before the hang is kept (folders go first)")
+
+    def test_a_budget_longer_than_a_thread_can_be_waited_for_is_cut_down_to_what_it_can_be(self) -> None:
+        # Python 3.9 on Windows raises OverflowError for a join of more than threading.TIMEOUT_MAX seconds, and
+        # find_in_use took that for a failure: for a budget of 1e9 it gave nothing before the walk had got anywhere
+        self.make(*[f"top/f{n:02d}.txt" for n in range(30)])
+        held = self.p("top/f07.txt")
+        for budget in (1e9, float("inf")):
+            with self.subTest(budget=budget):
+                disk = FakeDisk(held=[held])
+                with thread_waits_limited_to(10.0) as waited:
+                    found = find_in_use(self.p("top"), opener=disk, budget=budget)
+                self.assertEqual(found, [held])
+                self.assertEqual(len(disk.tried), 31, "the folder and its 30 files")
+                self.assertEqual(waited, [10.0], "the longest wait that a thread can be given")
+
+    def test_a_budget_that_a_thread_can_be_waited_for_is_waited_for_as_it_is(self) -> None:
+        self.make("top/a.txt")
+        with thread_waits_limited_to(10.0) as waited:
+            find_in_use(self.p("top"), opener=FakeDisk(), budget=2.0)
+        self.assertEqual(waited, [2.0 + in_use._STUCK_GRACE])
 
     def test_it_is_silent_off_windows(self) -> None:
         self.make("top/a.txt")
