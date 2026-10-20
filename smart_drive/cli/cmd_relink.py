@@ -50,7 +50,10 @@ def print_relink(report: Optional[RelinkReport], busy_hint_when_idle: bool = Tru
 
     venv_verb = "would be updated" if report.dry_run else "updated"
     for venv in report.venvs:
-        print(f"  ✓ Python venv {venv_verb}: {venv}")
+        scripts = report.console_scripts.get(venv, 0)
+        noun = "console script" if scripts == 1 else "console scripts"
+        note = f" ({scripts} {noun} {'would be repointed' if report.dry_run else 'repointed'})" if scripts else ""
+        print(f"  ✓ Python venv {venv_verb}: {venv}{note}")
 
     idle = not report.changed and not report.warnings and not report.errors
     if idle:

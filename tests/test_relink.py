@@ -540,6 +540,11 @@ class TestRelink(SmartDriveTestCase):
             f"# editable install\nimport sys; pass\n{old_proj / 'src'}\n",
             encoding="utf-8",
         )
+        # A launcher in a format relink cannot rewrite (uv's: the python path follows the archive) keeps the warning
+        scripts = venv_dir / "Scripts"
+        scripts.mkdir()
+        old_python = str(old_proj / ".venv" / "Scripts" / "python.exe")
+        (scripts / "uvtool.exe").write_bytes(b"MZ" + b"\x00" * 64 + old_python.encode() + b"UVSC")
 
         report = relink(
             [(str(old_proj), str(new_proj))],
@@ -551,7 +556,7 @@ class TestRelink(SmartDriveTestCase):
         self.assertEqual(pth_lines[1], "import sys; pass")
         self.assertEqual(pth_lines[2], str(new_proj / "src"))
         self.assertEqual(report.agents.get("Python venv"), 1)
-        self.assertTrue(any(str(venv_dir) in w for w in report.warnings))
+        self.assertTrue(any(str(venv_dir) in w and "uvtool.exe" in w for w in report.warnings))
 
     # 10. Journal
     def test_10_journal_record_and_corrupt_line_ignored(self) -> None:
@@ -2316,6 +2321,11 @@ class TestRelink(SmartDriveTestCase):
 
         pth_file = sp_dir / "_app.pth"
         pth_file.write_text(f"{old_container / 'app' / 'src'}\n", encoding="utf-8")
+        # A launcher in a format relink cannot rewrite (uv's: the python path follows the archive) keeps the warning
+        scripts = venv_dir / "Scripts"
+        scripts.mkdir()
+        old_python = str(old_container / "app" / ".venv" / "Scripts" / "python.exe")
+        (scripts / "uvtool.exe").write_bytes(b"MZ" + b"\x00" * 64 + old_python.encode() + b"UVSC")
 
         report = relink(
             [(str(old_container), str(new_container))],
@@ -2324,7 +2334,7 @@ class TestRelink(SmartDriveTestCase):
         )
         self.assertEqual(pth_file.read_text(encoding="utf-8").splitlines(), [str(new_container / "app" / "src")])
         self.assertEqual(report.agents.get("Python venv"), 1)
-        self.assertTrue(any(str(venv_dir) in w and "console scripts" in w for w in report.warnings))
+        self.assertTrue(any(str(venv_dir) in w and "console scripts" in w and "uvtool.exe" in w for w in report.warnings))
 
     def test_33_global_site_packages_editable_install_relinked(self) -> None:
         fake_sp = self.test_dir / "global_site_packages"

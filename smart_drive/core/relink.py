@@ -7,8 +7,8 @@ remember projects, sessions, worktrees, and MCP server bundles by absolute path.
 This module rewrites remembered paths under moved folders across supported coding agent configs
 (Claude Code, Claude desktop, Codex, Gemini CLI, Antigravity, Cursor, Windsurf, Constellation,
 and workspace ``.mcp.json``), carries Claude Code project history and memory over to the new
-project slug, repairs git worktrees, and updates moved Python virtualenv ``.pth`` / ``.egg-link``
-entries.
+project slug, repairs git worktrees, and updates moved Python virtualenvs: ``.pth`` / ``.egg-link``
+entries and the interpreter path of their console scripts (pip launchers and scripts with a shebang).
 
 Safety invariants:
 - Rolling backup (``<file>.bak.smart-drive``) before modifying config files (except Claude desktop
@@ -26,6 +26,7 @@ import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime
 import html
+import io
 import json
 import os
 from pathlib import Path
@@ -33,12 +34,14 @@ import re
 import shutil
 import sqlite3
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
 import unicodedata
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 import urllib.parse
+import zipfile
 
 try:
     import tomllib
@@ -675,6 +678,7 @@ class RelinkReport:
     busy_apps: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     errors: List[Dict[str, str]] = field(default_factory=list)
+    console_scripts: Dict[str, int] = field(default_factory=dict)  # venv -> console scripts repointed (or would be)
 
     @property
     def agents(self) -> Dict[str, int]:
@@ -1838,16 +1842,283 @@ def _candidate_venv_dirs(base: Path, max_subdirs: int = _MAX_WORKTREE_SCAN_DIRS)
     return candidates
 
 
+_SCRIPTS_AGENT = "Python console scripts"
+_SCRIPT_FOLDERS = ("Scripts", "bin")  # where a Windows and a POSIX virtualenv keep their console scripts
+_MAX_LAUNCHER_BYTES = 2 * 1024 * 1024  # a pip launcher is ~100 KB, the venv's own python.exe ~250 KB
+_MAX_SCRIPT_BYTES = 1024 * 1024
+_MAX_SCRIPT_FILES = 2000
+# distlib writes `#!/bin/sh` and a second line `'''exec' <python> "$0" "$@"` for a path a shebang cannot hold
+_SH_EXEC_PREFIX = "'''exec' "
+_SH_EXEC_SUFFIX = ' "$0" "$@"'
+_DRIVE_PATH_RE = re.compile(r"[A-Za-z]:[\\/][^\x00-\x1f\"<>|*?:]+")
+_POSIX_PATH_RE = re.compile(r"(?<![\w.])/[^\x00-\x1f\"'<>|\s]+")
+
+
+def _mentions_moved_path(text: str, mapper: PathMapper) -> bool:
+    """True if text holds an absolute path (a Windows drive path or a POSIX one) inside a moved folder."""
+    if not mapper.mentions(text):
+        return False
+    patterns = (_DRIVE_PATH_RE, _POSIX_PATH_RE)
+    return any(mapper.map(found.group(0)) is not None for pattern in patterns for found in pattern.finditer(text))
+
+
+def _utf8(text: str) -> Optional[bytes]:
+    """text as UTF-8, or None for a name that is not valid Unicode (a lone surrogate), which no shebang can hold."""
+    try:
+        return text.encode("utf-8")
+    except UnicodeEncodeError:
+        return None
+
+
+def _repoint_command(command: str, mapper: PathMapper, can_quote: bool) -> Tuple[str, str]:
+    """Moves the interpreter path at the start of command, the text after `#!` (the path, then its arguments).
+
+    Returns ("same", command) when the interpreter is not under a moved folder, ("new", moved command) when it
+    is, and ("stuck", command) when the moved path needs quotes that this kind of shebang cannot have.
+    """
+    body = command.lstrip(" \t")
+    lead = command[: len(command) - len(body)]
+    quoted = body.startswith('"')
+    if quoted:
+        end = body.find('"', 1)
+        if end < 0:
+            return "same", command
+        path, tail = body[1:end], body[end + 1 :]
+    else:
+        word = re.match(r"\S+", body)
+        if word is None:
+            return "same", command
+        path, tail = word.group(0), body[word.end() :]
+    mapped = mapper.map(path)
+    spaced_folder = False
+    if mapped is None and not quoted and can_quote:
+        # A moved folder with a space in its name leaves only the first word of the path in `path`
+        whole = body.rstrip(" \t")
+        mapped = mapper.map(whole)
+        if mapped is not None:
+            spaced_folder, tail = True, body[len(whole) :]
+    if mapped is None:
+        return "same", command
+    if quoted or (re.search(r"\s", mapped) and not spaced_folder):
+        if not can_quote or '"' in mapped:
+            return "stuck", command
+        return "new", f'{lead}"{mapped}"{tail}'
+    return "new", f"{lead}{mapped}{tail}"
+
+
+def _launcher_layout(data: bytes) -> Optional[Tuple[int, int, int]]:
+    """Where the interpreter line of a pip/distlib console-script launcher sits.
+
+    Such an .exe is [launcher stub][`#!<python path>` line][zip archive with __main__.py]. Returns (offset of
+    `#!`, offset where the line's text ends, offset where the zip starts), or None when data is laid out otherwise.
+    """
+    if data[:2] != b"MZ":
+        return None
+    eocd = data.rfind(b"PK\x05\x06")
+    if eocd < 0 or eocd + 22 > len(data):
+        return None
+    fields = struct.unpack("<4sHHHHIIH", data[eocd : eocd + 22])
+    _sig, disk, cd_disk, on_disk, total, cd_size, cd_offset, comment = fields
+    if eocd + 22 + comment != len(data) or disk or cd_disk or on_disk != total or not total:
+        return None  # the archive must end the file, in one piece
+    if total == 0xFFFF or cd_size == 0xFFFFFFFF or cd_offset == 0xFFFFFFFF:
+        return None  # Zip64
+    cd_start = eocd - cd_size
+    zip_start = cd_start - cd_offset  # the offsets in the archive count from its own start, not from the file's
+    if zip_start <= 2 or data[zip_start : zip_start + 4] != b"PK\x03\x04":
+        return None
+    if data[cd_start : cd_start + 4] != b"PK\x01\x02":
+        return None
+    text_end = zip_start
+    while text_end > 0 and data[text_end - 1] in (0x0D, 0x0A):
+        text_end -= 1
+    start = text_end
+    while start > 0 and data[start - 1] >= 0x20 and data[start - 1] != 0x7F:
+        start -= 1  # the line is the last run of printable bytes before the archive
+    marker = data.find(b"#!", start, text_end)
+    return None if marker < 0 else (marker, text_end, zip_start)
+
+
+def _launcher_archive(data: bytes) -> Optional[Tuple[List[str], int]]:
+    """(entry names, offset of the first entry) of the zip archive in a launcher, if it opens and checks out."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            infos = archive.infolist()
+            names = archive.namelist()
+            if not infos or "__main__.py" not in names or archive.testzip() is not None:
+                return None
+            return names, min(info.header_offset for info in infos)
+    except Exception:
+        return None
+
+
+def _repoint_launcher(data: bytes, mapper: PathMapper) -> Tuple[str, Optional[bytes]]:
+    """Moves the interpreter path in the shebang line of a pip/distlib launcher; nothing else changes.
+
+    Returns ("same", None) when it does not start a Python under a moved folder, ("new", the file's new bytes) and
+    ("stuck", None) for a launcher that does but cannot be rewritten safely (also one in a format that is not
+    understood, such as uv's). The new bytes are checked before they are returned: stub and archive are the
+    original bytes, the archive opens, and the line reads back as the new path.
+    """
+    layout = _launcher_layout(data)
+    line = None
+    if layout is not None:
+        try:
+            line = data[layout[0] : layout[1]].decode("utf-8")
+        except UnicodeDecodeError:
+            line = None
+    if layout is None or line is None:
+        # Not laid out like a pip launcher (uv's is not): it still starts the old Python if it names its path
+        named = _mentions_moved_path(data.decode("utf-8", errors="replace"), mapper)
+        return ("stuck", None) if named else ("same", None)
+    marker, text_end, zip_start = layout
+    status, moved = _repoint_command(line[2:], mapper, can_quote=True)
+    if status != "new":
+        return status, None
+    new_line = _utf8("#!" + moved)
+    if new_line is None:
+        return "stuck", None
+    updated = data[:marker] + new_line + data[text_end:]
+    before = _launcher_archive(data)
+    after = _launcher_archive(updated)
+    new_layout = _launcher_layout(updated)
+    if before is None or after is None or new_layout is None or before[1] != zip_start:
+        return "stuck", None
+    new_marker, new_text_end, new_zip_start = new_layout
+    intact = (
+        new_marker == marker
+        and updated[:marker] == data[:marker]  # the stub
+        and updated[marker:new_text_end] == new_line  # the line reads back as the new path
+        and updated[new_text_end:new_zip_start] == data[text_end:zip_start]  # its line ending
+        and updated[new_zip_start:] == data[zip_start:]  # the archive, byte for byte
+        and after == (before[0], new_zip_start)
+    )
+    return ("new", updated) if intact else ("stuck", None)
+
+
+def _repoint_script(data: bytes, mapper: PathMapper) -> Tuple[str, Optional[bytes]]:
+    """Moves the interpreter named by the shebang of a text script; the rest of the file stays as it is.
+
+    Understands `#!<python>` (also `#!"<python path>"`, as written for Windows) and distlib's `#!/bin/sh` form with
+    the second line `'''exec' <python> "$0" "$@"`. Returns ("same", None), ("new", bytes) or ("stuck", None).
+    """
+    first_end = data.find(b"\n")
+    if not data.startswith(b"#!") or first_end < 0:
+        return "same", None
+    first_bytes = data[:first_end].rstrip(b"\r")
+    try:
+        first = first_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return "same", None
+    second_end = data.find(b"\n", first_end + 1)
+    if first.strip() == "#!/bin/sh" and second_end > 0:
+        second_bytes = data[first_end + 1 : second_end].rstrip(b"\r")
+        second = second_bytes.decode("utf-8", errors="replace")
+        if second.startswith(_SH_EXEC_PREFIX) and second.endswith(_SH_EXEC_SUFFIX):
+            inner = second[len(_SH_EXEC_PREFIX) : len(second) - len(_SH_EXEC_SUFFIX)]
+            status, moved = _repoint_command(inner, mapper, can_quote=True)
+            if status != "new":
+                return status, None
+            line = _utf8(_SH_EXEC_PREFIX + moved + _SH_EXEC_SUFFIX)
+            if line is None:
+                return "stuck", None
+            start = first_end + 1
+            return "new", data[:start] + line + data[start + len(second_bytes) :]
+    command = first[2:]
+    # The py launcher of Windows reads quotes in a shebang, the kernel of a POSIX system does not
+    windows_path = re.match(r'\s*"?[A-Za-z]:[\\/]', command) is not None
+    status, moved = _repoint_command(command, mapper, can_quote=windows_path)
+    if status == "new":
+        line = _utf8("#!" + moved)
+        return ("new", line + data[len(first_bytes) :]) if line is not None else ("stuck", None)
+    if status == "same" and _mentions_moved_path(first, mapper):
+        return "stuck", None  # a shebang of a form that is not understood still names the old place
+    return status, None
+
+
+def _console_script_files(venv_dir: Path) -> List[Path]:
+    """The files directly in <venv>/Scripts and <venv>/bin that can be console scripts: no links, no backups."""
+    found: List[Path] = []
+    for folder in _SCRIPT_FOLDERS:
+        try:
+            with os.scandir(venv_dir / folder) as it:
+                entries = sorted(it, key=lambda e: e.name.casefold())
+        except OSError:
+            continue
+        for entry in entries[:_MAX_SCRIPT_FILES]:
+            if entry.name.endswith((BACKUP_SUFFIX, ".smart-drive.tmp")) or _is_link_entry(entry):
+                continue
+            try:
+                if entry.is_file(follow_symlinks=False):
+                    found.append(Path(entry.path))
+            except OSError:
+                continue
+    return found
+
+
+def _read_console_script(path: Path) -> Optional[bytes]:
+    """The bytes of a launcher (.exe) or of a script that starts with `#!`; None for any other file."""
+    try:
+        size = path.stat().st_size
+        with open(path, "rb") as handle:
+            head = handle.read(2)
+            if (head == b"#!" and size <= _MAX_SCRIPT_BYTES) or (head == b"MZ" and size <= _MAX_LAUNCHER_BYTES):
+                return head + handle.read()
+    except OSError:
+        pass
+    return None
+
+
+def _relink_console_scripts(
+    venv_dir: Path,
+    mapper: PathMapper,
+    report: RelinkReport,
+    dry_run: bool,
+) -> Tuple[int, List[str]]:
+    """Points the console scripts of a moved virtualenv at its new place.
+
+    Returns how many were repointed (in a dry run: would be) and the names of those that still start the old
+    path because they could not be rewritten. Each rewritten file keeps a backup next to it.
+    """
+    repointed = 0
+    stuck: List[str] = []
+    for path in _console_script_files(venv_dir):
+        try:
+            data = _read_console_script(path)
+            if data is None:
+                continue
+            status, updated = _repoint_launcher(data, mapper) if data[:2] == b"MZ" else _repoint_script(data, mapper)
+            if status == "same":
+                continue
+            if status == "stuck" or updated is None:
+                stuck.append(path.name)
+            elif dry_run:
+                mapped_file = mapper.map(str(path)) or str(path)
+                report.updated.append({"file": mapped_file, "agent": _SCRIPTS_AGENT, "paths": 1})
+                repointed += 1
+            else:
+                script = AgentFile(path=path, agent=_SCRIPTS_AGENT, kind="launcher", backup=True)
+                if _write_agent_file(script, updated, report):
+                    report.updated.append({"file": str(path), "agent": _SCRIPTS_AGENT, "paths": 1})
+                    repointed += 1
+                else:
+                    stuck.append(path.name)
+        except Exception as err:
+            report.errors.append({"file": str(path), "error": str(err)})
+    return repointed, stuck
+
+
 def _relink_virtualenvs(
     moves: Sequence[Move],
     mapper: PathMapper,
     report: RelinkReport,
     dry_run: bool = False,
 ) -> None:
-    """Updates .pth, .egg-link and editable finder files inside moved Python virtualenvs.
+    """Updates moved Python virtualenvs: their .pth, .egg-link and editable finder files, and the interpreter
+    path in their console scripts (pip launchers, scripts with a shebang).
 
-    A venv is listed, with a warning about its console scripts, only when one of its files was rewritten (or, in
-    a dry run, would be): a venv whose paths already follow the move has nothing left to change.
+    A venv is listed only when one of its files was rewritten (or, in a dry run, would be): a venv that already
+    follows the move has nothing left to change. A console script that cannot be rewritten is warned about.
     """
     seen_venvs: Set[str] = set()
     for old_path, new_path in moves:
@@ -1912,12 +2183,17 @@ def _relink_virtualenvs(
                     except Exception as err:
                         report.errors.append({"file": str(af.path), "error": str(err)})
 
-            if rewritten:
+            repointed, stuck = _relink_console_scripts(venv_dir, mapper, report, dry_run)
+            if rewritten or repointed:
                 if reported_venv not in report.venvs:
                     report.venvs.append(reported_venv)
+            if repointed:
+                report.console_scripts[reported_venv] = report.console_scripts.get(reported_venv, 0) + repointed
+            if stuck:
+                names = ", ".join(stuck[:5]) + (f" and {len(stuck) - 5} more" if len(stuck) > 5 else "")
                 report.warnings.append(
-                    f"Python venv {reported_venv}: console scripts of that venv may still start the old path; "
-                    "fix with `uv sync --reinstall` or a fresh venv."
+                    f"Python venv {reported_venv}: console scripts of that venv could not be repointed and may "
+                    f"still start the old path ({names}); fix with `uv sync --reinstall` or a fresh venv."
                 )
 
 
