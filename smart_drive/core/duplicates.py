@@ -10,7 +10,8 @@ Implements:
 
 Dependency, environment and cache trees (node_modules, site-packages, virtualenvs, ...) are not entered: their
 files are copies of one another by design, so they are never worth reclaiming, and on a real drive they hold most
-of the files that share a size (a scan that opened every one of them took more than 15 minutes).
+of the files that share a size (a scan that opened every one of them took more than 15 minutes). Neither are the
+folders Windows or an installed application depends on (`protected_by_system`, as in `organize` and `classify`).
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from smart_drive.core.config import (
     calculate_allocated_bytes,
     calculate_slack_bytes,
 )
+from smart_drive.core.system_refs import SystemRefIndex, format_protected_by_system_entry
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +105,7 @@ class DuplicateDetector:
         exclude_dirs: Optional[Set[str]] = None,
         *,
         skip_dependency_dirs: bool = True,
+        system_refs: Optional[SystemRefIndex] = None,
     ) -> None:
         self.root = os.path.abspath(root)
         self.cluster_size = cluster_size
@@ -114,25 +117,61 @@ class DuplicateDetector:
         # Whether dependency / environment / cache trees (DEPENDENCY_DIR_NAMES, virtualenvs) are left unscanned.
         # The folder passed as `root` is always scanned, whatever it is called or holds.
         self.skip_dependency_dirs = skip_dependency_dirs
+        self._system_refs: Optional[SystemRefIndex] = system_refs
+        self._scoped_refs: Optional[SystemRefIndex] = None
         # Extra paths of hard-linked data met during the last walk. They are the same storage as a path already
         # yielded, so they are neither hashed again nor reported as redundant copies.
         self.hardlinked_paths_ignored = 0
-        # What the last walk saw: folders listed, regular files looked at, and the dependency trees it did not enter
-        # (each counted once, at its top: the files inside are never listed)
+        # What the last walk saw: folders listed, regular files looked at, and the trees it did not enter (each
+        # counted once, at its top: the files inside are never listed)
         self.folders_scanned = 0
         self.files_scanned = 0
         self.skipped_dependency_dirs = 0
+        # Folders (and loose files of the root) that Windows or an installed app depends on, as `organize` reports them
+        self.protected_by_system: List[Dict[str, Any]] = []
+        self.skipped_protected_dirs = 0
+
+    @property
+    def system_refs(self) -> SystemRefIndex:
+        """Lazily collects OS/application references once per detector."""
+        if self._system_refs is None:
+            self._system_refs = SystemRefIndex.collect(shortcut_roots=[self.root])
+        return self._system_refs
+
+    def _protected_refs(self) -> SystemRefIndex:
+        """The references that point into the scanned tree: only they can protect a folder inside it.
+
+        Checking a folder walks every reference it is given, and a machine has over a thousand (services, shortcuts,
+        installed apps), nearly all of them elsewhere; filtering once keeps the per-folder check cheap.
+        """
+        if self._scoped_refs is None:
+            self._scoped_refs = SystemRefIndex(self.system_refs.refs_under(self.root, is_file=False))
+        return self._scoped_refs
+
+    def _is_protected_by_system(self, path: str, is_file: bool) -> bool:
+        """Whether Windows or an installed app depends on `path`: a PATH entry, a service, an app's folder, a
+        shortcut target, or a folder holding an uninstaller. Records the answer for the report."""
+        refs = self._protected_refs().check_folder(path, is_file=is_file)
+        if not refs:
+            return False
+        self.protected_by_system.append(format_protected_by_system_entry(path, refs))
+        if not is_file:
+            self.skipped_protected_dirs += 1
+        return True
 
     def _walk_files(self) -> Iterator[Tuple[str, int]]:
         """Fast non-recursive directory scan yielding (abs_path, size).
 
         Of several hard links to the same data (same device and inode) only the first is yielded. Folders named in
-        `exclude_dirs`, dependency / environment / cache trees and virtualenvs are not entered.
+        `exclude_dirs`, dependency / environment / cache trees, virtualenvs and the folders Windows or an installed
+        app depends on are not entered. The root itself is always scanned; only what lies below it is judged.
         """
         self.hardlinked_paths_ignored = 0
         self.folders_scanned = 0
         self.files_scanned = 0
         self.skipped_dependency_dirs = 0
+        self.protected_by_system = []
+        self.skipped_protected_dirs = 0
         seen_links: Set[Tuple[int, int]] = set()
         stack = [self.root]
         while stack:
@@ -171,7 +210,9 @@ class DuplicateDetector:
                 self.skipped_dependency_dirs += 1
                 continue
             self.skipped_dependency_dirs += dependency_dirs
-            stack.extend(subdirs)
+            for subdir in subdirs:
+                if not self._is_protected_by_system(subdir, is_file=False):
+                    stack.append(subdir)
 
             for entry in files:
                 try:
@@ -179,6 +220,8 @@ class DuplicateDetector:
                 except (OSError, PermissionError):
                     continue
                 self.files_scanned += 1
+                if curr_dir == self.root and self._is_protected_by_system(entry.path, is_file=True):
+                    continue
                 if info.st_nlink > 1 and info.st_ino:  # (Windows leaves both at 0: "unknown")
                     identity = (info.st_dev, info.st_ino)
                     if identity in seen_links:
@@ -296,6 +339,8 @@ class DuplicateDetector:
             "folders_scanned": self.folders_scanned,
             "files_scanned": self.files_scanned,
             "skipped_dependency_dirs": self.skipped_dependency_dirs,
+            "skipped_protected_dirs": self.skipped_protected_dirs,
+            "protected_by_system": list(self.protected_by_system),
         }
 
 
