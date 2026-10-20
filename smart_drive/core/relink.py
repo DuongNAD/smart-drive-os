@@ -1894,6 +1894,7 @@ def _process_editable_finder_file(
             return match.group(0)
         total_count += 1
         escaped = mapped.replace("\\", "\\\\") if "\\\\" in raw_inner else mapped
+        escaped = escaped.replace(quote, "\\" + quote)
         return f"{quote}{escaped}{quote}"
 
     new_text = _PY_QUOTED_STR_RE.sub(_replace_str, text)

@@ -2472,6 +2472,28 @@ class TestRelink(SmartDriveTestCase):
         self.assertIn(str(venv_dir), undo_payload["relink_preview"]["venvs"])
         self.assertIn("Close these before --apply: Antigravity", out_undo_txt.getvalue())
 
+    def test_35_editable_finder_stays_valid_python_when_the_new_path_has_a_quote(self) -> None:
+        import ast
+
+        fake_sp = self.test_dir / "site_packages_quote"
+        fake_sp.mkdir()
+        finder_py = fake_sp / "__editable___pkg_0_1_0_finder.py"
+        finder_py.write_text(
+            "MAPPING: dict[str, str] = {'pkg': 'E:\\\\__sd_mock_drive__\\\\project\\\\pkg\\\\src'}\n",
+            encoding="utf-8",
+        )
+        new_container = "E:\\__sd_mock_drive__\\Bob's stuff\\project"
+        report = relink(
+            [("E:\\__sd_mock_drive__\\project", new_container)],
+            dry_run=False,
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            site_packages=[fake_sp],
+        )
+        self.assertEqual(report.agents.get("Python editable"), 1)
+        tree = ast.parse(finder_py.read_text(encoding="utf-8"))  # SyntaxError before the fix
+        self.assertEqual(ast.literal_eval(tree.body[0].value), {"pkg": new_container + "\\pkg\\src"})
+
 
 if __name__ == "__main__":
     unittest.main()
