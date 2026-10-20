@@ -19,6 +19,8 @@ Verifies:
    - 20+ Trove classifiers
    - Runtime dependencies strictly empty (`dependencies = []`).
 5. Codebase-wide static audit for zero external runtime imports and zero telemetry libraries.
+6. Project status stays honest: pyproject.toml classifies the package as Beta, and no README keeps a hard-coded
+   test count (they show the live CI badge instead).
 """
 
 from __future__ import annotations
@@ -242,6 +244,41 @@ class TestMarketplaceMetadataCompliance(SmartDriveTestCase):
         self.assertTrue(any("MIT License" in c for c in classifiers))
         self.assertTrue(any("Topic :: System :: Filesystems" in c for c in classifiers))
         self.assertTrue(any("Topic :: Security" in c for c in classifiers))
+
+
+class TestProjectStatusIsHonest(SmartDriveTestCase):
+    """The package claims no more maturity than it has, and no README keeps a test count that goes stale.
+
+    The files are read as text, not through tomllib, so this also runs on Python 3.9, where tomllib does not exist.
+    """
+
+    # The live badge of README.md; README_INTERNAL.md shows the same one
+    CI_BADGE = (
+        "[![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)]"
+        "(https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)"
+    )
+
+    def test_development_status_classifier_is_beta(self) -> None:
+        """pyproject.toml classifies the package as Beta, once, and nothing in it says Production/Stable."""
+        text = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertEqual(
+            re.findall(r'"(Development Status :: [^"]*)"', text),
+            ["Development Status :: 4 - Beta"],
+        )
+        self.assertNotIn("Production/Stable", text)
+
+    def test_no_readme_has_a_hard_coded_test_count_badge(self) -> None:
+        """A static 'tests-968/968 passed' badge is wrong as soon as a test is added; the CI badge is the live one."""
+        for name in ("README.md", "README_VN.md", "README_INTERNAL.md"):
+            text = (PROJECT_ROOT / name).read_text(encoding="utf-8")
+            self.assertIsNone(re.search(r"badge/tests-\d", text), f"{name} has a hard-coded test-count badge")
+
+    def test_the_readmes_show_the_live_ci_badge(self) -> None:
+        """README.md and README_INTERNAL.md both carry the badge of the CI workflow."""
+        for name in ("README.md", "README_INTERNAL.md"):
+            text = (PROJECT_ROOT / name).read_text(encoding="utf-8")
+            # (assertTrue, not assertIn: a failure would print the whole README)
+            self.assertTrue(self.CI_BADGE in text, f"{name} lacks the CI badge")
 
 
 class TestZeroDependencyInvariant(SmartDriveTestCase):
