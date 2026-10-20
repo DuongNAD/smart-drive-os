@@ -519,10 +519,14 @@ Chạy thủ công trước mỗi bản phát hành; vượt ngân sách thì s�
   làm `cd` thất bại, `wow! a!b!c` thành `wowbc`) và đã tắt nó, chỉ bật quanh một dòng `echo`. Cùng đợt: `&` và `>` chưa escape
   trong `Quick_Audit.bat`/`Quick_Search.bat` (dòng `size:>10MB` từng ghi ra file rác tên `10MB`). Còn: tên thư mục chứa `%VAR%`
   bị `cmd /c` tự mở rộng, launcher không chặn được.
-- **Dò tiến trình** (`processes.py`): nếu `tasklist` lỗi hoặc quá 10 s thì coi như không có ứng dụng nào đang mở, nên
-  offload/relink chạy tiếp; nên coi là "không biết" và hỏi lại (cần xác minh).
+- **Dò tiến trình** ✅ (1.4.2): khi `tasklist`/`ps` lỗi hoặc quá 10 s, `offload --move`/`--revert` không còn coi là "không
+  có gì đang chạy": cache có tiến trình chặn (Docker/WSL, Ollama, cargo) bị từ chối, `--wait` chờ tới khi đọc được danh sách,
+  `--force` vẫn dời kèm cảnh báo; `organize`/`undo` báo `busy_apps_unknown` và `Smart_Organize` dừng ở bước 2 hỏi người dùng
+  đóng agent/IDE. `relink` vốn đã coi danh sách không đọc được là "vẫn đang chạy". Còn: `verify_post_organize` của
+  `Smart_Organize` chưa xét `busy_apps_unknown`, và khi bước kiểm tra lại bị lỗi (exception) thì vẫn coi là "không có gì mở".
 - **Khu cách ly**: mã đợt theo giờ máy cục bộ (lệch khi đổi giờ mùa hè/múi giờ); manifest ghi sau khi đổi tên, nằm ngoài `try`;
-  hai tiến trình trong cùng một giây dùng chung đợt; `clean --purge-quarantine --apply` mặc định `--older-than 0` (cần xác minh).
+  hai tiến trình trong cùng một giây dùng chung đợt. ✅ (1.4.2) `clean --purge-quarantine` giờ giữ các đợt dưới 30 ngày;
+  muốn xóa mọi đợt phải ghi rõ `--older-than 0`, số âm bị từ chối.
 - **MCP**: `ssd_check_safety` đọc `E:x` như đường dẫn tương đối của gốc; gốc lưu trữ được báo là an toàn. Mô tả công cụ
   `ssd_find_duplicates` vẫn ghi "512KB physical cluster" (bị `test_mcp_grade_a` ghim). `ssd_audit` vẫn tính slack theo cluster
   512 KB trong khi `smart-drive audit` đã dùng cluster thật của ổ (trên `E:`: 119 MB slack "giả định" cho 4 MB dữ liệu) —
@@ -530,11 +534,18 @@ Chạy thủ công trước mỗi bản phát hành; vượt ngân sách thì s�
 - **`dup`**: bản cài portable không đăng ký với Windows (ví dụ SonarQube trong `E:\tool`) vẫn có `.jar` trùng được liệt kê;
   cần dùng lại heuristic "thư mục ứng dụng" của `classify` hoặc cho người dùng tự loại trừ. Biểu thức "cluster đã phát hiện,
   nếu không thì 512 KB" lặp ở `cmd_audit`, `cmd_checkup`, `cmd_dup`, `server.py`: gom vào một helper trong `fsinfo.py`.
-- **`clean`**: không áp dụng được riêng Tier 3 (`--tier 3 --apply` xóa luôn Tier 1–2) → thêm `--only-tier`; `*.dmp` có thể là
-  file export của Oracle (Tier 3 nên chỉ vào khu cách ly, cần theo dõi); `*.pyc` lẻ không có mã nguồn vẫn là Tier 1;
-  `__pycache__` trong `site-packages` của venv vẫn được liệt kê (vô hại, Python tạo lại).
+- **`clean`**: ✅ (1.4.2) `--only-tier 3 --apply` chỉ cách ly rác Tier 3, không xóa Tier 1–2. Còn: tệp Tier 3 nằm trong
+  một thư mục rác Tier 1–2 (ví dụ `build/x.tmp`) không được `--only-tier 3` liệt kê; công cụ MCP `ssd_clean` chưa có
+  `only_tier`; `*.dmp` có thể là file export của Oracle (Tier 3 nên chỉ vào khu cách ly, cần theo dõi); `*.pyc` lẻ không có
+  mã nguồn vẫn là Tier 1; `__pycache__` trong `site-packages` của venv vẫn được liệt kê (vô hại, Python tạo lại).
+- **Danh sách bảo vệ** ✅ (1.4.2): bỏ `DBI202_VuPT\MSSQL16.MSSQLSERVER` (tên thư mục riêng của một người dùng) khỏi
+  `PROTECTED_ROOT_DIRS` và `DEFAULT_EXCLUDE_DIRS`, vì mục chung `MSSQL16.MSSQLSERVER` đã bảo vệ thư mục instance ở mọi thư mục
+  cha; `32837` và `fo4` (thư mục cài FC Online của Garena) được giữ kèm chú thích. Chưa có danh sách để người dùng tự thêm
+  thư mục cần giữ: README chỉ cách dùng shortcut trên Desktop/Start Menu/taskbar (`protected_by_system`).
 - **`classify`**: rất thận trọng — giữ nguyên cả `E:\project` (một repo con có `tunnel.ps1`) và thư mục kiểu Downloads có file
-  cài đặt; cân nhắc bỏ qua thư mục con là repo khi xét "chứa thư mục chương trình".
+  cài đặt; cân nhắc bỏ qua thư mục con là repo khi xét "chứa thư mục chương trình". `classify --apply` còn dời cả shortcut
+  `.lnk` nằm ở gốc ổ vào `06_Archives_Storage/Unclassified/`, làm mất lớp bảo vệ `protected_by_system` mà shortcut đó tạo cho
+  thư mục đích: nên giữ nguyên các `.lnk` ở gốc trỏ tới một thư mục trên ổ.
 - **Menu** ✅: `SmartDrive.*` có mục [11] "Relink lại đợt chuyển gần nhất" (xem trước bằng `relink --dry-run`, hỏi, rồi
   `relink --wait`), cho quy trình: chạy organize trong Claude Code → tắt Claude → chạy [11]. Cùng đợt sửa: dấu `&` chưa escape
   trong menu `SmartDrive.bat`, mục 0 của `SmartDrive.ps1` không thoát được.
