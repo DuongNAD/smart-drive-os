@@ -75,6 +75,21 @@ class TestCliScope(DriveCase):
         self.assertTrue((self.drive / "01_AI_Models" / "Weights" / "loose_model.gguf").is_file())
         self.assertTrue((self.drive / "02_Learning_Knowledge" / "Notes" / "loose_notes.md").is_file())
 
+    def test_a_default_classify_batch_can_still_be_undone(self) -> None:
+        code, out, err = self.classify("--apply", "--json")
+        self.assertEqual(code, 0, err)
+        moved = [Path(a["destination_path"]) for a in json.loads(out)["actions"] if a["status"] == "MOVED"]
+        self.assertEqual(len(moved), len(LOOSE_AT_ROOT))
+        self.assertTrue(all(path.is_file() for path in moved))
+
+        undo_out, undo_err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(undo_out), contextlib.redirect_stderr(undo_err):
+            code = main(["undo", "--root", str(self.drive), "--apply", "--json"])
+        self.assertEqual(code, 0, undo_err.getvalue())
+        self.assertEqual(json.loads(undo_out.getvalue())["restored_count"], len(LOOSE_AT_ROOT))
+        self.assertTrue(all((self.drive / name).is_file() for name in LOOSE_AT_ROOT))
+        self.assertFalse(any(path.exists() for path in moved))
+
     def test_no_recursive_is_still_accepted_and_is_what_happens_anyway(self) -> None:
         default = self.plan()
         legacy = self.plan("--no-recursive")
