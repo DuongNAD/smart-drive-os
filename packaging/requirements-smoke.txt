@@ -1,0 +1,6 @@
+# Installers exercised by `packaging/smoke_test.py --uvx/--pipx` in .github/workflows/release.yml.
+# Test tools only, never runtime dependencies: SmartDrive-OS itself needs nothing outside the standard library.
+#
+# Install them with:  python -m pip install -r packaging/requirements-smoke.txt
+uv==0.13.4
+pipx==1.18.4; python_version >= "3.11"
