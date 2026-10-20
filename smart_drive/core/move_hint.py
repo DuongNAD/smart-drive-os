@@ -8,8 +8,9 @@ the moves they refuse.
 
 ``inspect_refused_move`` turns such an error into advice (``move_failure_hint`` and ``explain_refused_move`` are the
 text-only forms). What it looks up on top of the error is best effort: running fsmonitor daemons, and on Windows
-what is open below the folder (``in_use.find_in_use`` tries every entry exclusively and reports the deepest ones) and
-the processes the Windows Restart Manager names for the files that are open. A lookup that fails is left out, and
+what is open below the folder (``in_use.find_in_use`` tries every entry exclusively and reports the deepest ones), the
+processes the Windows Restart Manager names for the files that are open, and whether Explorer's Quick Access lists a
+folder inside (Explorer keeps a handle on each of those, see ``quick_access``). A lookup that fails is left out, and
 nothing here raises.
 
 100% Python Standard Library (ctypes only on Windows).
@@ -25,6 +26,7 @@ from typing import Callable, List, Sequence
 
 from smart_drive.core.git_locks import watching_repositories
 from smart_drive.core.in_use import find_in_use
+from smart_drive.core.quick_access import pinned_inside, quick_access_folders
 
 _LOCK_WINERRORS = (5, 32)  # ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION
 _LOCK_ERRNOS = (errno.EACCES, errno.EPERM, errno.EBUSY)
@@ -151,6 +153,25 @@ def _unnamed_holder(in_use: List[str], tail: str) -> str:
     )
 
 
+def _pinned_below(folder: str) -> List[str]:
+    """The folders of Explorer's Quick Access that are in ``folder`` (or are it) and still exist."""
+    return [pin for pin in pinned_inside(folder, quick_access_folders()) if os.path.isdir(pin)]
+
+
+def _pinned_in_explorer(pins: List[str], in_use: List[str], tail: str) -> str:
+    """What to do about folders that Explorer keeps open because Quick Access lists them."""
+    several = len(pins) > 1
+    if {os.path.normcase(pin) for pin in pins} == {os.path.normcase(path) for path in in_use}:
+        subject = "those folders are" if several else "that folder is"  # the ones just named
+    else:
+        subject = f"{_shown(pins)} {'are' if several else 'is'}"
+    return (
+        f"{subject} pinned in Explorer's Quick Access, and Explorer keeps pinned folders open: "
+        f"unpin {'each' if several else 'it'} (right-click → Unpin from Quick access), restart Windows Explorer "
+        f"(Task Manager → Windows Explorer → Restart) and {tail}"
+    )
+
+
 @dataclass(frozen=True)
 class RefusedMove:
     """What is known about a move that the system refused."""
@@ -170,8 +191,9 @@ def inspect_refused_move(err: BaseException, folder: str, retry: str = "organize
 
     Any error gets the plain advice. A lock error also lists what may be using the folder, and names the
     fsmonitor daemons still running in it. On Windows it also names the entries below the folder that are open
-    (``in_use``) and the processes holding files, when they can be found, and says how to find a holder that
-    cannot be named. The hint ends with how to try again (``retry`` is the command).
+    (``in_use``) and the processes holding files, when they can be found. When something is open, it says whether
+    Explorer's Quick Access keeps it open (unpin it and restart Explorer), and when no program can be named it says
+    where to look. The hint ends with how to try again (``retry`` is the command).
     """
     tail = f"run {retry} again"
     again = f"close the editor, terminal or coding agent using it, then {tail}"
@@ -182,6 +204,7 @@ def inspect_refused_move(err: BaseException, folder: str, retry: str = "organize
     in_use = _lookup(lambda: find_in_use(folder))
     held_files = [path for path in in_use if os.path.isfile(path)]
     holders = _lookup(lambda: holding_processes(folder, also=held_files))
+    pins = _lookup(lambda: _pinned_below(folder)) if in_use else []  # no need to ask PowerShell when nothing is open
 
     parts: List[str] = []
     if not in_use:  # nothing was found open: only the usual suspects can be listed
@@ -198,7 +221,9 @@ def inspect_refused_move(err: BaseException, folder: str, retry: str = "organize
         parts.append("in use: " + ", ".join(in_use))
     if holders:
         parts.append(f"files in it are held open by {_shown(holders)}")
-    if in_use and not holders and not daemons:
+    if pins:
+        parts.append(_pinned_in_explorer(pins, in_use, tail))
+    elif in_use and not holders and not daemons:
         parts.append(_unnamed_holder(in_use, tail))
     else:
         parts.append(again)
