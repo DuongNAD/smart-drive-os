@@ -1014,6 +1014,45 @@ class TestClassifierEdgeCases(_IsolatedClassifierTestCase):
             self.assertTrue(pinned_py.exists())
             self.assertTrue(path_script.exists())
 
+    def test_files_inside_a_referenced_app_below_a_protected_top_folder_are_not_moved(self) -> None:
+        from smart_drive.core.system_refs import SystemRef, SystemRefIndex
+
+        with TempWorkspace(prefix="test_app_in_taxonomy_") as tmp:
+            for rel in (
+                "05_Dev_Toolbox/MyApp/docs/guide.pdf",
+                "05_Dev_Toolbox/Other/docs/guide.pdf",
+                "Games/Launcher/saves/slot1.pdf",
+                "Stuff/MyApp2/docs/guide.pdf",
+            ):
+                path = tmp / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"%PDF-1.7\n%%EOF\n")
+            (tmp / "05_Dev_Toolbox" / "MyApp" / "MyApp.exe").write_bytes(b"MZ")
+            (tmp / "Games" / "Launcher" / "Launcher.exe").write_bytes(b"MZ")
+            (tmp / "Stuff" / "MyApp2" / "MyApp2.exe").write_bytes(b"MZ")
+
+            refs = SystemRefIndex([
+                SystemRef(kind="shortcut", source=r"C:\Users\X\Desktop\MyApp.lnk", target=str(tmp / "05_Dev_Toolbox" / "MyApp" / "MyApp.exe")),
+                SystemRef(kind="shortcut", source=r"C:\Users\X\Desktop\Launcher.lnk", target=str(tmp / "Games" / "Launcher" / "Launcher.exe")),
+                SystemRef(kind="shortcut", source=r"C:\Users\X\Desktop\MyApp2.lnk", target=str(tmp / "Stuff" / "MyApp2" / "MyApp2.exe")),
+            ])
+            engine = ClassifierEngine(root_path=tmp, system_refs=refs)
+
+            def planned(sub: str) -> list:
+                results = engine.scan_and_classify(tmp / sub)
+                self.assertEqual(len(results), 1, sub)
+                return [a.status for a in engine.execute_relocation(results, dry_run=True)]
+
+            # Next to an app a shortcut points to: the file stays, whichever top-level folder holds the app
+            self.assertEqual(planned("Stuff/MyApp2/docs"), [])
+            self.assertEqual(planned("05_Dev_Toolbox/MyApp/docs"), [])
+            skipped = {os.path.relpath(item["path"], tmp).replace("\\", "/") for item in engine.protected_by_system}
+            self.assertIn("05_Dev_Toolbox/MyApp", skipped)  # reported as the app folder, not the whole taxonomy
+            self.assertNotIn("05_Dev_Toolbox", skipped)
+            self.assertEqual(planned("Games/Launcher/saves"), [])
+            # Another app in the same taxonomy folder is not affected
+            self.assertEqual(planned("05_Dev_Toolbox/Other/docs"), ["PLANNED"])
+
     def test_loose_documents_in_a_path_folder_are_classified_but_executables_stay(self) -> None:
         from smart_drive.core.system_refs import SystemRef, SystemRefIndex
 

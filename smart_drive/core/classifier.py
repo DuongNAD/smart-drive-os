@@ -999,9 +999,18 @@ class ClassifierEngine:
                 is_file=(not item.is_dir and not item.source_path.is_dir()),
             ):
                 continue
+            # A file inside an app folder that a shortcut, service or install points to goes with the app.
+            # A protected top-level folder (taxonomy, Games, Steam, Downloads...) holds many apps side by side,
+            # so there the app folder one level down is the unit to check, not the whole top-level folder.
             rel_parts = self._rel_to_root(item.source_path)
-            if rel_parts and len(rel_parts) > 1 and not is_protected_root_dir(rel_parts[0]):
-                if self._is_protected_by_system(self.root / rel_parts[0]):
+            if rel_parts and len(rel_parts) > 1:
+                if not is_protected_root_dir(rel_parts[0]):
+                    app_dir: Optional[Path] = self.root / rel_parts[0]
+                elif len(rel_parts) > 2:
+                    app_dir = self.root / rel_parts[0] / rel_parts[1]
+                else:
+                    app_dir = None
+                if app_dir is not None and self._is_protected_by_system(app_dir):
                     continue
 
             dest_path, collision = self.resolve_destination(item, allocated)
