@@ -27,9 +27,10 @@ MAX_SHORTCUT_FILES: int = 5000
 MAX_DESKTOP_WALK_DEPTH: int = 3
 
 _EXEC_EXT_RE = re.compile(
-    r"^(?P<path>.+?\.(?:exe|sys|dll|bat|cmd|com|ps1|msc))(?=$|[\s,]|/)",
+    r"\.(?:exe|sys|dll|bat|cmd|com|ps1|msc)(?=$|[\s,]|/)",
     re.IGNORECASE,
 )
+_ABSOLUTE_START_RE = re.compile(r'^"?(?:[A-Za-z]:[\\/]|\\\\)')
 _ICON_INDEX_RE = re.compile(r",\s*-?\d+\s*$")
 _ENV_VAR_RE = re.compile(r"%([^%]+)%")
 
@@ -223,6 +224,35 @@ class RegistryReader:
 # 2. Pure Parsers: Command Lines, ImagePath, PATH, and MS-SHLLINK (.lnk)
 # ==============================================================================
 
+def _unescape_quoted_command(s: str) -> str:
+    """Turns `"\\"C:\\x\\a.exe\\" --startup"` (a command line wrapped in quotes, inner quotes escaped) into `"C:\\x\\a.exe" --startup`."""
+    if s.startswith('"\\"'):
+        inner = s[1:-1] if s.endswith('"') and len(s) > 3 else s[1:]
+        return inner.replace('\\"', '"')
+    if s.startswith('\\"'):
+        return s.replace('\\"', '"')
+    return s
+
+
+def _split_unquoted_program(s: str) -> Optional[str]:
+    """Returns the program path at the start of an unquoted command line, or None when it names no known extension.
+
+    The first `.exe`/`.dll`/... followed by a space is not always the end: in `E:\\My.com Tools\\app.exe -k` the
+    text after `.com` is still a relative path, so the program runs on to `app.exe`.
+    """
+    first: Optional[str] = None
+    for m in _EXEC_EXT_RE.finditer(s):
+        candidate = s[:m.end()]
+        if first is None:
+            first = candidate
+        rest = s[m.end():].lstrip()
+        token = rest.split(None, 1)[0] if rest else ""
+        if "\\" in token and not _ABSOLUTE_START_RE.match(token):
+            continue
+        return candidate
+    return first
+
+
 def extract_executable_path(
     raw: str,
     system_root: Optional[str] = None,
@@ -242,6 +272,8 @@ def extract_executable_path(
         env_lower = {k.lower(): v for k, v in os.environ.items()}
         s = _ENV_VAR_RE.sub(lambda m: env_lower.get(m.group(1).lower(), m.group(0)), s)
 
+    s = _unescape_quoted_command(s)
+
     # Strip icon index suffix like `,0` or `,-1`
     s = _ICON_INDEX_RE.sub("", s).strip()
 
@@ -253,9 +285,9 @@ def extract_executable_path(
         else:
             s = s[1:].strip()
     else:
-        m = _EXEC_EXT_RE.match(s)
-        if m:
-            s = m.group("path").strip()
+        program = _split_unquoted_program(s)
+        if program:
+            s = program.strip()
 
     # Strip NT namespace prefix `\??\` or `\\?\`
     if s.startswith("\\??\\"):
