@@ -26,7 +26,9 @@ from smart_drive.core.config import (
     JunkRule,
     JunkTier,
     calculate_allocated_bytes,
+    PROJECT_MANIFEST_DIRS,
     is_inside_dependency_tree,
+    is_project_manifest,
     is_protected_root_dir,
     is_protected_root_file,
     match_junk_rule,
@@ -43,6 +45,7 @@ from smart_drive.core.system_refs import (
 # Why an entry that looks like junk was kept (JunkDetector.kept maps each reason to how many entries it kept)
 KEPT_DEPENDENCY_TREE = "dependency_tree"  # inside node_modules, site-packages...: installed packages, not leftovers
 KEPT_SYSTEM_REFERENCED = "system_referenced"  # in a folder Windows or an installed application depends on
+KEPT_NOT_PROJECT_ROOT = "not_project_root"  # a build/dist/.cache folder with no project manifest beside it
 
 
 def _drop_items_inside_junk_dirs(items: List["JunkItem"]) -> List["JunkItem"]:
@@ -136,7 +139,8 @@ class JunkDetector:
     7. Entries that only look like junk are kept, and counted by reason in ``kept``: Tier 2-3 matches inside
        dependency trees (node_modules, site-packages...) are installed packages, not leftovers, and nothing
        of any tier is reported inside a folder that Windows or an installed application depends on (the same
-       SystemRefIndex that keeps ``organize`` and ``classify`` from moving it).
+       SystemRefIndex that keeps ``organize`` and ``classify`` from moving it), and a ``build``, ``dist`` or
+       ``.cache`` folder counts only at a project root (a manifest such as package.json lies beside it).
 
     ``system_refs`` is that index; without one it is collected from this computer the first time an entry needs
     it (a scan that finds nothing that looks like junk never reads the registry).
@@ -159,6 +163,8 @@ class JunkDetector:
         self._below_root_prefix = self._root_key if self._root_key.endswith(os.sep) else self._root_key + os.sep
         # Folder (normcase) -> (outermost folder from the drive root down to it that the system depends on, its refs)
         self._folder_protection: Dict[str, Optional[Tuple[str, List[SystemRef]]]] = {}
+        # Folder (normcase) -> whether it directly holds a project manifest
+        self._manifest_cache: Dict[str, bool] = {}
         # Entries that matched a junk rule by name but were kept anyway: reason -> count (reset by find_junk)
         self.kept: Dict[str, int] = {}
         self._entry_kept_reason: Optional[str] = None  # why the entry inspected last was kept, if it was
@@ -264,8 +270,30 @@ class JunkDetector:
                 found = (path, refs)
         return found
 
-    def _keep_reason(self, path: str, tier: JunkTier, is_dir: bool) -> Optional[str]:
-        """Why an entry whose name matches a rule of ``tier`` is still not junk, or None when it is."""
+    def _has_project_manifest(self, folder: str) -> bool:
+        """Whether ``folder`` directly holds a project manifest (package.json, pyproject.toml...); listed once per folder.
+
+        A folder that cannot be listed is not taken for a project root: nothing is reported on that evidence.
+        """
+        key = os.path.normcase(folder)
+        found = self._manifest_cache.get(key)
+        if found is None:
+            found = False
+            try:
+                with os.scandir(folder) as entries:
+                    for entry in entries:
+                        if is_project_manifest(entry.name) or (
+                            entry.name.lower() in PROJECT_MANIFEST_DIRS and entry.is_dir()
+                        ):
+                            found = True
+                            break
+            except OSError:
+                pass
+            self._manifest_cache[key] = found
+        return found
+
+    def _keep_reason(self, path: str, tier: JunkTier, is_dir: bool, rule: Optional[JunkRule] = None) -> Optional[str]:
+        """Why an entry whose name matches ``rule`` (of ``tier``) is still not junk, or None when it is."""
         if tier >= JunkTier.TIER_2_DEV_CACHE and is_inside_dependency_tree(path):
             return KEPT_DEPENDENCY_TREE
         dependency = self._system_dependency(path, is_dir)
@@ -280,11 +308,13 @@ class JunkDetector:
                 self.protected_by_system.append(entry)
             entry["kept_items"] += 1
             return KEPT_SYSTEM_REFERENCED
+        if rule is not None and rule.project_root_only and not self._has_project_manifest(os.path.dirname(path)):
+            return KEPT_NOT_PROJECT_ROOT
         return None
 
-    def _note_if_kept(self, path: str, tier: JunkTier, is_dir: bool) -> bool:
+    def _note_if_kept(self, path: str, tier: JunkTier, is_dir: bool, rule: Optional[JunkRule] = None) -> bool:
         """Applies the location checks to a name match; True (and counted in ``kept``) when the entry is to be kept."""
-        reason = self._keep_reason(path, tier, is_dir)
+        reason = self._keep_reason(path, tier, is_dir, rule)
         if reason is None:
             return False
         self.kept[reason] = self.kept.get(reason, 0) + 1
@@ -389,7 +419,7 @@ class JunkDetector:
             return None
 
         # A name that matches is not yet junk: where the entry lives can say otherwise
-        if self._note_if_kept(path, rule.tier, is_dir):
+        if self._note_if_kept(path, rule.tier, is_dir, rule):
             return None
 
         # Calculate allocated cluster bytes
@@ -435,6 +465,7 @@ class JunkDetector:
         self.protected_by_system = []
         self._protected_entries = {}
         self._folder_protection = {}
+        self._manifest_cache = {}
 
         # Only exclude version control, agent working directories, and SmartDrive metadata/quarantine during scan;
         # allow scanner to inspect system junk directories like $RECYCLE.BIN, .Trashes

@@ -101,6 +101,7 @@ class TestJunkDetectionTiers(SmartDriveTestCase):
             path.write_text("user data", encoding="utf-8")
         (root / "proj" / "build").mkdir(parents=True)
         (root / "proj" / "build" / "out.o").write_bytes(b"x")
+        (root / "proj" / "Makefile").write_text("all:\n", encoding="utf-8")  # a build folder counts at a project root
         (root / "unit" / "polaris" / ".cache").mkdir(parents=True)
         (root / "unit" / "polaris" / ".cache" / "api.json").write_text("{}", encoding="utf-8")
 
