@@ -501,6 +501,7 @@ def run_smart_organize(
         apply=True,
         clean=False,
         json=True,
+        only_moves=planned_pairs,
     )
     with redirect_stdout(buf):
         cmd_organize(org_args)

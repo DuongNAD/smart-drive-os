@@ -30,6 +30,10 @@ def get_default_db_path(root: str) -> str:
     return new_path
 
 
+def _move_key(src: str, dest: str) -> tuple:
+    return (os.path.normcase(os.path.abspath(src)), os.path.normcase(os.path.abspath(dest)))
+
+
 def cmd_organize(args: argparse.Namespace) -> int:
     """Handles the `organize` subcommand."""
     try:
@@ -62,6 +66,12 @@ def cmd_organize(args: argparse.Namespace) -> int:
 
     # 3. Auto-Zoning Plan
     plan = zoner.generate_plan()
+    only_moves = getattr(args, "only_moves", None)
+    if only_moves is not None:
+        # Callers that showed the user a plan (Smart_Organize) apply exactly that plan: items that
+        # appeared, or whose destination changed, since the preview are left where they are.
+        confirmed = {_move_key(src, dest) for src, dest in only_moves}
+        plan = [a for a in plan if _move_key(a.src_path, a.dest_path) in confirmed]
 
     if getattr(args, "apply", False):
         apply_res = zoner.apply_plan(plan)
