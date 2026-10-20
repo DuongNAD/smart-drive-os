@@ -111,7 +111,7 @@ smart-drive paths --broken      # scan for broken IDE entries, agent configs, an
 **Clean (with quarantine & restore)** — Preview junk first (mandatory dry-run default). `--apply` deletes regenerable OS metadata and build caches (Tier 1-2) at once; only logs, temp files, and dumps (Tier 3) go to a restorable `.smart_drive/quarantine/`:
 ```bash
 smart-drive clean                      # dry-run preview (Tier 1 by default)
-smart-drive clean --tier 2             # dry-run preview of Tier 1-2: what --apply would delete for good
+smart-drive clean --tier 2             # dry-run preview of Tier 1-2: what --apply would delete permanently
 smart-drive clean --apply --tier 3     # delete Tier 1-2 junk, quarantine Tier 3 junk
 smart-drive clean --list-quarantine
 smart-drive clean --restore latest

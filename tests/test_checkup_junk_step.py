@@ -3,7 +3,7 @@
 Regression: on a real drive checkup recommended "Clean 4940 safe junk item(s) (2.77 GB)" with the command
 `smart-drive clean --tier 2 --apply`. Tier 1-2 is deleted permanently (no quarantine) and those items included
 installed package code, so "safe" was untrue and going straight to --apply was the wrong advice. The recommendation
-now asks for a dry run first, says that --apply deletes for good, and counts exactly what the dry run lists.
+now asks for a dry run first, says that --apply deletes permanently, and counts exactly what the dry run lists.
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ class TestTheRecommendationIsHonest(CheckupCase):
         step = self.junk_step(self.checkup(self.drive))
         text = f"{step['title']} {step['description']}".lower()
         self.assertIn("preview", text)
-        self.assertIn("for good", text)
+        self.assertIn("permanently", text)
         self.assertIn("no quarantine", text)
         self.assertNotIn("safe", text)
 
