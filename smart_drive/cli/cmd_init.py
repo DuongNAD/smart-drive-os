@@ -35,6 +35,15 @@ def _is_os_system_root(path: str) -> bool:
     return abs_p in ("/", "/System/Volumes/Data")
 
 
+def _is_volume_root(path: str) -> bool:
+    """True when path is the root of a volume (a Windows drive root or a POSIX mount point)."""
+    abs_p = os.path.abspath(path)
+    if sys.platform == "win32":
+        drv, tail = os.path.splitdrive(abs_p)
+        return bool(drv) and tail in ("\\", "/", "")
+    return os.path.ismount(abs_p)
+
+
 def default_init_root(start_dir: Optional[str] = None) -> Optional[str]:
     """Determines the volume root to initialize when a drive has no markers yet.
 
@@ -54,11 +63,18 @@ def default_init_root(start_dir: Optional[str] = None) -> Optional[str]:
         if not _is_os_system_root(abs_mp) and find_enclosing_code_dir(abs_mp) is None:
             return abs_mp
 
-    # If running from inside <drive>/repo (which contains smart_drive/), step above the repo
+    # If running from inside <drive>/repo (which contains smart_drive/), step above the repo,
+    # but only onto a real volume root: an ordinary parent folder must never become a drive root.
     code_dir = find_enclosing_code_dir(abs_start)
     if code_dir is not None:
         parent = os.path.dirname(code_dir)
-        if parent and parent != code_dir and not _is_os_system_root(parent) and find_enclosing_code_dir(parent) is None:
+        if (
+            parent
+            and parent != code_dir
+            and _is_volume_root(parent)
+            and not _is_os_system_root(parent)
+            and find_enclosing_code_dir(parent) is None
+        ):
             return parent
 
     return None

@@ -251,6 +251,55 @@ class TestCrossFeatureInteractionsAfterInit(SmartDriveTestCase):
         with self.assertRaises(ValueError):
             DriveInitializer(str(repo_dir)).initialize()
 
+    def test_init_from_repo_on_the_os_drive_does_not_initialize_the_repo_parent_folder(self) -> None:
+        """A repo that is not on an external volume has no drive root: init must stop, not pick its parent folder."""
+        import argparse
+        import io
+        from unittest.mock import patch
+        from smart_drive.cli.cmd_init import cmd_init, default_init_root
+        from smart_drive.core.fsinfo import FilesystemInfo
+
+        os_drive = self.test_dir / "os_drive"
+        code_parent = os_drive / "Users" / "dev" / "code"
+        repo_dir = code_parent / "smart-drive-os"
+        (repo_dir / "smart_drive").mkdir(parents=True)
+        (repo_dir / "smart_drive" / "__init__.py").write_text("", encoding="utf-8")
+
+        fs_info = FilesystemInfo(
+            path=str(repo_dir),
+            fs_type="ntfs",
+            block_size=4096,
+            mount_point=str(os_drive),
+            source="mock",
+        )
+        args = argparse.Namespace(path=None, root=None, profile="general-workspace", force=False, json=False)
+
+        def is_os_system_root(path: str) -> bool:
+            return os.path.abspath(path) == os.path.abspath(str(os_drive))
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(repo_dir)
+            with patch.dict(
+                os.environ,
+                {"SMART_DRIVE_ROOT": "", "KINGSTON_SSD_ROOT": "", "SMART_DRIVE_NO_PROBE": "1"},
+                clear=False,
+            ), patch("smart_drive.cli.cmd_init.detect_filesystem", return_value=fs_info), patch(
+                "smart_drive.cli.cmd_init._is_os_system_root", side_effect=is_os_system_root
+            ):
+                self.assertIsNone(default_init_root(str(repo_dir)))
+                out, err = io.StringIO(), io.StringIO()
+                with patch("sys.stdout", out), patch("sys.stderr", err):
+                    rc = cmd_init(args)
+        finally:
+            os.chdir(old_cwd)
+
+        self.assertEqual(rc, 2, out.getvalue())
+        self.assertIn("safe volume root", err.getvalue())
+        self.assertEqual([p.name for p in code_parent.iterdir()], ["smart-drive-os"])
+        self.assertFalse((code_parent / "01_AI_Models").exists())
+        self.assertFalse((code_parent / ".metadata_never_index").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
