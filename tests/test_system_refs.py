@@ -14,6 +14,7 @@ from __future__ import annotations
 import struct
 import unittest
 from pathlib import Path
+from typing import Optional
 
 from smart_drive.core.system_refs import (
     RegistryReader,
@@ -23,6 +24,7 @@ from smart_drive.core.system_refs import (
     extract_executable_path,
     looks_like_installed_app,
     parse_lnk_bytes,
+    parse_lnk_details,
     parse_lnk_file,
     split_and_expand_path,
     summarize_system_refs,
@@ -98,6 +100,76 @@ def _build_lnk_bytes(
     return bytes(header) + id_list_section + link_info
 
 
+_MY_COMPUTER_CLSID = bytes.fromhex("e04fd020ea3a6910a2d808002b30309d")
+
+
+def _shell_item(class_type: int, primary_name: str, long_name: str, version: int = 9, with_ext: bool = True) -> bytes:
+    """A file-system shell item laid out like the ones Explorer writes (primary ANSI name + 0xBEEF0004 block)."""
+    primary = primary_name.encode("cp1252") + b"\x00"
+    fixed = bytes([class_type, 0]) + b"\x00" * 8 + b"\x10\x00"  # class, unknown, file size, date/time, attributes
+    name_part = primary + (b"\x00" if (14 + len(primary)) % 2 else b"")
+    if not with_ext:
+        body = fixed + name_part + struct.pack("<H", 0)
+        return struct.pack("<H", 2 + len(body)) + body
+
+    ext_off = 14 + len(name_part)
+    name_off = {8: 42, 9: 46}.get(version, 46)
+    ext = bytearray(struct.pack("<HH", 0, version) + b"\x04\x00\xef\xbe" + b"\x00" * 8 + struct.pack("<H", 0x2E))
+    ext = ext.ljust(name_off, b"\x00") + long_name.encode("utf-16-le") + b"\x00\x00"
+    struct.pack_into("<H", ext, 0, len(ext) + 2)
+    body = fixed + name_part + bytes(ext) + struct.pack("<H", ext_off)
+    return struct.pack("<H", 2 + len(body)) + body
+
+
+def _id_list_items(drive: str, *names: tuple, root: bytes = _MY_COMPUTER_CLSID) -> list:
+    """Shell items for `drive` + folders + a final file; each name is (long_name, primary_name_or_None)."""
+    items = [
+        struct.pack("<H", 20) + bytes([0x1F, 0x50]) + root,
+        struct.pack("<H", 25) + bytes([0x2F]) + drive.encode("ascii") + b"\\" + b"\x00" * 19,
+    ]
+    for i, (long_name, primary) in enumerate(names):
+        class_type = 0x32 if i == len(names) - 1 else 0x31
+        items.append(_shell_item(class_type, primary or long_name, long_name))
+    return items
+
+
+def _build_lnk_without_link_info(
+    items: list,
+    working_dir: Optional[str] = None,
+    arguments: Optional[str] = None,
+    relative_path: Optional[str] = None,
+) -> bytes:
+    """A .lnk that has an ID list and string data but no LinkInfo block (what many installers write)."""
+    link_flags = 0x00000001 | 0x00000080  # HasLinkTargetIDList | IsUnicode
+    strings = b""
+    for bit, value in ((0x08, relative_path), (0x10, working_dir), (0x20, arguments)):
+        if value is not None:
+            link_flags |= bit
+            strings += struct.pack("<H", len(value)) + value.encode("utf-16-le")
+    header = bytearray(0x4C)
+    struct.pack_into("<I", header, 0x00, 0x0000004C)
+    struct.pack_into("<I", header, 0x14, link_flags)
+    id_list = b"".join(items) + b"\x00\x00"
+    return bytes(header) + struct.pack("<H", len(id_list)) + id_list + strings
+
+
+def _with_string_data(
+    lnk: bytes,
+    working_dir: Optional[str] = None,
+    arguments: Optional[str] = None,
+) -> bytes:
+    """Appends Unicode string data (after LinkInfo) to a .lnk built by `_build_lnk_bytes`."""
+    link_flags = struct.unpack_from("<I", lnk, 0x14)[0] | 0x00000080
+    strings = b""
+    for bit, value in ((0x10, working_dir), (0x20, arguments)):
+        if value is not None:
+            link_flags |= bit
+            strings += struct.pack("<H", len(value)) + value.encode("utf-16-le")
+    patched = bytearray(lnk)
+    struct.pack_into("<I", patched, 0x14, link_flags)
+    return bytes(patched) + strings
+
+
 class TestLnkParser(unittest.TestCase):
     """Tests pure-Python MS-SHLLINK (.lnk) parsing."""
 
@@ -122,6 +194,59 @@ class TestLnkParser(unittest.TestCase):
         self.assertIsNone(parse_lnk_bytes(b"not a lnk file" * 10))
         valid = _build_lnk_bytes(r"E:\Git\cmd\git.exe")
         self.assertIsNone(parse_lnk_bytes(valid[:0x4C + 4]))
+
+    def test_lnk_without_link_info_resolves_target_from_id_list(self) -> None:
+        # Shaped like a Start Menu shortcut written without LinkInfo: My Computer > E:\ > folder > file
+        items = _id_list_items("E:", ("Fotor Photo Editor", None), ("Fotor.exe", None))
+        self.assertEqual(parse_lnk_bytes(_build_lnk_without_link_info(items)), r"E:\Fotor Photo Editor\Fotor.exe")
+
+        # Windows 8 puts the long name 4 bytes earlier in the extension block than Windows 10/11
+        win8 = [items[0], items[1]] + [
+            _shell_item(0x31, "Fotor Photo Editor", "Fotor Photo Editor", version=8),
+            _shell_item(0x32, "Fotor.exe", "Fotor.exe", version=8),
+        ]
+        self.assertEqual(parse_lnk_bytes(_build_lnk_without_link_info(win8)), r"E:\Fotor Photo Editor\Fotor.exe")
+
+        # A long Unicode name wins over the ANSI 8.3 alias stored as the primary name
+        viet = _id_list_items("D:", ("Ứng dụng", "UNGDNG~1"), ("ảnh.exe", "ANH~1.EXE"))
+        self.assertEqual(parse_lnk_bytes(_build_lnk_without_link_info(viet)), "D:\\Ứng dụng\\ảnh.exe")
+
+    def test_lnk_id_list_falls_back_to_primary_name_but_never_to_an_alias(self) -> None:
+        plain = [
+            *_id_list_items("E:", ("Tools", None))[:2],
+            _shell_item(0x31, "Tools", "", with_ext=False),
+            _shell_item(0x32, "run.exe", "", with_ext=False),
+        ]
+        self.assertEqual(parse_lnk_bytes(_build_lnk_without_link_info(plain)), r"E:\Tools\run.exe")
+
+        aliased = [*plain[:2], _shell_item(0x31, "PROGRA~1", "", with_ext=False), plain[3]]
+        self.assertIsNone(parse_lnk_bytes(_build_lnk_without_link_info(aliased)))
+
+    def test_lnk_id_list_not_rooted_at_a_drive_gives_no_target(self) -> None:
+        control_panel_root = bytes.fromhex("8094e69953e56c6c4d8fce1d8870fdcb")
+        items = _id_list_items("E:", ("Tools", None), root=control_panel_root)
+        self.assertIsNone(parse_lnk_bytes(_build_lnk_without_link_info(items)))
+
+    def test_lnk_link_info_target_wins_over_id_list_and_string_data_is_read(self) -> None:
+        lnk = _with_string_data(
+            _build_lnk_bytes(r"C:\Tools\runner.exe", use_unicode=True),
+            working_dir=r"E:\Work Dir",
+            arguments=r'"E:\scripts\go.py" --fast',
+        )
+        details = parse_lnk_details(lnk)
+        assert details is not None
+        self.assertEqual(details.target, r"C:\Tools\runner.exe")
+        self.assertEqual(details.working_dir, r"E:\Work Dir")
+        self.assertEqual(details.arguments, r'"E:\scripts\go.py" --fast')
+
+    def test_lnk_relative_path_is_resolved_against_the_shortcut_folder(self) -> None:
+        lnk = _build_lnk_without_link_info([], relative_path=r"..\..\Apps\Tool\tool.exe")
+        self.assertIsNone(parse_lnk_details(lnk))  # no folder to resolve against
+        details = parse_lnk_details(lnk, lnk_dir=r"E:\Links\Desktop")
+        assert details is not None
+        self.assertEqual(details.target, r"E:\Apps\Tool\tool.exe")
+        # Crossing a drive is impossible in a relative path: a result that is not a drive path is dropped
+        self.assertIsNone(parse_lnk_details(lnk, lnk_dir="/home/user/Desktop"))
 
 
 class TestExecutableAndPathParsers(unittest.TestCase):
@@ -358,6 +483,36 @@ class TestSystemRefIndexAndBoundaries(unittest.TestCase):
                 self.assertEqual([r.kind for r in idx.refs_under(folder)], [kind])
         # The programs themselves (outside E:) are still recorded; the folders next door are not
         self.assertEqual(idx.refs_under(r"E:\unrelated"), [])
+
+    def test_shortcut_without_link_info_and_its_start_in_folder_and_arguments_are_references(self) -> None:
+        with TempWorkspace(prefix="test_lnk_no_link_info_") as tmp:
+            desktop = tmp / "Desktop"
+            desktop.mkdir()
+            items = _id_list_items("E:", ("Fotor Photo Editor", None), ("Fotor.exe", None))
+            (desktop / "Fotor.lnk").write_bytes(
+                _build_lnk_without_link_info(items, working_dir="E:\\\\Fotor Photo Editor")
+            )
+            (desktop / "Tray.lnk").write_bytes(
+                _with_string_data(
+                    _build_lnk_bytes(r"C:\Python313\pythonw.exe", use_unicode=True),
+                    working_dir=r"%TOOLS%\Tray",
+                    arguments=r'"E:\scripts\tray.py" --quiet',
+                )
+            )
+            reader = RegistryReader(tree={}, env={"TOOLS": r"E:\Tools"})
+            idx = SystemRefIndex.collect(home=tmp, reader=reader)
+
+        fotor = idx.refs_under(r"E:\Fotor Photo Editor")
+        self.assertEqual({r.kind for r in fotor}, {"shortcut", "shortcut_dep"})
+        self.assertIn("1 shortcut", summarize_system_refs(fotor))
+        self.assertNotIn("2 shortcuts", summarize_system_refs(fotor))
+        self.assertEqual([r.kind for r in idx.refs_under(r"E:\Tools\Tray")], ["shortcut_dep"])
+        self.assertEqual([r.kind for r in idx.refs_under(r"E:\scripts")], ["shortcut_dep"])
+        # Only the real targets are "shortcut" refs: relink repoints a shortcut to its target, never to a start-in folder
+        self.assertEqual(
+            sorted(r.target for r in idx.refs if r.kind == "shortcut"),
+            [r"C:\Python313\pythonw.exe", r"E:\Fotor Photo Editor\Fotor.exe"],
+        )
 
     def test_looks_like_installed_app_detects_top_level_uninstallers(self) -> None:
         with TempWorkspace(prefix="test_uninst_") as tmp:
