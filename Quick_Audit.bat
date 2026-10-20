@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 chcp 65001 >nul
-title SmartDrive-OS - Storage & Cluster Slack Audit
+title SmartDrive-OS - Storage ^& Cluster Slack Audit
 
 :: Tier 1: Directory & Root Resolution
 if exist "%~dp0smart_drive" (
@@ -51,7 +51,7 @@ if defined PYTHONPATH (
 
 :: Tier 4: Execution
 echo ========================================================
-echo   SmartDrive-OS: Storage Breakdown & 512KB Slack Audit
+echo   SmartDrive-OS: Storage Breakdown ^& 512KB Slack Audit
 echo ========================================================
 echo.
 

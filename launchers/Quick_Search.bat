@@ -61,7 +61,7 @@ if "%QUERY%"=="" (
     echo.
     echo No query entered. Showing search syntax examples:
     echo   - llama ext:gguf
-    echo   - project size:>10MB
+    echo   - project size:^>10MB
     echo   - cat:code dir:Development_Projects
     echo.
     set /p QUERY="Enter query: "

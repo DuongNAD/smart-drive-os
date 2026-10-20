@@ -596,6 +596,8 @@ def _drive_prompts(command, env, cwd, steps, timeout=90.0):
     that gets the output so far and says whether the program has got far enough; `text` is then typed as it is.
     The answers cannot be piped in at once: cmd.exe takes whatever a pipe holds for the first `set /p` and drops
     the rest, and `pause` takes a single character, so each answer is sent only once its question is on screen.
+    A step whose `text` is None types nothing and ends the program on the spot (the return code is then that of
+    a killed program): the caller has seen what it came for and must not let the program act on the prompt.
     """
     process = subprocess.Popen(
         command,
@@ -653,6 +655,9 @@ def _drive_prompts(command, env, cwd, steps, timeout=90.0):
                     raise AssertionError(f"timed out waiting for {wait!r}; the output ends with {tail!r}")
                 time.sleep(0.05)
             position = end
+            if text is None:
+                process.kill()
+                break
             process.stdin.write(text.encode("utf-8"))
             process.stdin.flush()
         process.stdin.close()
