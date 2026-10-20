@@ -169,7 +169,7 @@ class TestRelinkUpToDate(SmartDriveTestCase):
         first = self._relink(moves)
         self.assertEqual(first.venvs, [str(venv_dir)])
         self.assertEqual(first.agents, {"Python venv": 1})
-        self.assertEqual(len(self._console_script_warnings(first)), 1)
+        self.assertEqual(first.warnings, [])  # no console script in it that could not be repointed
         self.assertEqual(pth_file.read_text(encoding="utf-8").splitlines()[-1], str(new_proj / "src"))
 
         second = self._relink(moves)
@@ -204,7 +204,6 @@ class TestRelinkUpToDate(SmartDriveTestCase):
         self._make_venv(old_proj / "tools" / "venv", [str(old_proj / "tools")], pth_name="_tools.pth")
         moves = [(str(old_proj), str(new_proj))]
         listed = str(new_proj / "tools" / "venv")
-        skipped = str(new_proj / ".venv")
 
         preview = self._relink(moves, dry_run=True)  # the folder is still where it was
         new_proj.parent.mkdir(parents=True)
@@ -213,8 +212,7 @@ class TestRelinkUpToDate(SmartDriveTestCase):
 
         for report in (preview, real):
             self.assertEqual(report.venvs, [listed])
-            self.assertEqual(len(self._console_script_warnings(report)), 1)
-            self.assertFalse(any(skipped in w for w in report.warnings), report.warnings)
+            self.assertEqual(report.warnings, [])
 
     def test_04_a_venv_whose_file_could_not_be_written_is_not_listed(self) -> None:
         old_proj = self.test_dir / "locked_pkg"
@@ -245,7 +243,7 @@ class TestRelinkUpToDate(SmartDriveTestCase):
         rc, out = self._cli(["relink", str(old_proj), str(new_proj), "--root", str(drive)])
         self.assertEqual(rc, 0, out)
         self.assertIn(f"Python venv updated: {venv_dir}", out)
-        self.assertIn("console scripts", out)
+        self.assertNotIn("may still start the old path", out)
         self.assertNotIn("Nothing left to change", out)
 
         # The menu's [11]: a dry run, then the real run, both for the latest journaled move
