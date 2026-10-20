@@ -175,16 +175,15 @@ class TestTheIndexIsBuiltOnce(RefCase):
     def test_each_folder_is_asked_about_once(self) -> None:
         for i in range(20):
             self.write(f"pkg{i}/sub/__pycache__/m.pyc")
-        index = SystemRefIndex([])
         asked: List[str] = []
-        real = index.check_folder
+        real = SystemRefIndex.check_folder
 
-        def counting(folder: Any, is_file: Optional[bool] = None) -> Any:
+        def counting(index: SystemRefIndex, folder: Any, is_file: Optional[bool] = None) -> Any:
             asked.append(str(folder))
-            return real(folder, is_file=is_file)
+            return real(index, folder, is_file=is_file)
 
-        with patch.object(index, "check_folder", side_effect=counting):
-            detector = JunkDetector(str(self.root), system_refs=index)
+        with patch.object(SystemRefIndex, "check_folder", autospec=True, side_effect=counting):
+            detector = JunkDetector(str(self.root), system_refs=SystemRefIndex([]))
             self.assertEqual(len(detector.find_junk()), 20)
         # pkgN, pkgN/sub and the __pycache__ folder itself, each once; the drive root never
         self.assertEqual(len(asked), 60)
@@ -194,19 +193,27 @@ class TestTheIndexIsBuiltOnce(RefCase):
         self.write("app/bin/tool.exe")
         for i in range(10):
             self.write(f"app/part{i}/__pycache__/m.pyc")
-        index = SystemRefIndex([self.ref("app/bin/tool.exe")])
         asked: List[str] = []
-        real = index.check_folder
+        real = SystemRefIndex.check_folder
 
-        def counting(folder: Any, is_file: Optional[bool] = None) -> Any:
+        def counting(index: SystemRefIndex, folder: Any, is_file: Optional[bool] = None) -> Any:
             asked.append(str(folder))
-            return real(folder, is_file=is_file)
+            return real(index, folder, is_file=is_file)
 
-        with patch.object(index, "check_folder", side_effect=counting):
-            detector = JunkDetector(str(self.root), system_refs=index)
+        with patch.object(SystemRefIndex, "check_folder", autospec=True, side_effect=counting):
+            detector = JunkDetector(str(self.root), system_refs=SystemRefIndex([self.ref("app/bin/tool.exe")]))
             self.assertEqual(detector.find_junk(), [])
         self.assertEqual(asked, [str(self.root / "app")])
         self.assertEqual(detector.kept, {KEPT_SYSTEM_REFERENCED: 10})
+
+    def test_references_elsewhere_on_the_computer_do_not_matter_to_the_drive(self) -> None:
+        self.make_project()
+        elsewhere = SystemRef(kind="service", source="service Demo", target=str(self.root.parent / "elsewhere" / "svc.exe"))
+        sibling = SystemRef(kind="path", source="PATH", target=str(self.root) + "_sibling")  # shares the name prefix
+        detector = self.detector(elsewhere, sibling, self.ref("work/tool.exe"), tier=JunkTier.TIER_1_SAFE)
+        self.assertEqual(self.found(detector), set())  # work/ holds a reference, so its pycache is kept
+        self.assertEqual([r.source for r in detector._drive_refs().refs], ['installed app "Demo"'])
+        self.assertEqual(len(detector.system_refs.refs), 3)
 
 
 class TestCleanCommandKeepsApplications(RefCase):
