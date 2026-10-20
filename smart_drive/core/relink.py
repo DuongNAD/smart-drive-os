@@ -406,7 +406,7 @@ class PathMapper:
                 parsed_probe = _split(probe_path)
                 if parsed_probe is not None:
                     p_key = _key(*parsed_probe)
-                    for old_key, (_, old_names), _ in self._rules:
+                    for old_key, _, (_, old_names), _ in self._rules:
                         if p_key[: len(old_key)] == old_key:
                             if parsed_probe[1][: len(old_names)] != old_names:
                                 mapped = mapped[:2] + mapped[2:].lower()
@@ -2127,7 +2127,7 @@ def _relink_shortcuts(
             new_prefix = mapper.map(old_prefix) or ""
             if parsed_target is not None:
                 t_key = _key(*parsed_target)
-                for old_k, (old_anchor, old_names), (new_anchor, new_names) in mapper._rules:
+                for old_k, _, (old_anchor, old_names), (new_anchor, new_names) in mapper._rules:
                     if t_key[: len(old_k)] == old_k:
                         old_prefix = _join_split(old_anchor, old_names)
                         new_prefix = _join_split(new_anchor, new_names)
