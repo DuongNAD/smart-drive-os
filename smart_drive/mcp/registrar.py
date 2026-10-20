@@ -14,11 +14,18 @@ from datetime import datetime
 import json
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+
+# The distribution on PyPI (pyproject [project].name); it also names the console script `uvx` runs.
+DIST_NAME = "smart-drive-os"
+
+# The folder uv keeps the environments of `uvx` / `uv tool run` in: <uv cache>/archive-v0/<id>
+_UV_ARCHIVE_BUCKET = re.compile(r"archive-v\d+", re.IGNORECASE)
 
 
 class ConfigParseError(ValueError):
@@ -213,14 +220,78 @@ def _source_checkout_root() -> Optional[Path]:
     return package_dir.parent
 
 
+def _uvx_environment() -> bool:
+    """True when this code runs from an environment that ``uvx`` (``uv tool run``) unpacked.
+
+    uv keeps those environments in its cache, as ``<cache>/archive-v<N>/<id>``, and may delete them at any time
+    (``uv cache clean``, ``uv cache prune``, a newer release). The interpreter inside one must never reach an
+    agent's config: the server would vanish with the folder.
+    """
+    return _UV_ARCHIVE_BUCKET.fullmatch(Path(sys.prefix).parent.name) is not None
+
+
+def _uvx_command() -> List[str]:
+    """The command that starts ``uvx``, as an absolute path when it is known.
+
+    Agents often run with a short PATH (GUI apps on macOS), where a bare ``uvx`` does not resolve. uv exports
+    ``UV``, the executable it ran, and ``uvx`` sits next to it. Failing that: a ``uvx`` on PATH, then
+    ``uv tool run`` through the file ``UV`` names, and last a bare ``uvx`` for the agent's own PATH.
+    """
+    uv = os.environ.get("UV", "")
+    has_uv = bool(uv) and os.path.isfile(uv)
+    if has_uv:
+        uvx = os.path.join(os.path.dirname(uv), "uvx.exe" if sys.platform == "win32" else "uvx")
+        if os.path.isfile(uvx):
+            return [uvx]
+    found = shutil.which("uvx")
+    if found:
+        return [found]
+    if has_uv:
+        return [uv, "tool", "run"]
+    return ["uvx"]
+
+
+def _pipx_run_environment() -> bool:
+    """True when this code runs from the temporary environment of ``pipx run``.
+
+    pipx keeps it in ``<PIPX_HOME>/.cache/<hash>`` (with a ``pipx_metadata.json``, like the persistent
+    ``<PIPX_HOME>/venvs/<name>``) and deletes it after 14 days without use. The interpreter inside it must
+    never reach an agent's config: the server would vanish with the folder.
+    """
+    prefix = Path(sys.prefix)
+    return prefix.parent.name == ".cache" and (prefix / "pipx_metadata.json").is_file()
+
+
 def build_mcp_entry(python_cmd: Optional[str] = None) -> Dict[str, Any]:
-    """Builds standard MCP client server registration configuration dict."""
-    if python_cmd is None:
-        python_cmd = sys.executable or "python3"
+    """Builds standard MCP client server registration configuration dict.
+
+    An agent starts the entry long after this process has ended, so it depends on how the package runs:
+    from a source checkout it is ``<python> -m smart_drive mcp`` with the checkout on PYTHONPATH; from an
+    installed copy (pip, ``pipx install``, ``uv tool install``: environments that persist) it is ``<python> -m
+    smart_drive mcp``; under ``uvx`` it is ``uvx smart-drive-os mcp`` and under ``pipx run`` it is ``pipx run
+    smart-drive-os mcp``, because both unpack a temporary environment that gets deleted, so its interpreter must
+    not be recorded. A ``python_cmd`` other than this interpreter always gets the ``-m`` form.
+    """
     env = {
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
     }
+    if python_cmd in (None, sys.executable):
+        if _uvx_environment():
+            launcher = _uvx_command()
+            return {
+                "command": launcher[0],
+                "args": [*launcher[1:], DIST_NAME, "mcp"],
+                "env": env,
+            }
+        if _pipx_run_environment():
+            return {
+                "command": shutil.which("pipx") or "pipx",
+                "args": ["run", DIST_NAME, "mcp"],
+                "env": env,
+            }
+    if python_cmd is None:
+        python_cmd = sys.executable or "python3"
     checkout_root = _source_checkout_root()
     if checkout_root is not None:
         env["PYTHONPATH"] = str(checkout_root)
@@ -248,6 +319,9 @@ def register_ide_configs(
         flags: Optional mapping of IDE names to boolean flags (e.g. {'antigravity': True}).
         auto_detect: If True and no selective flags provided, only register for detected agents.
         python_cmd: Optional Python executable to record in configuration (defaults to sys.executable).
+            Under ``uvx`` and ``pipx run`` that default is not recorded: their temporary environment gets
+            deleted, so the entry starts ``uvx smart-drive-os mcp`` or ``pipx run smart-drive-os mcp``
+            instead (see ``build_mcp_entry``).
 
     Returns:
         Mapping of target name to registration success status.
