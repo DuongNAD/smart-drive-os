@@ -1,0 +1,7 @@
+# Build-time tools for .github/workflows/release.yml (the sdist/wheel job): `build` makes the sdist and the
+# wheel, `twine` checks their metadata. They are never runtime dependencies: SmartDrive-OS imports nothing
+# outside the standard library, and pyproject.toml keeps `dependencies = []`.
+#
+# Install them with:  python -m pip install -r packaging/requirements-dist.txt
+build==1.6.1
+twine==7.0.0

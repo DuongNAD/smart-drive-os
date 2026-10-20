@@ -1,0 +1,152 @@
+name: Release
+
+# Builds the sdist and the wheel, smoke-tests the wheel, and publishes it to PyPI when a v* tag is pushed. Only the
+# publish-pypi job publishes, and only for a pushed v* tag, after the owner approves the `pypi` environment
+# (docs/RELEASING.md). Every other run (branch push, pull request, manual run) builds and tests only.
+
+on:
+  push:
+    # GitHub ignores path filters for tag pushes, so every v* tag runs this workflow. A branch push runs it only when
+    # a file that goes into the packages changes (README.md is the PyPI description, LICENSE ships in the metadata),
+    # or this workflow itself.
+    tags: ["v*"]
+    branches: ["**"]
+    paths:
+      - "pyproject.toml"
+      - "README.md"
+      - "LICENSE"
+      - "smart_drive/**"
+      - "packaging/**"
+      - ".github/workflows/release.yml"
+  # pull_request, not pull_request_target: code from a fork runs with a read-only token and without secrets.
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "README.md"
+      - "LICENSE"
+      - "smart_drive/**"
+      - "packaging/**"
+      - ".github/workflows/release.yml"
+  # A manual run builds and tests; it never publishes.
+  workflow_dispatch:
+
+# The jobs only read the repository. The publish-pypi job asks for its own extra permission.
+permissions:
+  contents: read
+
+# A newer push to the same ref makes the older run pointless, but a run for a tag is never cancelled: a release that
+# is stopped halfway cannot simply be repeated, because PyPI never takes the same version twice.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  # 3.13 is the newest version in the pyproject classifiers.
+  PYTHON_VERSION: "3.13"
+
+# Every action is pinned to a commit SHA, with its release in the comment: this workflow can publish, so a tag that
+# can be moved to other code is not trusted.
+jobs:
+  dist:
+    # python -m build makes the sdist first and then builds the wheel from that sdist, so a file that is missing from
+    # the sdist breaks this job instead of reaching PyPI in a wheel that only works from a checkout.
+    name: Build sdist and wheel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Check that the tag is v plus the version in pyproject.toml
+        # PyPI keeps a version for good, so a tag that disagrees with pyproject.toml must stop the run here, before
+        # anything is published. GITHUB_REF_NAME is the pushed tag; Python 3.13 has tomllib.
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="$(python -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])')"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error title=Tag and version differ::The tag is ${GITHUB_REF_NAME} but pyproject.toml has version ${version}, so the tag has to be v${version}."
+            exit 1
+          fi
+          echo "The tag ${GITHUB_REF_NAME} matches the version in pyproject.toml."
+      - name: Install the build tools
+        run: python -m pip install -r packaging/requirements-dist.txt
+      - name: Build the sdist, then the wheel from it
+        run: python -m build
+      - name: Check the metadata and the README that PyPI would show
+        run: python -m twine check --strict dist/*
+      - name: Keep the packages for the next jobs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  wheel-smoke:
+    # Installs the wheel the dist job built (the file PyPI would receive, not the checkout) the three ways the README
+    # recommends for coding agents: into a fresh virtual environment, with uvx and with pipx. The CLI and the MCP
+    # server run from each, on every system and Python the package claims to support.
+    name: Install smoke test / ${{ matrix.os }} / py${{ matrix.python-version }}
+    needs: dist
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-24.04 rather than ubuntu-latest: Python 3.9 has no build for Ubuntu 26.04, so the matrix would break
+        # if ubuntu-latest moves there.
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+        # 3.9 is the minimum in pyproject (requires-python); 3.13 is the newest version in the classifiers.
+        python-version: ["3.9", "3.13"]
+    steps:
+      # The checkout is only for the files in packaging/; what gets tested is the downloaded wheel.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-dist
+          path: dist
+      - name: Install the wheel in a fresh virtual environment and run the smoke checks
+        run: python packaging/smoke_test.py --wheel dist
+      # uv and pipx are test tools of this job only, pinned in the file; the package itself keeps no dependencies.
+      - name: Install the pinned smoke-test tools (uv and pipx)
+        run: python -m pip install -r packaging/requirements-smoke.txt
+      - name: Run the CLI and the MCP server through uvx, offline
+        run: python packaging/smoke_test.py --uvx dist
+      - name: Install the wheel with pipx and run it
+        # pipx 1.18.4 needs Python 3.11 or newer (the requirements file leaves it out on 3.9), so the 3.9 entries skip
+        # this step; the virtual environment and uvx steps still cover them.
+        if: matrix.python-version != '3.9'
+        run: python packaging/smoke_test.py --pipx dist
+
+  publish-pypi:
+    # Trusted Publishing over OIDC: PyPI trusts this repository, this workflow file and the `pypi` environment, so no
+    # API token or password exists anywhere; the job passes none and reads no secret. This is the only job with
+    # `id-token: write`. The `pypi` environment must have required reviewers and a `v*` tag rule (docs/RELEASING.md),
+    # so nothing reaches PyPI before the owner approves the deployment. The publish action uploads dist/ and makes the
+    # PEP 740 attestations by default.
+    name: Publish to PyPI
+    # Both: nothing is published unless the packages built and every smoke test passed.
+    needs: [dist, wheel-smoke]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/smart-drive-os/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
