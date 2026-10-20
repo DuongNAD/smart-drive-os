@@ -7,6 +7,39 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+Safety fixes from the product-readiness review of 1.4.1: a list of running programs that cannot be read no longer
+counts as "nothing is running", purging the quarantine keeps the recent batches, Tier 3 junk can be quarantined on its
+own, and the shipped folder lists no longer carry one user's folder name.
+
+### Added
+
+- `clean --only-tier N` lists and applies a single junk tier. `--tier N` still means tiers 1 to N, so
+  `clean --tier 3 --apply` also deletes every Tier 1-2 item permanently; `clean --only-tier 3 --apply` moves only the
+  Tier 3 junk (temp files, swap files, crash dumps) to the restorable quarantine and deletes nothing else.
+  `--only-tier` cannot be combined with `--tier`, its dry run says what `--apply` will do, and `--json` has
+  `only_tier`. The READMEs and `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` (and the copies `init` writes) mention it.
+
+### Changed
+
+- `clean --purge-quarantine` keeps the quarantine batches younger than 30 days unless `--older-than` says otherwise.
+  It used to default to `--older-than 0`, so `clean --purge-quarantine --apply` permanently deleted every batch at once,
+  the one made a minute ago included, although the hint printed after a quarantine says `--older-than 30`. Purging
+  every batch now takes an explicit `--older-than 0`, a negative age is refused with exit code 2 before anything is
+  touched, and the text report says how many newer batches were kept. `purge_quarantine_batches()` defaults to the same
+  30 days (`QUARANTINE_RETENTION_DAYS`).
+- The package is classified as `Development Status :: 4 - Beta` instead of `5 - Production/Stable`, and
+  `README_INTERNAL.md` shows the live CI badge instead of a static "968/968 tests passed" one.
+
+### Removed
+
+- `DBI202_VuPT\MSSQL16.MSSQLSERVER` (in both spellings), the name of one user's own course folder, from the protected
+  and the scan-excluded folder lists. The generic `MSSQL16.MSSQLSERVER` entries already protect and skip a SQL Server
+  instance folder under any parent, so nothing is less protected. `32837` and `fo4` stay, now with a comment: they are
+  the install folders of FC Online (Garena's app ID and the game's short name), generic for players in Vietnam. There
+  is still no list of your own folders to protect; the READMEs now say what keeps one in place: `organize` only moves
+  what lies directly in the drive root, and on Windows a folder that a shortcut on the Desktop, in the Start Menu or on
+  the taskbar points to is `protected_by_system`.
+
 ### Fixed
 
 - `paths --broken` and `relink --find` no longer take a folder inside installed packages for a moved one. Looking for
@@ -33,6 +66,19 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   `--apply` only goes with `--find`), and the restart lines appear only when an agent's config file was rewritten.
   `organize`, `undo`, `classify` and `paths` print what they printed before, and `busy_apps` in the `--json` of
   `organize` and `undo` still lists every running agent.
+- `offload --move` and `offload --revert` no longer move a cache while the list of running programs cannot be read.
+  When `tasklist` or `ps` failed or passed its 10 s timeout, the list came back empty, so Docker Desktop's WSL data,
+  Ollama's models or Cargo's registry could be copied and relinked while the program using them was open. Such a cache
+  is now refused with a message saying that the list could not be read: `--wait` keeps checking until the list can be
+  read and the program is closed (still unreadable at the deadline: exit code 3), and `--force` moves it anyway with a
+  warning. npm and Gradle caches, which only warn while node or java runs, warn that this could not be checked. A dry
+  run says it would be blocked and has `process_list_readable` in `--json`.
+- `organize`, `undo` and the guided `Smart_Organize` flow say when they could not check which coding agents and IDEs
+  are open, instead of reporting `busy_apps: []` as if none were. Next to every `busy_apps` their `--json` output now
+  has `busy_apps_unknown`, the text dry run asks to quit open coding agents and IDEs before `--apply`, and
+  `Smart_Organize` stops at step 2 and asks for them to be closed (Enter checks again, `C` continues, `Q` cancels)
+  instead of moving at once. `--apply` itself is unchanged, and `relink` already counted an unreadable list as "still
+  running".
 
 ## [1.4.1] - 2026-10-20
 
