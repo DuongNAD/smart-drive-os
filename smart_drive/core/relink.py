@@ -40,7 +40,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple, Union
 import urllib.parse
 import zipfile
 
@@ -2695,6 +2695,14 @@ def _relink_shortcuts(
             )
 
 
+# Labels in RelinkReport.updated of the files relink rewrites besides the coding agents' own config files: Windows
+# shortcuts, editable installs and virtualenv files. No coding agent reads or holds them, so a change to one of
+# them never calls for closing or restarting an agent.
+NOT_AGENT_CONFIGS: FrozenSet[str] = frozenset({
+    "Windows Shortcuts", "Python editable", "Python venv", _SCRIPTS_AGENT, _ACTIVATION_AGENT,
+})
+
+
 def relink(
     moves: Sequence[Move],
     root: Optional[str] = None,
@@ -3460,6 +3468,7 @@ __all__ = [
     "AgentFile",
     "agent_files",
     "RelinkReport",
+    "NOT_AGENT_CONFIGS",
     "relink",
     "journal_path",
     "record_moves",

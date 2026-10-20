@@ -2511,7 +2511,9 @@ class TestRelink(SmartDriveTestCase):
                 rc_ut = cli_main(["undo", "--root", str(drive)])
 
         self.assertEqual(rc_rel, 0)
-        self.assertIn("Close these before --apply: Antigravity", out_relink_txt.getvalue())
+        # relink itself moves nothing, and only an editable install, a venv and git worktrees change: no coding agent
+        # holds those, so it asks to close none (organize above and undo below, which move folders, still do)
+        self.assertNotIn("Close these", out_relink_txt.getvalue())
         self.assertIn(f"git worktrees would be repaired: {expected_repo_a}", out_relink_txt.getvalue())
 
         self.assertEqual(rc_uj, 0)
