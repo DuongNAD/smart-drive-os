@@ -111,6 +111,7 @@ smart-drive paths --broken      # scan for broken IDE entries, agent configs, an
 **Clean (with quarantine & restore)** — Preview junk first (mandatory dry-run default). `--apply` deletes regenerable OS metadata and build caches (Tier 1-2) at once; only logs, temp files, and dumps (Tier 3) go to a restorable `.smart_drive/quarantine/`:
 ```bash
 smart-drive clean                      # dry-run preview (Tier 1 by default)
+smart-drive clean --tier 2             # dry-run preview of Tier 1-2: what --apply would delete for good
 smart-drive clean --apply --tier 3     # delete Tier 1-2 junk, quarantine Tier 3 junk
 smart-drive clean --list-quarantine
 smart-drive clean --restore latest
@@ -185,7 +186,7 @@ All commands run via `smart-drive <command>`, `python -m smart_drive <command>`,
 | `init` | `--profile <name>`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
 | `status` | `--root <path>`, `--json` | Inspect SSD mount point, detected filesystem, geometry, shield health, and taxonomy status. |
 | `audit` | `--root <path>`, `--html [file]`, `--json`, `--markdown`, `--export <file>` | Storage & cluster slack audit using the drive's real cluster size (4 KB NTFS, 512 KB exFAT, etc.). `--html` exports a self-contained offline treemap report (default `<root>/.smart_drive/reports/audit.html`). Hard links counted once; symlinks/junctions skipped and counted. |
-| `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--no-quarantine`, `--list-quarantine`, `--restore <batch\|latest>`, `--purge-quarantine`, `--older-than <days>`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run and inviolable whitelist. `--apply` deletes regenerable Tier 1-2 junk at once and quarantines only Tier 3 junk to `<root>/.smart_drive/quarantine/<batch_id>/` (restorable via `--restore`; `--no-quarantine` deletes Tier 3 too). |
+| `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--no-quarantine`, `--list-quarantine`, `--restore <batch\|latest>`, `--purge-quarantine`, `--older-than <days>`, `--log`, `--json` | Junk cleaner with mandatory dry-run and inviolable whitelist; it skips installed packages, folders the system depends on and git-tracked entries, and reports what it kept. `--apply` deletes regenerable Tier 1-2 junk permanently and at once (preview first) and quarantines only Tier 3 junk to `<root>/.smart_drive/quarantine/<batch_id>/` (restorable via `--restore`; `--no-quarantine` deletes Tier 3 too). |
 | `search` | `<query>`, `--ext <ext>`, `--size <spec>`, `--category <cat>`, `--kind <k>`, `--limit <n>`, `--json` | Sub-10ms SQLite FTS5 multi-criteria query parser with BM25 ranking. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Auto-zoning, loose-file relocation, `AcademicClassifier` routing, `protected_by_system` guard, and agent/IDE/shortcut relinking; logs move batches to `.smart_drive/moves.jsonl`. |
 | `undo` | `--apply`, `--dry-run`, `--root <path>`, `--json` | Reverses the latest `organize`/`classify` move batch that has not been undone yet, skips items instead of overwriting when the original place is taken, and relinks agents/IDEs/shortcuts back to the original paths (dry-run default). |
@@ -351,11 +352,13 @@ smart-drive gitignore apply D:\teamwork_projects\my_project --yes --untrack
 ## Safe Junk Cleaner
 
 Purgeable files are grouped into 3 tiers with a mandatory dry-run default (`--apply` required to move or delete):
-1. **Tier 1 (Safe OS Metadata)**: macOS `.DS_Store`, `._*` AppleDouble, `.Spotlight-V100`, `.Trashes`; Windows `Thumbs.db`, `desktop.ini`, `ehthumbs.db`.
-2. **Tier 2 (Developer Caches)**: Python `__pycache__`, `*.pyc`, `*.pyo`, `.pytest_cache`; Node `node_modules/.cache`; Rust `target/debug/build`; legacy `polaris/.cache/**`.
-3. **Tier 3 (Transient & Logs)**: `*.log`, `*.tmp`, `*.bak`, crash dumps.
+1. **Tier 1 (Safe OS Metadata & Bytecode)**: macOS `.DS_Store`, `._*` AppleDouble, `.Spotlight-V100`, `.Trashes`, `.TemporaryItems`; Windows `Thumbs.db`, `desktop.ini`, `ehthumbs.db`, `ehthumbs_vista.db`, `$RECYCLE.BIN`; Python `__pycache__`, `*.pyc`, `*.pyo`.
+2. **Tier 2 (Developer Caches)**: `.pytest_cache`, `.ruff_cache`, `.mypy_cache`, `.tox`, `.nox`, `.coverage`, `htmlcov`, `*.egg-info`; `build`, `dist` and `.cache` folders next to a project file; legacy `polaris/.cache/**`.
+3. **Tier 3 (Transient & Dumps)**: `*.tmp`, `*.temp`, `*.swp`, `*.swo`, `*~`, `*.dmp`, `core.*`, `hs_err_pid*.log`.
 
-`smart-drive clean --apply` permanently deletes Tier 1 and Tier 2 items at once: they are regenerable (OS metadata, build caches), so they are never quarantined. Only Tier 3 items (`--tier 3`: logs, temp files, backups, crash dumps) move into a reversible quarantine batch under `<root>/.smart_drive/quarantine/<batch_id>/` (with `manifest.json`) instead of being unlinked:
+`clean` lists only what is really regenerable. It never lists anything of Tier 2-3 inside a dependency folder (`node_modules`, `bower_components`, `site-packages`, `.venv`, `vendor`...): that is installed package code, and `npm install` does not notice a deleted `dist/`. It never lists anything inside a folder that Windows or an installed app depends on (the same `protected_by_system` index `organize` uses: PATH, Services, Installed Apps, shortcuts, uninstallers). A `build`, `dist` or `.cache` folder counts only when a project file (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pom.xml`, `*.csproj`...) lies beside it, and a Tier 2-3 entry that git tracks (or sits in a repository git cannot be asked about) is kept. The report says how many look-alikes were kept and why (`kept` and `protected_by_system` in `--json`).
+
+`smart-drive clean --apply` permanently deletes Tier 1 and Tier 2 items at once: they are regenerable (OS metadata, build caches), so they are never quarantined, and nothing can bring them back. Preview with `smart-drive clean --tier 2` first (`smart-drive checkup` recommends the same order). Only Tier 3 items (`--tier 3`: temp files, swap files, crash dumps) move into a reversible quarantine batch under `<root>/.smart_drive/quarantine/<batch_id>/` (with `manifest.json`) instead of being unlinked:
 - Inspect quarantined batches: `smart-drive clean --list-quarantine`
 - Restore a batch to its original paths: `smart-drive clean --restore latest` (or `--restore <batch_id>`)
 - Permanently purge old quarantine batches: `smart-drive clean --purge-quarantine --older-than 14`

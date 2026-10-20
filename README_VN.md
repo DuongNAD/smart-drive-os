@@ -111,6 +111,7 @@ smart-drive paths --broken      # quét mục IDE, cấu hình agent và shortcu
 **Dọn rác an toàn (`clean` có cách ly & khôi phục)** — Luôn xem trước rác trước (mặc định `--dry-run`). `--apply` xóa ngay metadata hệ điều hành và cache biên dịch (Tier 1-2) vì tái tạo được; chỉ log, tệp tạm và crash dump (Tier 3) được chuyển vào `.smart_drive/quarantine/` để khôi phục:
 ```bash
 smart-drive clean                      # xem trước (mặc định Tier 1)
+smart-drive clean --tier 2             # xem trước Tier 1-2: những gì --apply sẽ xóa vĩnh viễn
 smart-drive clean --apply --tier 3     # xóa rác Tier 1-2, cách ly rác Tier 3
 smart-drive clean --list-quarantine
 smart-drive clean --restore latest
@@ -185,7 +186,7 @@ Mọi lệnh chạy qua `smart-drive <lệnh>`, `python -m smart_drive <lệnh>`
 | `init` | `--profile <tên>`, `--root <đd>`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo 6 nhóm thư mục, cài khiên bảo vệ và gieo chỉ mục FTS5. |
 | `status` | `--root <đd>`, `--json` | Kiểm tra điểm gắn ổ đĩa, hệ tệp nhận diện, cấu trúc hình học, khiên bảo vệ và phân vùng. |
 | `audit` | `--root <đd>`, `--html [tệp]`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán dung lượng và cluster slack theo kích thước cụm thật của ổ đĩa (4 KB NTFS, 512 KB exFAT…). `--html` xuất báo cáo treemap tự chứa chạy offline (mặc định `<root>/.smart_drive/reports/audit.html`). Hard link tính một lần; symlink/junction bỏ qua và đếm. |
-| `clean` | `--dry-run` *(mặc định)*, `--apply`, `--tier {1,2,3}`, `--no-quarantine`, `--list-quarantine`, `--restore <batch\|latest>`, `--purge-quarantine`, `--older-than <ngày>`, `--log`, `--json` | Dọn rác bắt buộc chạy thử kèm whitelist. `--apply` xóa ngay rác Tier 1-2 (tái tạo được) và chỉ cách ly rác Tier 3 vào `<root>/.smart_drive/quarantine/<batch_id>/` (khôi phục qua `--restore`; `--no-quarantine` xóa luôn cả Tier 3). |
+| `clean` | `--dry-run` *(mặc định)*, `--apply`, `--tier {1,2,3}`, `--no-quarantine`, `--list-quarantine`, `--restore <batch\|latest>`, `--purge-quarantine`, `--older-than <ngày>`, `--log`, `--json` | Dọn rác bắt buộc chạy thử kèm whitelist; bỏ qua gói đã cài, thư mục hệ thống đang dùng và mục git đang theo dõi, và báo cáo phần đã giữ lại. `--apply` xóa vĩnh viễn ngay rác Tier 1-2 (tái tạo được; hãy xem trước) và chỉ cách ly rác Tier 3 vào `<root>/.smart_drive/quarantine/<batch_id>/` (khôi phục qua `--restore`; `--no-quarantine` xóa luôn cả Tier 3). |
 | `search` | `<truy_vấn>`, `--ext <đuôi>`, `--size <cỡ>`, `--category <nhóm>`, `--kind <loại>`, `--limit <n>`, `--json` | Tìm kiếm siêu tốc (<10ms) bằng SQLite FTS5 kết hợp xếp hạng BM25. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Tự phân loại file rời, định tuyến môn FPTU bằng `AcademicClassifier`, bảo vệ mục hệ thống (`protected_by_system`), giảm slack và cập nhật đường dẫn agent/IDE/shortcut; lưu đợt dời vào `.smart_drive/moves.jsonl`. |
 | `undo` | `--apply`, `--dry-run`, `--root <đd>`, `--json` | Hoàn tác đợt dời `organize`/`classify` gần nhất chưa được hoàn tác, bỏ qua mục (không ghi đè) khi chỗ cũ đã bị chiếm và relink agent/IDE/shortcut về đường dẫn gốc (mặc định dry-run). |
@@ -351,11 +352,13 @@ smart-drive gitignore apply D:\teamwork_projects\my_project --yes --untrack
 ## Dọn Rác An Toàn
 
 Tệp rác chia làm 3 tầng với mặc định chạy thử (`--dry-run`, cần `--apply` để cách ly hoặc xóa thật):
-1. **Tier 1 (Rác Metadata Hệ Điều Hành)**: macOS `.DS_Store`, `._*` AppleDouble, `.Spotlight-V100`, `.Trashes`; Windows `Thumbs.db`, `desktop.ini`, `ehthumbs.db`.
-2. **Tier 2 (Cache Biên Dịch & Phát Triển)**: Python `__pycache__`, `*.pyc`, `*.pyo`, `.pytest_cache`; Node `node_modules/.cache`; Rust `target/debug/build`; cache cũ `polaris/.cache/**`.
-3. **Tier 3 (Tệp Tạm & Nhật Ký)**: `*.log`, `*.tmp`, `*.bak`, crash dumps.
+1. **Tier 1 (Rác Metadata Hệ Điều Hành & Bytecode)**: macOS `.DS_Store`, `._*` AppleDouble, `.Spotlight-V100`, `.Trashes`, `.TemporaryItems`; Windows `Thumbs.db`, `desktop.ini`, `ehthumbs.db`, `ehthumbs_vista.db`, `$RECYCLE.BIN`; Python `__pycache__`, `*.pyc`, `*.pyo`.
+2. **Tier 2 (Cache Biên Dịch & Phát Triển)**: `.pytest_cache`, `.ruff_cache`, `.mypy_cache`, `.tox`, `.nox`, `.coverage`, `htmlcov`, `*.egg-info`; thư mục `build`, `dist` và `.cache` nằm cạnh một tệp dự án; cache cũ `polaris/.cache/**`.
+3. **Tier 3 (Tệp Tạm & Crash Dump)**: `*.tmp`, `*.temp`, `*.swp`, `*.swo`, `*~`, `*.dmp`, `core.*`, `hs_err_pid*.log`.
 
-`smart-drive clean --apply` xóa vĩnh viễn ngay các mục Tier 1 và Tier 2 vì chúng tái tạo được (metadata hệ điều hành, cache biên dịch), nên không bao giờ qua cách ly. Chỉ mục Tier 3 (`--tier 3`: log, tệp tạm, bản sao `.bak`, crash dump) được dời vào thư mục cách ly có thể khôi phục tại `<root>/.smart_drive/quarantine/<batch_id>/` (kèm `manifest.json`) thay vì xóa vĩnh viễn:
+`clean` chỉ liệt kê thứ thật sự tái tạo được. Mục Tier 2-3 nằm trong thư mục phụ thuộc (`node_modules`, `bower_components`, `site-packages`, `.venv`, `vendor`...) không bao giờ bị liệt kê: đó là mã của gói đã cài, và `npm install` không phát hiện một thư mục `dist/` đã bị xóa. Mục nằm trong thư mục mà Windows hay ứng dụng đã cài đang dùng cũng không bao giờ bị liệt kê (cùng chỉ mục `protected_by_system` mà `organize` dùng: PATH, Services, Ứng dụng đã cài, shortcut, trình gỡ cài đặt). Thư mục `build`, `dist`, `.cache` chỉ tính khi có tệp dự án (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pom.xml`, `*.csproj`...) nằm cạnh, và mục Tier 2-3 mà git đang theo dõi (hoặc nằm trong repo mà git không trả lời được) được giữ lại. Báo cáo cho biết bao nhiêu mục giống rác đã được giữ lại và vì sao (`kept` và `protected_by_system` trong `--json`).
+
+`smart-drive clean --apply` xóa vĩnh viễn ngay các mục Tier 1 và Tier 2 vì chúng tái tạo được (metadata hệ điều hành, cache biên dịch), nên không bao giờ qua cách ly và không khôi phục được. Hãy xem trước bằng `smart-drive clean --tier 2` (`smart-drive checkup` cũng gợi ý đúng thứ tự này). Chỉ mục Tier 3 (`--tier 3`: tệp tạm, tệp swap, crash dump) được dời vào thư mục cách ly có thể khôi phục tại `<root>/.smart_drive/quarantine/<batch_id>/` (kèm `manifest.json`) thay vì xóa vĩnh viễn:
 - Xem các đợt cách ly: `smart-drive clean --list-quarantine`
 - Khôi phục một đợt về vị trí gốc: `smart-drive clean --restore latest` (hoặc `--restore <batch_id>`)
 - Xóa vĩnh viễn các đợt cách ly cũ: `smart-drive clean --purge-quarantine --older-than 14`
