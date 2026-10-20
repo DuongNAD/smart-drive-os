@@ -455,7 +455,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_cls_scope.add_argument(
         "--recursive",
         action="store_true",
-        help="Also look inside subfolders (default: only the files directly in the scanned folder)",
+        help=(
+            "Also look inside subfolders (default: only the files directly in the scanned folder). "
+            "App, library and project folders (programs, launcher scripts, manifests, .git) are kept whole "
+            "and listed as skipped_bundles"
+        ),
     )
     p_cls_scope.add_argument(
         "--no-recursive",

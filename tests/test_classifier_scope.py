@@ -11,11 +11,8 @@ from __future__ import annotations
 import contextlib
 import io
 import json
-import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, Tuple
-from unittest.mock import patch
 
 from smart_drive.cli.main import main
 from smart_drive.core.classifier import ClassifierEngine
@@ -25,36 +22,12 @@ from tests.classifier_fixtures import (
     DOCS_FOLDER,
     LOOSE_AT_ROOT,
     SCRIPT_FOLDER,
-    build_real_world_drive,
+    DriveCase,
     snapshot,
 )
 
 
-class _ScopeCase(unittest.TestCase):
-    """A drive with the folders classify used to take apart; the host's registry and shortcuts are never read."""
-
-    def setUp(self) -> None:
-        super().setUp()
-        tmp = tempfile.TemporaryDirectory(prefix="sd_scope_")
-        self.addCleanup(tmp.cleanup)
-        self.drive = build_real_world_drive(Path(tmp.name).resolve() / "drive")
-        patcher = patch("smart_drive.core.system_refs.SystemRefIndex.collect", return_value=SystemRefIndex([]))
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def classify(self, *argv: str) -> Tuple[int, str, str]:
-        out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = main(["classify", "--root", str(self.drive), *argv])
-        return code, out.getvalue(), err.getvalue()
-
-    def plan(self, *argv: str) -> Dict[str, Any]:
-        code, out, err = self.classify(*argv, "--dry-run", "--json")
-        self.assertEqual(code, 0, err)
-        return json.loads(out)
-
-
-class TestEngineScope(_ScopeCase):
+class TestEngineScope(DriveCase):
     def test_the_engine_looks_at_the_loose_files_of_the_folder_only(self) -> None:
         engine = ClassifierEngine(root_path=self.drive, system_refs=SystemRefIndex([]))
         self.assertEqual(sorted(r.name for r in engine.scan_and_classify(self.drive)), sorted(LOOSE_AT_ROOT))
@@ -82,7 +55,7 @@ class TestEngineScope(_ScopeCase):
         self.assertEqual([Path(item["path"]).name for item in engine.protected_by_system], [APP_FOLDER])
 
 
-class TestCliScope(_ScopeCase):
+class TestCliScope(DriveCase):
     def test_the_default_plan_moves_only_the_files_lying_in_the_scanned_folder(self) -> None:
         data = self.plan()
         sources = [Path(a["source_path"]) for a in data["actions"]]
