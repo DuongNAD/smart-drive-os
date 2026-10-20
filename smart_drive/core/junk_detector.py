@@ -30,7 +30,7 @@ from smart_drive.core.config import (
     match_junk_rule,
 )
 from smart_drive.core.learning_units import find_unit_root
-from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOptions
+from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOptions, measure_tree
 
 
 def _drop_items_inside_junk_dirs(items: List["JunkItem"]) -> List["JunkItem"]:
@@ -328,7 +328,13 @@ class JunkDetector:
                 except (PermissionError, FileNotFoundError, OSError):
                     continue
 
-        return _drop_items_inside_junk_dirs(junk_items)
+        junk_items = _drop_items_inside_junk_dirs(junk_items)
+        # The scanner reports a directory with size 0; what a purge would free is everything inside it. Measured
+        # here, after the nested duplicates are gone, so a tree of junk directories is walked once, not once per level.
+        for item in junk_items:
+            if item.is_dir:
+                item.size, item.allocated_size = measure_tree(item.path, self.cluster_size)
+        return junk_items
 
     def get_summary(self, items: Sequence[JunkItem]) -> Dict[str, Any]:
         """Calculates aggregated metrics across a collection of junk items."""
