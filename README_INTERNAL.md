@@ -167,7 +167,7 @@ The Cache Offloader (`smart-drive offload`) frees tens or hundreds of gigabytes 
 
 ### Zero-Data-Loss Rollback & Failure Recovery
 
-Before moving any cache, `smart-drive offload` checks whether processes using that cache (`ollama`, `docker`, `wsl`, `java`/`gradle`, `cargo`/`rustc`, `python`, `uv`, `node`, `conda`) are currently running and refuses to move while they are active unless `--wait [MIN]` (wait for them to exit) or `--force` is passed.
+Before moving any cache, `smart-drive offload` checks whether processes using that cache (`ollama`, `docker`, `wsl`, `java`/`gradle`, `cargo`/`rustc`, `python`, `uv`, `node`, `conda`) are currently running and refuses to move while they are active unless `--wait [MIN]` (wait for them to exit) or `--force` is passed. It refuses as well when the list of running programs cannot be read (`tasklist` or `ps` fails or times out), because an unreadable list does not show that they are closed.
 
 If any exception occurs during phases 1 through 6 (e.g. process interrupted, permission error, disk full), the transaction triggers an immediate multi-step rollback:
 

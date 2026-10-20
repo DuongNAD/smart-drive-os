@@ -11,16 +11,22 @@ Verifies:
 - Transactional rollback on mid-move failures (source preservation guarantee).
 - Revert operation (restores native directory, unlinks junction, cleans up secondary drive).
 - Dry-run simulation modes for both move and revert.
+- An unreadable process list is never taken as "nothing is running": move and revert refuse, warn or wait.
 
 100% Zero-Dependency Python Standard Library unittest.
 """
 
 from __future__ import annotations
 
+import contextlib
+import importlib
+import io
 import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -38,6 +44,22 @@ from smart_drive.core.offloader import (
     scan_caches,
     validate_target_drive,
 )
+
+OFFLOADER = importlib.import_module("smart_drive.core.offloader")
+PROCESSES = importlib.import_module("smart_drive.core.processes")
+
+
+class FakeClock:
+    """Stands in for the `time` module of the offloader: sleeping moves the clock forward instead of waiting."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
 
 
 class TestCacheCatalogAndEnvironmentOverrides(unittest.TestCase):
@@ -514,6 +536,254 @@ class TestTransactionalOffloadAndRevert(unittest.TestCase):
                 self.assertFalse(is_directory_junction(docker_src))
                 self.assertTrue((docker_src / "ext4.vhdx").is_file())
                 self.assertTrue(any("Docker Desktop" in w for w in res_rev.get("warnings", [])))
+
+    def _make_cache(self, relative: str, filename: str) -> Path:
+        """Creates a cache folder with one file under the sandbox user's profile and returns the folder."""
+        source = self.mock_user.joinpath(*relative.split("/"))
+        source.mkdir(parents=True, exist_ok=True)
+        (source / filename).write_bytes(b"CACHE_DATA" * 64)
+        return source
+
+    def _offload_root_entries(self) -> list:
+        """Returns the names under the sandbox offload root (empty when it was never created)."""
+        root = self.mock_d / "04_System_Offload_Caches"
+        return sorted(p.name for p in root.iterdir()) if root.is_dir() else []
+
+    def test_offload_is_refused_when_the_process_list_cannot_be_read(self) -> None:
+        """An unreadable process list is not "Docker is closed": docker_wsl, ollama and cargo stay where they are."""
+        cases = (
+            ("docker_wsl", "AppData/Local/Docker/wsl", "ext4.vhdx", "Docker Desktop, VmmemWSL, com.docker.backend, vmmem, wsl"),
+            ("ollama", ".ollama/models", "weights.bin", "ollama, ollama app"),
+            ("cargo", ".cargo/registry/cache", "serde.crate", "cargo, rustc"),
+        )
+        probes = (
+            ("returns None", {"return_value": None}),
+            ("raises", {"side_effect": OSError("the process listing could not be started")}),
+        )
+        tool = "tasklist" if sys.platform == "win32" else "ps"
+        with patch.dict(os.environ, self.env):
+            for name, relative, filename, apps in cases:
+                source = self._make_cache(relative, filename)
+                for label, probe_kwargs in probes:
+                    with self.subTest(cache=name, probe=label):
+                        with patch.object(OFFLOADER, "_running_processes", **probe_kwargs):
+                            with self.assertRaises(RuntimeError) as ctx:
+                                offload_cache(name, self.mock_d)
+                        message = str(ctx.exception)
+                        self.assertIn("could not be read", message)
+                        self.assertIn(f"({tool} failed or timed out)", message)
+                        self.assertIn(f"whether {apps} is running", message)
+                        self.assertIn("No files were moved", message)
+                        self.assertIn("--wait", message)
+                        self.assertIn("--force", message)
+                        self.assertFalse(is_directory_junction(source))
+                        self.assertTrue((source / filename).is_file())
+                        self.assertFalse((self.mock_d / "04_System_Offload_Caches" / name).exists())
+                        self.assertEqual(self._offload_root_entries(), [])
+
+    def test_a_timed_out_process_listing_refuses_the_move_without_any_offloader_mock(self) -> None:
+        """The real probe times out (as `tasklist` does on a loaded machine): the cache is not moved."""
+        with patch.dict(os.environ, self.env):
+            docker_src = self._make_cache("AppData/Local/Docker/wsl", "ext4.vhdx")
+            with patch.object(subprocess, "run", side_effect=subprocess.TimeoutExpired("tasklist", 10)):
+                with self.assertRaises(RuntimeError) as ctx:
+                    offload_cache("docker_wsl", self.mock_d)
+            self.assertIn("could not be read", str(ctx.exception))
+            self.assertFalse(is_directory_junction(docker_src))
+            self.assertTrue((docker_src / "ext4.vhdx").is_file())
+            self.assertEqual(self._offload_root_entries(), [])
+
+    def test_force_moves_a_cache_although_the_process_list_cannot_be_read(self) -> None:
+        """--force overrides the refusal and records a warning that says why it was needed."""
+        with patch.dict(os.environ, self.env):
+            docker_src = self._make_cache("AppData/Local/Docker/wsl", "ext4.vhdx")
+            with patch.object(OFFLOADER, "_running_processes", return_value=None):
+                res = offload_cache("docker_wsl", self.mock_d, force=True)
+            self.assertEqual(res["status"], "success")
+            self.assertTrue(is_directory_junction(docker_src))
+            self.assertTrue(any("forced offload" in w and "could not be read" in w for w in res["warnings"]), res["warnings"])
+
+    def test_dry_run_says_it_would_be_blocked_when_the_process_list_cannot_be_read(self) -> None:
+        """A dry run reports the unreadable list as a block, in the warnings and the message, and as a flag."""
+        with patch.dict(os.environ, self.env):
+            docker_src = self._make_cache("AppData/Local/Docker/wsl", "ext4.vhdx")
+            with patch.object(OFFLOADER, "_running_processes", return_value=None):
+                res = offload_cache("docker_wsl", self.mock_d, dry_run=True)
+            self.assertEqual(res["status"], "dry_run")
+            self.assertIs(res["process_list_readable"], False)
+            self.assertEqual(res["blocking_processes"], [])
+            self.assertTrue(
+                any(w.startswith("would be blocked") and "could not be read" in w for w in res["warnings"]),
+                res["warnings"],
+            )
+            self.assertIn("(would be blocked: the list of running programs could not be read)", res["message"])
+            self.assertFalse(is_directory_junction(docker_src))
+            self.assertEqual(self._offload_root_entries(), [])
+
+            with patch.object(OFFLOADER, "_running_processes", return_value=set()):
+                readable = offload_cache("docker_wsl", self.mock_d, dry_run=True)
+            self.assertIs(readable["process_list_readable"], True)
+            self.assertEqual(readable["warnings"], [])
+            self.assertNotIn("would be blocked", readable["message"])
+
+    def test_wait_goes_on_once_the_process_list_can_be_read_again(self) -> None:
+        """--wait keeps checking while the list is unreadable and moves the cache when it reads back as empty."""
+        with patch.dict(os.environ, self.env):
+            ollama_src = self._make_cache(".ollama/models", "weights.bin")
+            with patch.object(OFFLOADER, "_running_processes", side_effect=[None, None, set()]) as probe:
+                with patch.object(OFFLOADER.time, "sleep", return_value=None) as sleep:
+                    res = offload_cache("ollama", self.mock_d, wait_minutes=5)
+            self.assertEqual(res["status"], "success")
+            self.assertEqual(probe.call_count, 3)
+            self.assertEqual(sleep.call_count, 1)
+            self.assertTrue(is_directory_junction(ollama_src))
+
+    def test_wait_still_waits_for_a_program_that_shows_up_once_the_list_can_be_read(self) -> None:
+        """An unreadable poll followed by a readable one that lists ollama keeps waiting until ollama closes."""
+        with patch.dict(os.environ, self.env):
+            ollama_src = self._make_cache(".ollama/models", "weights.bin")
+            polls = [None, {"ollama.exe"}, {"ollama.exe"}, set()]
+            with patch.object(OFFLOADER, "_running_processes", side_effect=polls) as probe:
+                with patch.object(OFFLOADER.time, "sleep", return_value=None):
+                    res = offload_cache("ollama", self.mock_d, wait_minutes=5)
+            self.assertEqual(res["status"], "success")
+            self.assertEqual(probe.call_count, 4)
+            self.assertTrue(is_directory_junction(ollama_src))
+
+    def test_wait_gives_up_with_exit_code_3_when_the_process_list_stays_unreadable(self) -> None:
+        """--wait that ends on an unreadable list is a timeout (exit code 3); without --wait it is a plain refusal."""
+        from smart_drive.cli.main import main as cli_main
+
+        def run_cli(extra: list) -> tuple:
+            out, err = io.StringIO(), io.StringIO()
+            argv = ["offload", "--move", "ollama", "--target", str(self.mock_d), "--json"] + extra
+            with patch.object(OFFLOADER, "_running_processes", return_value=None):
+                with patch.object(OFFLOADER.time, "sleep", return_value=None):
+                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                        code = cli_main(argv)
+            return code, json.loads(out.getvalue())
+
+        with patch.dict(os.environ, self.env):
+            ollama_src = self._make_cache(".ollama/models", "weights.bin")
+
+            code, payload = run_cli(["--wait", "0"])
+            self.assertEqual(code, 3)
+            self.assertEqual(payload["status"], "error")
+            self.assertTrue(payload["error"].startswith("Timed out waiting for"), payload["error"])
+            self.assertIn("still could not be read", payload["error"])
+            self.assertIn("no files were moved", payload["error"])
+            self.assertFalse(is_directory_junction(ollama_src))
+            self.assertTrue((ollama_src / "weights.bin").is_file())
+            self.assertEqual(self._offload_root_entries(), [])
+
+            code_plain, payload_plain = run_cli([])
+            self.assertEqual(code_plain, 1)
+            self.assertIn("could not be read", payload_plain["error"])
+            self.assertFalse(payload_plain["error"].startswith("Timed out waiting for"))
+            self.assertFalse(is_directory_junction(ollama_src))
+
+    def test_wait_for_cache_processes_tells_an_unreadable_list_from_a_running_program(self) -> None:
+        """At the deadline the answer is the programs still running, or None when the last poll could not read the list."""
+        running = {"ollama.exe"}
+
+        def wait_with(polls: list, wait_minutes: float = 1) -> tuple:
+            """Polls the (fake) process list as `polls` says (the last entry repeats) and returns (answer, polls made)."""
+            clock = FakeClock()
+            seen: list = []
+
+            def probe():
+                seen.append(clock.now)
+                return polls[min(len(seen), len(polls)) - 1]
+
+            with patch.object(OFFLOADER, "time", clock):
+                with patch.object(OFFLOADER, "_running_processes", side_effect=probe):
+                    return OFFLOADER.wait_for_cache_processes("ollama", wait_minutes), len(seen)
+
+        self.assertEqual(wait_with([set()]), ([], 1))
+        self.assertEqual(wait_with([running, running, set()]), ([], 3))
+        self.assertEqual(wait_with([None, None, set()]), ([], 3))
+        self.assertEqual(wait_with([running])[0], ["ollama"])
+        self.assertIsNone(wait_with([None])[0])
+        self.assertIsNone(wait_with([running, None])[0], "the last poll could not read the list")
+        self.assertEqual(wait_with([None, running])[0], ["ollama"], "the last poll read the list and ollama runs")
+        # 60 seconds in steps of 2 seconds: the first poll plus 30 more
+        self.assertEqual(wait_with([None])[1], 31)
+
+    def test_npm_and_gradle_only_warn_when_the_process_list_cannot_be_read(self) -> None:
+        """Caches with warning-only programs (node, java) are never refused over an unreadable list, but say so."""
+        with patch.dict(os.environ, self.env):
+            npm_src = self._make_cache("AppData/Roaming/npm-cache", "index.json")
+            gradle_src = self._make_cache(".gradle/caches", "jars.bin")
+            with patch.object(OFFLOADER, "_running_processes", return_value=None):
+                npm_dry = offload_cache("npm", self.mock_d, dry_run=True)
+                res_npm = offload_cache("npm", self.mock_d)
+                res_gradle = offload_cache("gradle", self.mock_d)
+
+            self.assertEqual(npm_dry["status"], "dry_run")
+            self.assertIs(npm_dry["process_list_readable"], False)
+            self.assertNotIn("would be blocked", npm_dry["message"])
+            self.assertFalse(any("would be blocked" in w for w in npm_dry["warnings"]))
+
+            self.assertEqual(res_npm["status"], "success")
+            self.assertTrue(is_directory_junction(npm_src))
+            self.assertTrue(
+                any("could not be read" in w and "node" in w and "offloading 'npm'" in w for w in res_npm["warnings"]),
+                res_npm["warnings"],
+            )
+            self.assertEqual(res_gradle["status"], "success")
+            self.assertTrue(is_directory_junction(gradle_src))
+            self.assertTrue(any("could not be read" in w and "java" in w for w in res_gradle["warnings"]), res_gradle["warnings"])
+
+    def test_revert_is_refused_when_the_process_list_cannot_be_read(self) -> None:
+        """Reverting goes through the same check: refused, still linked; the dry run and --force behave as for a move."""
+        with patch.dict(os.environ, self.env):
+            docker_src = self._make_cache("AppData/Local/Docker/wsl", "ext4.vhdx")
+            with patch.object(OFFLOADER, "_running_processes", return_value=set()):
+                offload_cache("docker_wsl", self.mock_d)
+            self.assertTrue(is_directory_junction(docker_src))
+
+            with patch.object(OFFLOADER, "_running_processes", return_value=None):
+                with self.assertRaises(RuntimeError) as ctx:
+                    revert_cache("docker_wsl")
+                self.assertIn("Cannot revert 'docker_wsl'", str(ctx.exception))
+                self.assertIn("could not be read", str(ctx.exception))
+                self.assertTrue(is_directory_junction(docker_src))
+                self.assertTrue((docker_src / "ext4.vhdx").is_file())
+
+                dry = revert_cache("docker_wsl", dry_run=True)
+                self.assertEqual(dry["status"], "dry_run")
+                self.assertIs(dry["process_list_readable"], False)
+                self.assertTrue(any(w.startswith("would be blocked") and "could not be read" in w for w in dry["warnings"]))
+                self.assertIn("would be blocked", dry["message"])
+                self.assertTrue(is_directory_junction(docker_src))
+
+                forced = revert_cache("docker_wsl", force=True)
+            self.assertEqual(forced["status"], "reverted")
+            self.assertTrue(any("forced revert" in w and "could not be read" in w for w in forced["warnings"]), forced["warnings"])
+            self.assertFalse(is_directory_junction(docker_src))
+            self.assertTrue((docker_src / "ext4.vhdx").is_file())
+
+    def test_an_unreadable_process_list_is_none_and_not_an_empty_set(self) -> None:
+        """The probe says None for a failed or timed-out listing, and the offloader keeps that instead of `set()`."""
+
+        def timing_out(cmd, **kwargs):
+            raise subprocess.TimeoutExpired(cmd, 10)
+
+        def failing(cmd, **kwargs):
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="the listing failed")
+
+        self.assertIsNone(PROCESSES.probe_running_processes(run_fn=timing_out))
+        self.assertIsNone(PROCESSES.probe_running_processes(run_fn=failing))
+
+        with patch.object(PROCESSES, "probe_running_processes", return_value=None) as probe:
+            self.assertIsNone(OFFLOADER._probe_processes())
+            self.assertIsNone(OFFLOADER.running_cache_processes("docker_wsl"))
+            # the public helper still answers "no programs" for an unreadable list, as its docstring says
+            self.assertEqual(PROCESSES.running_processes(), set())
+            probe.reset_mock()
+            # a cache without process rules is never held up by the listing
+            self.assertEqual(OFFLOADER.running_cache_processes("uv"), ([], []))
+            probe.assert_not_called()
 
 
 if __name__ == "__main__":

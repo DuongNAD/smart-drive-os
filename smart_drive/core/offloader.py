@@ -534,17 +534,23 @@ CACHE_PROCESS_LABELS: Dict[str, str] = {
 }
 
 
-def _probe_processes() -> Set[str]:
-    """Calls `_running_processes` (honoring mocks on either `offloader` or `processes`)."""
+def _probe_processes() -> Optional[Set[str]]:
+    """Calls `_running_processes` (honoring mocks on either `offloader` or `processes`).
+
+    Returns None when the process list could not be read.
+    """
     if _running_processes is not _processes.running_processes:
         return _running_processes()
     if _processes._running_processes is not _processes.running_processes:
         return _processes._running_processes()
-    return _processes.running_processes()
+    return _processes.probe_running_processes()
 
 
-def running_cache_processes(name: str) -> Tuple[List[str], List[str]]:
-    """Returns `(blocking_processes, warning_processes)` currently running for cache `name`."""
+def running_cache_processes(name: str) -> Optional[Tuple[List[str], List[str]]]:
+    """Returns `(blocking_processes, warning_processes)` currently running for cache `name`.
+
+    None means the process list could not be read, which says nothing about whether the application runs.
+    """
     clean_name = name.strip().lower()
     block_targets = CACHE_BLOCKING_PROCESSES.get(clean_name, set())
     warn_targets = CACHE_WARNING_PROCESSES.get(clean_name, set())
@@ -554,7 +560,9 @@ def running_cache_processes(name: str) -> Tuple[List[str], List[str]]:
     try:
         raw_names = _probe_processes()
     except Exception:
-        return [], []
+        return None
+    if raw_names is None:
+        return None
 
     blocking_found: Set[str] = set()
     warning_found: Set[str] = set()
@@ -568,21 +576,96 @@ def running_cache_processes(name: str) -> Tuple[List[str], List[str]]:
     return sorted(blocking_found), sorted(warning_found)
 
 
-def wait_for_cache_processes(name: str, wait_minutes: float) -> List[str]:
+def wait_for_cache_processes(name: str, wait_minutes: float) -> Optional[List[str]]:
     """Waits up to `wait_minutes` for blocking processes of cache `name` to exit.
 
-    Returns the list of blocking processes still running (empty if all closed).
+    Returns the list of blocking processes still running at the deadline (empty if all closed),
+    or None when the last poll could not read the process list.
     """
-    blocking, _ = running_cache_processes(name)
-    if not blocking:
+    found = running_cache_processes(name)
+    if found is not None and not found[0]:
         return []
     deadline = time.monotonic() + max(0.0, float(wait_minutes)) * 60.0
-    while blocking:
+    while found is None or found[0]:
         if time.monotonic() >= deadline:
-            return blocking
+            return None if found is None else found[0]
         time.sleep(2)
-        blocking, _ = running_cache_processes(name)
+        found = running_cache_processes(name)
     return []
+
+
+def _process_list_tool() -> str:
+    """Returns the name of the program that lists the running processes: `tasklist` on Windows, `ps` elsewhere."""
+    return "tasklist" if sys.platform == "win32" else "ps"
+
+
+def _process_labels(process_names: Set[str]) -> str:
+    """Returns the display names of `process_names`, sorted and joined with commas."""
+    return ", ".join(sorted(CACHE_PROCESS_LABELS.get(raw, raw) for raw in process_names))
+
+
+def _wait_until_cache_is_free(clean_name: str, gerund: str, wait_minutes: float) -> None:
+    """Waits for the blocking processes of a cache to close.
+
+    Raises "Timed out waiting for ..." if they stay open or the process list stays unreadable.
+    """
+    still_running = wait_for_cache_processes(clean_name, wait_minutes)
+    if still_running is None:
+        raise RuntimeError(
+            f"Timed out waiting for the list of running programs to become readable before {gerund} '{clean_name}': "
+            f"it still could not be read ({_process_list_tool()} failed or timed out); no files were moved."
+        )
+    if still_running:
+        raise RuntimeError(
+            f"Timed out waiting for {', '.join(still_running)} to close before {gerund} '{clean_name}'; "
+            "no files were moved."
+        )
+
+
+def _check_unreadable_process_list(
+    clean_name: str,
+    verb: str,
+    gerund: str,
+    dry_run: bool,
+    force: bool,
+    wait_minutes: Optional[float],
+) -> Tuple[List[str], List[str], bool]:
+    """Applies the process rules of a cache whose process list could not be read (never taken as "nothing runs").
+
+    A cache with blocking processes is refused (a dry run says so, `force` goes on with a warning, `wait_minutes`
+    keeps checking); a cache with only warning processes gets a warning.
+    """
+    block_names = CACHE_BLOCKING_PROCESSES.get(clean_name, set())
+    if not block_names:
+        apps = _process_labels(CACHE_WARNING_PROCESSES.get(clean_name, set()))
+        warning = (
+            f"Warning: the list of running programs could not be read, so smart-drive cannot tell whether {apps} "
+            f"is running while {gerund} '{clean_name}'."
+        )
+        return [], [warning], False
+
+    apps = _process_labels(block_names)
+    if dry_run:
+        warning = (
+            "would be blocked: the list of running programs could not be read, "
+            f"so smart-drive cannot tell whether {apps} is running"
+        )
+        return [], [warning], False
+    if force:
+        warning = (
+            f"Warning: forced {verb} of '{clean_name}' although the list of running programs could not be read "
+            f"({apps} may be running)."
+        )
+        return [], [warning], False
+    if wait_minutes is None:
+        raise RuntimeError(
+            f"Cannot {verb} '{clean_name}': the list of running programs could not be read "
+            f"({_process_list_tool()} failed or timed out), so smart-drive cannot tell whether {apps} is running. "
+            f"No files were moved. Close {apps} and try again, pass --wait to keep checking, "
+            f"or use --force to {verb} anyway."
+        )
+    _wait_until_cache_is_free(clean_name, gerund, wait_minutes)
+    return [], [], True
 
 
 def _check_cache_processes(
@@ -592,12 +675,16 @@ def _check_cache_processes(
     dry_run: bool,
     force: bool,
     wait_minutes: Optional[float],
-) -> Tuple[List[str], List[str]]:
+) -> Tuple[List[str], List[str], bool]:
     """Enforces blocking/warning process rules for `offload_cache` and `revert_cache`.
 
-    Returns `(blocking_procs, warnings)`.
+    Returns `(blocking_procs, warnings, list_readable)`; `list_readable` is False when the process list
+    could not be read.
     """
-    blocking_procs, warning_procs = running_cache_processes(clean_name)
+    found = running_cache_processes(clean_name)
+    if found is None:
+        return _check_unreadable_process_list(clean_name, verb, gerund, dry_run, force, wait_minutes)
+    blocking_procs, warning_procs = found
     warnings: List[str] = []
     if warning_procs:
         warnings.append(
@@ -606,12 +693,8 @@ def _check_cache_processes(
 
     if blocking_procs and not dry_run:
         if wait_minutes is not None and not force:
-            blocking_procs = wait_for_cache_processes(clean_name, wait_minutes)
-            if blocking_procs:
-                raise RuntimeError(
-                    f"Timed out waiting for {', '.join(blocking_procs)} to close before {gerund} '{clean_name}'; "
-                    "no files were moved."
-                )
+            _wait_until_cache_is_free(clean_name, gerund, wait_minutes)
+            blocking_procs = []
         elif not force:
             raise RuntimeError(
                 f"Cannot {verb} '{clean_name}' while {', '.join(blocking_procs)} is running. "
@@ -626,7 +709,16 @@ def _check_cache_processes(
             f"would be blocked: {', '.join(blocking_procs)} is running"
         )
 
-    return blocking_procs, warnings
+    return blocking_procs, warnings, True
+
+
+def _dry_run_block_note(clean_name: str, blocking_procs: List[str], list_readable: bool) -> str:
+    """Returns the suffix of a dry-run message when a real run would be refused over running or unreadable processes."""
+    if blocking_procs:
+        return f" (would be blocked: {', '.join(blocking_procs)} is running)"
+    if not list_readable and clean_name in CACHE_BLOCKING_PROCESSES:
+        return " (would be blocked: the list of running programs could not be read)"
+    return ""
 
 
 def offload_cache(
@@ -665,7 +757,8 @@ def offload_cache(
         ValueError: If target is C: or source is not valid.
         FileNotFoundError: If source cache does not exist on disk.
         OSError: If target drive has insufficient free disk space.
-        RuntimeError: If transactional move or junction creation fails.
+        RuntimeError: If a blocking process is running or the process list cannot be read (unless `force`),
+            or if transactional move or junction creation fails.
     """
     clean_name = name.strip().lower()
     if clean_name not in CACHE_CATALOG:
@@ -711,7 +804,7 @@ def offload_cache(
             )
 
     # 3b. Check running processes associated with this cache
-    blocking_procs, warnings = _check_cache_processes(
+    blocking_procs, warnings, process_list_readable = _check_cache_processes(
         clean_name,
         verb="offload",
         gerund="offloading",
@@ -742,8 +835,7 @@ def offload_cache(
     # If dry-run requested, return plan without making any disk modifications
     if dry_run:
         dry_msg = f"[DRY-RUN] Would safely offload {format_bytes(size_bytes)} ({file_count} files) to '{target_cache_dir}' and create a {LINK_NAME}."
-        if blocking_procs:
-            dry_msg += f" (would be blocked: {', '.join(blocking_procs)} is running)"
+        dry_msg += _dry_run_block_note(clean_name, blocking_procs, process_list_readable)
         return {
             "status": "dry_run",
             "name": clean_name,
@@ -756,6 +848,7 @@ def offload_cache(
             "phases_planned": 7,
             "warnings": warnings,
             "blocking_processes": blocking_procs,
+            "process_list_readable": process_list_readable,
             "message": dry_msg,
         }
 
@@ -899,7 +992,8 @@ def revert_cache(
         ValueError: If cache is not currently an active junction.
         FileNotFoundError: If junction target directory is missing.
         OSError: If system drive has insufficient free space.
-        RuntimeError: If a blocking process is running or revert fails.
+        RuntimeError: If a blocking process is running or the process list cannot be read (unless `force`),
+            or if revert fails.
     """
     clean_name = name.strip().lower()
     if clean_name not in CACHE_CATALOG:
@@ -928,7 +1022,7 @@ def revert_cache(
         )
 
     # 2b. Check running processes associated with this cache before touching any files
-    blocking_procs, warnings = _check_cache_processes(
+    blocking_procs, warnings, process_list_readable = _check_cache_processes(
         clean_name,
         verb="revert",
         gerund="reverting",
@@ -956,8 +1050,7 @@ def revert_cache(
 
     if dry_run:
         dry_msg = f"[DRY-RUN] Would revert {format_bytes(size_bytes)} ({file_count} files) back to native directory '{source_path}'."
-        if blocking_procs:
-            dry_msg += f" (would be blocked: {', '.join(blocking_procs)} is running)"
+        dry_msg += _dry_run_block_note(clean_name, blocking_procs, process_list_readable)
         return {
             "status": "dry_run",
             "name": clean_name,
@@ -968,6 +1061,7 @@ def revert_cache(
             "file_count": file_count,
             "warnings": warnings,
             "blocking_processes": blocking_procs,
+            "process_list_readable": process_list_readable,
             "message": dry_msg,
         }
 
