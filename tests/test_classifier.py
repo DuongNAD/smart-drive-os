@@ -895,7 +895,7 @@ class TestClassifierEdgeCases(_IsolatedClassifierTestCase):
             (incoming_repo / "index.js").write_text("console.log('hi')", encoding="utf-8")
 
             engine = ClassifierEngine(root_path=tmp, system_refs=SystemRefIndex([]))
-            classified = engine.scan_and_classify(incoming_repo.parent)
+            classified = engine.scan_and_classify(incoming_repo.parent, recursive=True)
             self.assertEqual(len(classified), 1)
             self.assertEqual(classified[0].name, "web_app")
             self.assertTrue(classified[0].is_dir)
@@ -944,7 +944,7 @@ class TestClassifierEdgeCases(_IsolatedClassifierTestCase):
             self.assertIsNone(engine.inspect_path(sql_dir))
             self.assertIsNone(engine.inspect_path(app_dir))
 
-            classified = engine.scan_and_classify(tmp)
+            classified = engine.scan_and_classify(tmp, recursive=True)
             self.assertEqual([r.name for r in classified], ["my_project"])
 
             by_name = {os.path.basename(item["path"]): item["refs"] for item in engine.protected_by_system}

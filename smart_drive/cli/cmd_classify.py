@@ -30,6 +30,13 @@ def _format_size(size_bytes: int) -> str:
         return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
 
 
+def _scope_note(recursive: bool) -> str:
+    """One line saying how far the scan reached, so an empty result is not mistaken for 'nothing to sort'."""
+    if recursive:
+        return "Scope: the scanned folder and its subfolders."
+    return "Scope: only the files directly in the scanned folder. Add '--recursive' to look inside subfolders too."
+
+
 def cmd_classify(args: argparse.Namespace) -> int:
     """Handles the `classify` subcommand."""
     try:
@@ -44,7 +51,8 @@ def cmd_classify(args: argparse.Namespace) -> int:
     apply_mode = getattr(args, "apply", False)
     dry_run_mode = getattr(args, "dry_run", False)
     as_json = getattr(args, "json", False)
-    recursive = not getattr(args, "no_recursive", False)
+    # Subfolders are opt-in: a file deep inside a folder belongs with its neighbours (--no-recursive is the default now)
+    recursive = bool(getattr(args, "recursive", False)) and not getattr(args, "no_recursive", False)
 
     engine = ClassifierEngine(root_path=root)
     # The default is the engine's own (resolved) root, so a drive reached through a link still works.
@@ -71,6 +79,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             results=results,
             actions=actions,
             protected_by_system=list(engine.protected_by_system),
+            recursive=recursive,
         )
 
         if as_json:
@@ -86,6 +95,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
         print(f"\nSmartDrive-OS Classification & Auto-Tagging [APPLIED]")
         print("=" * 90)
+        print(_scope_note(recursive))
         for item in engine.protected_by_system:
             p = item["path"]
             print(f"  Skipped {p} — used by {engine.describe_protected_by_system(p)}")
@@ -119,6 +129,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             results=results,
             actions=actions,
             protected_by_system=list(engine.protected_by_system),
+            recursive=recursive,
         )
 
         if as_json:
@@ -127,6 +138,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
         print(f"\nSmartDrive-OS Classification & Auto-Tagging [DRY-RUN SIMULATION]")
         print("=" * 90)
+        print(_scope_note(recursive))
         for item in engine.protected_by_system:
             p = item["path"]
             print(f"  Skipped {p} — used by {engine.describe_protected_by_system(p)}")
@@ -153,6 +165,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             results=results,
             actions=[],
             protected_by_system=list(engine.protected_by_system),
+            recursive=recursive,
         )
 
         if as_json:
@@ -162,6 +175,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
         print(f"\nSmartDrive-OS Intelligent Classifier (v1.1.0)")
         print(f"Scan Root: {target} (Total Items: {len(results)})")
         print("=" * 95)
+        print(_scope_note(recursive))
         for item in engine.protected_by_system:
             p = item["path"]
             print(f"  Skipped {p} — used by {engine.describe_protected_by_system(p)}")

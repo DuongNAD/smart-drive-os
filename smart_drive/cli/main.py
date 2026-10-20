@@ -443,7 +443,7 @@ def build_parser() -> argparse.ArgumentParser:
     # 15. classify
     p_cls = subparsers.add_parser(
         "classify",
-        help="Deep file format recognition, taxonomy auto-tagging, and safe relocation",
+        help="Deep file format recognition, taxonomy auto-tagging, and safe relocation of the loose files in a folder",
     )
     p_cls.add_argument("path", nargs="?", default=None, help="Target file or directory to inspect/classify")
     p_cls.add_argument("--root", help="Root directory of the SSD / workspace")
@@ -451,7 +451,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_cls.add_argument("--dry-run", action="store_true", help="Simulate relocation and collision handling without moving files")
     p_cls.add_argument("--apply", action="store_true", help="Safely move files into recommended taxonomy directories")
     p_cls.add_argument("--json", action="store_true", help="Output classification report in JSON format")
-    p_cls.add_argument("--no-recursive", action="store_true", help="Do not scan subdirectories recursively")
+    p_cls_scope = p_cls.add_mutually_exclusive_group()
+    p_cls_scope.add_argument(
+        "--recursive",
+        action="store_true",
+        help="Also look inside subfolders (default: only the files directly in the scanned folder)",
+    )
+    p_cls_scope.add_argument(
+        "--no-recursive",
+        action="store_true",
+        help="Only the files directly in the scanned folder; this is the default, kept for older scripts",
+    )
 
     # 16. offload
     p_off = subparsers.add_parser(
