@@ -199,7 +199,7 @@ class TestMoversPinLearningUnits(unittest.TestCase):
         (polaris_dir / "notes.txt").write_text("math", encoding="utf-8")
 
         classifier = ClassifierEngine(str(self.root))
-        results = classifier.scan_and_classify(self.root)
+        results = classifier.scan_and_classify(self.root, recursive=True)
 
         found_pinned = False
         for res in results:

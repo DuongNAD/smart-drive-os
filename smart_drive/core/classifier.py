@@ -141,6 +141,7 @@ class ClassificationReport:
     results: List[ClassificationResult] = field(default_factory=list)
     actions: List[RelocationAction] = field(default_factory=list)
     protected_by_system: List[Dict[str, Any]] = field(default_factory=list)
+    recursive: bool = False       # False: only the files directly in the scanned folder were looked at
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -150,6 +151,7 @@ class ClassificationReport:
             "total_unknown": self.total_unknown,
             "applied": self.applied,
             "dry_run": self.dry_run,
+            "recursive": self.recursive,
             "results": [r.to_dict() for r in self.results],
             "actions": [a.to_dict() for a in self.actions],
             "protected_by_system": self.protected_by_system,
@@ -176,6 +178,7 @@ class ClassifierEngine:
         self._protected_by_system_keys: Set[str] = set()
         self._protected_summaries: Dict[str, str] = {}
         self.skipped_links: List[Path] = []  # symlinks/junctions left alone by the last scan
+        self.scanned_recursively: bool = False  # whether the last scan also looked inside subfolders
         # "Is this folder under the root" answers, kept only while one scan runs (files in the same folder share
         # them). Never used to decide a move: execute_relocation re-checks everything right before it.
         self._under_root_cache: Optional[Dict[str, bool]] = None
@@ -794,14 +797,19 @@ class ClassifierEngine:
     def scan_and_classify(
         self,
         target_dir: Optional[Union[str, Path]] = None,
-        recursive: bool = True,
+        recursive: bool = False,
         suggest_only: bool = True,
     ) -> List[ClassificationResult]:
-        """Scans a directory or file, detecting project repos and inspecting files.
+        """Scans a directory or file and inspects its files.
+
+        By default only the loose files directly in ``target_dir`` are looked at: a file deep inside a folder
+        belongs with its neighbours, so pulling it out on its own can break what that folder is. With
+        ``recursive`` the subfolders are walked too, and project repos are returned as whole folders.
 
         Symlinks and junctions are never followed or returned (they are listed in ``skipped_links``).
         """
         self._under_root_cache = {}
+        self.scanned_recursively = recursive
         try:
             return self._scan_and_classify(target_dir, recursive)
         finally:
@@ -841,6 +849,8 @@ class ClassifierEngine:
         # Directory traversal
         for root, dirs, files in os.walk(scan_root):
             curr_dir = Path(root)
+            if not recursive:
+                dirs.clear()  # only the files directly in the scanned folder count: no subfolder is entered or reported
 
             # Prune hidden, system, cache, and protected directories
             dirs[:] = [
@@ -922,9 +932,6 @@ class ClassifierEngine:
                 res = self.inspect_path(file_path)
                 if res:
                     results.append(res)
-
-            if not recursive:
-                break
 
         return results
 
@@ -1089,4 +1096,5 @@ class ClassifierEngine:
             results=results,
             actions=actions,
             protected_by_system=list(self.protected_by_system),
+            recursive=self.scanned_recursively,
         )

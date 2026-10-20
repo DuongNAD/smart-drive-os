@@ -376,7 +376,7 @@ class TestAdversarialCollisionsAndDataIntegrity(SmartDriveTestCase):
                 file_sources.append(src_file)
 
             engine = ClassifierEngine(root_path=tmp)
-            classified = engine.scan_and_classify(tmp)
+            classified = engine.scan_and_classify(tmp, recursive=True)
 
             # 01_AI_Models is a protected root dir so it is pruned from scanning;
             # exactly the 25 source files from source_folder_1..25 are classified.
@@ -430,7 +430,10 @@ class TestAdversarialCollisionsAndDataIntegrity(SmartDriveTestCase):
             (repo2 / "Cargo.toml").write_text('[package]\nname = "v2"\n', encoding="utf-8")
 
             engine = ClassifierEngine(root_path=tmp)
-            classified = engine.scan_and_classify(tmp / "incoming1") + engine.scan_and_classify(tmp / "incoming2")
+            classified = (
+                engine.scan_and_classify(tmp / "incoming1", recursive=True)
+                + engine.scan_and_classify(tmp / "incoming2", recursive=True)
+            )
             self.assertEqual(len(classified), 2)
 
             actions = engine.execute_relocation(classified, dry_run=False)

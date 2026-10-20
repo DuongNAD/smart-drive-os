@@ -698,7 +698,7 @@ class TestRelink(SmartDriveTestCase):
         claude_file.write_text(json.dumps({"projects": {str(repo): {}}}), encoding="utf-8")
 
         cls_proc = run_smart_drive_cli(
-            ["classify", "--root", str(drive), "--apply", "--json"],
+            ["classify", "--root", str(drive), "--recursive", "--apply", "--json"],
             env=env,
         )
         self.assertEqual(cls_proc.returncode, 0, cls_proc.stderr)
