@@ -22,7 +22,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional
 from unittest.mock import patch
 
 from smart_drive.core import in_use
@@ -62,6 +62,51 @@ def thread_waits_limited_to(limit: float) -> Iterator[List[Optional[float]]]:
 
     with patch.object(threading, "TIMEOUT_MAX", limit), patch.object(threading.Thread, "join", join):
         yield asked
+
+
+# How a file system may hand out the entries of a folder: NTFS lists them by name, APFS and ext4 by a hash of the name,
+# others by age. Nothing a walk finds may depend on which it is.
+LISTING_ORDERS: Dict[str, Callable[[List[Any]], List[Any]]] = {
+    "by name": lambda entries: sorted(entries, key=lambda entry: entry.name),
+    "by name, backwards": lambda entries: sorted(entries, key=lambda entry: entry.name, reverse=True),
+    "files before folders": lambda entries: sorted(entries, key=lambda entry: entry.is_dir()),
+    "folders before files": lambda entries: sorted(entries, key=lambda entry: not entry.is_dir()),
+}
+
+
+class Listing:
+    """The result of os.scandir with the entries in a chosen order: an iterator that is also a context manager."""
+
+    def __init__(self, entries: Iterable[Any]) -> None:
+        self._entries = iter(entries)
+
+    def __iter__(self) -> "Listing":
+        return self
+
+    def __next__(self) -> Any:
+        return next(self._entries)
+
+    def __enter__(self) -> "Listing":
+        return self
+
+    def __exit__(self, *exc_info: Any) -> None:
+        self.close()
+
+    def close(self) -> None:
+        pass
+
+
+@contextlib.contextmanager
+def listed_in_order(arrange: Callable[[List[Any]], List[Any]]) -> Iterator[None]:
+    """Makes os.scandir hand out the entries of every folder in the order that ``arrange`` gives."""
+    real_scandir = os.scandir
+
+    def scandir(path: Any = ".") -> Listing:
+        with real_scandir(path) as scanner:
+            return Listing(arrange(list(scanner)))
+
+    with patch.object(os, "scandir", scandir):
+        yield
 
 
 class FakeDisk:
@@ -281,13 +326,19 @@ class TestWhatIsWalked(TreeCase):
         self.assertEqual(len(no_limit.tried), 31)
 
     def test_folders_are_tried_before_files_so_a_short_budget_goes_to_the_likeliest_holders(self) -> None:
-        self.make(*[f"top/f{n:02d}.txt" for n in range(30)], "top/a/b/c/d/Images/pic.png")
+        # No folder holds more entries than the budget. A folder is read in the order its file system lists it and only
+        # its first max_entries entries are read, so more would leave what is found to that order (NTFS lists by name,
+        # APFS by a hash) and not to the walk. The walk is run with the entries listed in four orders to show it.
+        self.make(*[f"top/f{n:02d}.txt" for n in range(10)], "top/a/b/c/d/Images/pic.png")
         held = self.p("top/a/b/c/d/Images")
-        disk = FakeDisk(held=[held])
-        found = find_in_use(self.p("top"), opener=disk, max_entries=12)
-        self.assertEqual(found, [held], "the folder five levels down was reached although 30 files lie above it")
-        kinds = ["dir" if os.path.isdir(path) else "file" for path in disk.tried]
-        self.assertEqual(kinds, sorted(kinds), "every folder was tried before the first file")
+        for order, arrange in LISTING_ORDERS.items():
+            with self.subTest(listing=order), listed_in_order(arrange):
+                disk = FakeDisk(held=[held])
+                found = find_in_use(self.p("top"), opener=disk, max_entries=12)
+                reached = "the folder five levels down is reached although 10 files lie above it"
+                self.assertEqual(found, [held], f"{reached}; tried: {disk.tried}")
+                kinds = ["dir" if os.path.isdir(path) else "file" for path in disk.tried]
+                self.assertEqual(kinds, sorted(kinds), "every folder was tried before the first file")
 
     def test_links_are_neither_followed_nor_tried(self) -> None:
         self.make("outside/secret.txt", "top/real/x.txt")
