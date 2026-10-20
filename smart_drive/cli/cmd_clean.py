@@ -18,6 +18,7 @@ from smart_drive.core.junk_detector import (
     JunkDetector,
 )
 from smart_drive.core.purge_engine import (
+    QUARANTINE_RETENTION_DAYS,
     PurgeEngine,
     list_quarantine_batches,
     purge_quarantine_batches,
@@ -142,6 +143,15 @@ def cmd_clean(args: argparse.Namespace) -> int:
 
     as_json = bool(getattr(args, "json", False))
 
+    raw_age = getattr(args, "older_than", None)
+    if raw_age is not None and float(raw_age) < 0:
+        message = f"--older-than must be 0 or more days (got {float(raw_age):g}). Nothing was changed."
+        if as_json:
+            print(json.dumps({"status": "error", "error": message}, indent=2, ensure_ascii=False))
+        else:
+            sys.stderr.write(f"{message}\n")
+        return 2
+
     if getattr(args, "list_quarantine", False):
         batches = list_quarantine_batches(root)
         if as_json:
@@ -181,7 +191,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
 
     if getattr(args, "purge_quarantine", False):
         is_dry = not getattr(args, "apply", False)
-        older_than = float(getattr(args, "older_than", 0.0) or 0.0)
+        older_than = QUARANTINE_RETENTION_DAYS if raw_age is None else float(raw_age)
         res = purge_quarantine_batches(root, older_than_days=older_than, dry_run=is_dry)
         if as_json:
             print(json.dumps(res, indent=2, ensure_ascii=False))
@@ -193,6 +203,8 @@ def cmd_clean(args: argparse.Namespace) -> int:
         )
         for b in res.get("batches", []):
             print(f"  - {b['batch_id']} ({b['item_count']} item(s), {b['total_bytes']:,} B): {b['status']}")
+        if older_than > 0 and res["kept_count"] > 0:
+            print(f"  {res['kept_count']} newer batch(es) kept; --older-than 0 purges every batch.")
         return 0 if res.get("failed_count", 0) == 0 else 1
 
     tier_map = {1: JunkTier.TIER_1_SAFE, 2: JunkTier.TIER_2_DEV_CACHE, 3: JunkTier.TIER_3_SENSITIVE}

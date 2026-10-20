@@ -902,6 +902,10 @@ class PurgeEngine:
 # Quarantine Management Helpers
 # ---------------------------------------------------------------------------
 
+# Days a quarantine batch is kept before `clean --purge-quarantine` may delete it (an age of 0 matches every batch)
+QUARANTINE_RETENTION_DAYS = 30.0
+
+
 def _batch_timestamp(batch_dir: str) -> float:
     """Computes the creation timestamp (epoch seconds) of a quarantine batch directory.
 
@@ -1139,11 +1143,11 @@ def restore_quarantine_batch(drive_root: str, batch_id: str = "latest") -> Dict[
 
 def purge_quarantine_batches(
     drive_root: str,
-    older_than_days: float = 0.0,
+    older_than_days: float = QUARANTINE_RETENTION_DAYS,
     dry_run: bool = True,
     now: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Previews or permanently deletes quarantine batches older than `older_than_days`."""
+    """Previews or permanently deletes quarantine batches older than `older_than_days` (default 30; younger ones are kept, 0 matches every batch)."""
     real_root = os.path.realpath(os.path.abspath(drive_root))
     now_ts = float(now) if now is not None else time.time()
     cutoff = now_ts - float(older_than_days) * 86400.0
@@ -1199,6 +1203,7 @@ def purge_quarantine_batches(
 
 
 __all__ = [
+    "QUARANTINE_RETENTION_DAYS",
     "SecurityViolationError",
     "DeletionRecord",
     "PurgeSummary",

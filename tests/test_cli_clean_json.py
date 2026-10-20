@@ -7,6 +7,7 @@ before reaching the purge code, so scripts and agents were told a cleanup happen
 from __future__ import annotations
 
 import contextlib
+import importlib
 import io
 import json
 import os
@@ -14,13 +15,14 @@ import shutil
 import stat
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from unittest.mock import patch
 
 from smart_drive.cli import cmd_clean
-from smart_drive.cli.main import main
+from smart_drive.cli.main import build_parser, main
 
 JUNK = (".DS_Store", "Thumbs.db", "scratch.tmp", "__pycache__/mod.pyc")
 KEEPERS = ("notes.txt", "important.bak", ".env", ".git/HEAD", "src/main.py")
@@ -364,6 +366,13 @@ class TestCleanQuarantineCLI(unittest.TestCase):
             code = main(["clean", "--root", str(self.root), *args])
         return code, out.getvalue(), err.getvalue()
 
+    def make_batch(self) -> Path:
+        """Quarantines the Tier 3 files and returns the folder of the batch that holds them."""
+        _, out, _ = self.run_cmd("--tier", "3", "--apply", "--json")
+        batch_dir = self.root / ".smart_drive" / "quarantine" / json.loads(out)["batch_id"]
+        self.assertTrue((batch_dir / "scratch.tmp").is_file())
+        return batch_dir
+
     def test_tier1_only_run_does_not_create_quarantine_dir(self) -> None:
         code, out, _ = self.run_cmd("--tier", "1", "--apply", "--json")
         self.assertEqual(code, 0)
@@ -454,6 +463,81 @@ class TestCleanQuarantineCLI(unittest.TestCase):
             self.assertFalse(app_rep["dry_run"])
             self.assertEqual(app_rep["purged_count"], 1)
             self.assertFalse(batch_dir.exists())
+
+    def test_purge_quarantine_without_an_age_keeps_a_batch_younger_than_30_days(self) -> None:
+        batch_dir = self.make_batch()
+        code, out, _ = self.run_cmd("--purge-quarantine", "--apply", "--json")
+        report = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual((report["purged_count"], report["kept_count"], report["older_than_days"]), (0, 1, 30.0))
+        self.assertTrue((batch_dir / "scratch.tmp").is_file())
+        self.assertTrue((batch_dir / "manifest.json").is_file())
+
+    def test_purge_quarantine_without_an_age_removes_a_batch_once_it_is_older_than_30_days(self) -> None:
+        purge_engine = importlib.import_module("smart_drive.core.purge_engine")
+        batch_dir = self.make_batch()
+        for days, purged in ((29, 0), (31, 1)):
+            with self.subTest(days=days):
+                with patch.object(purge_engine.time, "time", return_value=time.time() + days * 86400.0):
+                    code, out, _ = self.run_cmd("--purge-quarantine", "--apply", "--json")
+                report = json.loads(out)
+                self.assertEqual(code, 0)
+                self.assertEqual((report["purged_count"], report["kept_count"]), (purged, 1 - purged))
+                self.assertEqual(batch_dir.exists(), not purged)
+
+    def test_older_than_zero_purges_even_a_batch_made_a_moment_ago(self) -> None:
+        batch_dir = self.make_batch()
+        code, out, _ = self.run_cmd("--purge-quarantine", "--older-than", "0", "--apply", "--json")
+        report = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual((report["purged_count"], report["kept_count"], report["older_than_days"]), (1, 0, 0.0))
+        self.assertFalse(batch_dir.exists())
+
+    def test_a_negative_age_is_refused_and_no_batch_is_touched(self) -> None:
+        batch_dir = self.make_batch()
+        code, out, err = self.run_cmd("--purge-quarantine", "--older-than", "-1", "--apply")
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertIn("--older-than must be 0 or more days", err)
+        self.assertTrue((batch_dir / "scratch.tmp").is_file())
+
+        code, out, _ = self.run_cmd("--purge-quarantine", "--older-than", "-1", "--apply", "--json")
+        report = json.loads(out)
+        self.assertEqual(code, 2)
+        self.assertEqual(report["status"], "error")
+        self.assertIn("--older-than must be 0 or more days", report["error"])
+        self.assertTrue((batch_dir / "scratch.tmp").is_file())
+
+    def test_purge_quarantine_batches_keeps_a_fresh_batch_when_it_is_given_no_age(self) -> None:
+        purge_engine = importlib.import_module("smart_drive.core.purge_engine")
+        batch_dir = self.make_batch()
+        report = purge_engine.purge_quarantine_batches(str(self.root), dry_run=False)
+        self.assertEqual(purge_engine.QUARANTINE_RETENTION_DAYS, 30.0)
+        self.assertIn("QUARANTINE_RETENTION_DAYS", purge_engine.__all__)
+        self.assertEqual((report["purged_count"], report["kept_count"], report["older_than_days"]), (0, 1, 30.0))
+        self.assertTrue((batch_dir / "scratch.tmp").is_file())
+
+    def test_the_text_report_says_how_many_newer_batches_were_kept_and_how_to_purge_them(self) -> None:
+        purge_engine = importlib.import_module("smart_drive.core.purge_engine")
+        self.make_batch()
+        _, out, _ = self.run_cmd("--purge-quarantine")
+        self.assertIn("[DRY RUN] Quarantine purge (older than 30 day(s)): 0 batch(es) would be removed, 1 kept.", out)
+        self.assertIn("  1 newer batch(es) kept; --older-than 0 purges every batch.", out)
+        # nothing is said when no batch is younger than the age, or when the age is 0 (every batch matches)
+        _, out, _ = self.run_cmd("--purge-quarantine", "--older-than", "0")
+        self.assertIn("1 batch(es) would be removed, 0 kept.", out)
+        self.assertNotIn("newer batch(es) kept", out)
+        with patch.object(purge_engine.time, "time", return_value=time.time() + 31 * 86400.0):
+            _, out, _ = self.run_cmd("--purge-quarantine")
+        self.assertIn("1 batch(es) would be removed, 0 kept.", out)
+        self.assertNotIn("newer batch(es) kept", out)
+
+    def test_the_help_of_clean_says_that_the_default_age_is_30_days(self) -> None:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as raised:
+            build_parser().parse_args(["clean", "--help"])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn("default: 30", " ".join(out.getvalue().split()))
 
 
 if __name__ == "__main__":
