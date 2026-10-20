@@ -39,8 +39,11 @@ def _purge(
         path = getattr(j, "path", None) or j.get("path") or os.path.join(root, j["rel_path"])
         is_dir = getattr(j, "is_dir", False) or j.get("is_dir", False)
         size = getattr(j, "size", 0) or j.get("size", 0)
+        allocated = getattr(j, "allocated_size", 0) or j.get("allocated_size", 0)
         tier_val = getattr(j, "tier", None) if hasattr(j, "tier") else (j.get("tier") if isinstance(j, dict) else None)
-        success, reason = purge_engine.delete_item(path, size=size, is_dir=is_dir, tier=tier_val)
+        success, reason = purge_engine.delete_item(
+            path, size=size, is_dir=is_dir, tier=tier_val, allocated_size=allocated
+        )
         status = purge_engine.audit_records[-1].status if purge_engine.audit_records else ("DELETED" if success else "FAILED")
         rec_size = purge_engine.audit_records[-1].size if purge_engine.audit_records else int(size or 0)
         is_deleted = status == "DELETED"

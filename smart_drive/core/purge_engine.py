@@ -38,6 +38,7 @@ from smart_drive.core.config import (
     verify_anti_indexing_markers,
 )
 from smart_drive.core.learning_units import find_unit_root, unit_kind
+from smart_drive.core.scanner import measure_tree
 
 logger = logging.getLogger("smart_drive.core.purge_engine")
 
@@ -501,14 +502,16 @@ class PurgeEngine:
         size: int = 0,
         is_dir: bool = False,
         tier: Optional[int] = None,
+        allocated_size: int = 0,
     ) -> Tuple[bool, str]:
         """Unified deletion entrypoint matching PROJECT.md interface contract.
 
         Args:
             item_path: File or directory path to delete.
-            size: Nominal size in bytes.
+            size: Nominal size in bytes (for a directory: everything inside it).
             is_dir: True if directory, False if file.
             tier: Optional junk classification tier (1, 2, or 3).
+            allocated_size: Allocated bytes of a directory's contents, when the caller already measured them.
 
         Returns:
             Tuple[bool, str]: (success, status_or_reason_message).
@@ -523,7 +526,10 @@ class PurgeEngine:
                 real_p = os.path.realpath(os.path.abspath(clean_path)) if os.path.isabs(clean_path) else os.path.realpath(os.path.abspath(os.path.join(self.drive_root, clean_path)))
                 if os.path.isdir(real_p):
                     is_dir = True
-        record = self.delete_dir(clean_path, tier=tier) if is_dir else self.delete_file(clean_path, size, tier=tier)
+        if is_dir:
+            record = self.delete_dir(clean_path, tier=tier, size=size, allocated_size=allocated_size)
+        else:
+            record = self.delete_file(clean_path, size, tier=tier)
         if record.status in ("SIMULATED", "DELETED", "QUARANTINED"):
             return True, record.reason
         return False, record.reason
@@ -633,12 +639,21 @@ class PurgeEngine:
             self.audit_records.append(record)
             return record
 
-    def delete_dir(self, dir_path: str, tier: Optional[int] = None) -> DeletionRecord:
+    def delete_dir(
+        self,
+        dir_path: str,
+        tier: Optional[int] = None,
+        size: int = 0,
+        allocated_size: int = 0,
+    ) -> DeletionRecord:
         """Safely deletes (or quarantines) or simulates deletion of a directory tree.
 
         Args:
             dir_path: Absolute or relative directory path.
             tier: Optional junk classification tier (1, 2, or 3).
+            size: Total bytes of the files inside, if the caller measured them; measured here (before anything
+                is removed) when it is 0 or ``allocated_size`` is missing.
+            allocated_size: Allocated bytes of the files inside, with ``size``.
 
         Returns:
             DeletionRecord with outcome status and metadata.
@@ -672,12 +687,18 @@ class PurgeEngine:
             self.audit_records.append(record)
             return record
 
+        # A directory has no size of its own: what a purge frees is the files inside, and after the removal
+        # they can no longer be counted (this used to record 0 for every directory, so the freed-space totals
+        # of `clean`, the audit log and the MCP tool ignored them).
+        if size <= 0 or allocated_size <= 0:
+            size, allocated_size = measure_tree(real_path, self.cluster_size)
+
         if self.dry_run:
             record = DeletionRecord(
                 path=real_path,
                 rel_path=rel_path,
-                size=0,
-                allocated_size=0,
+                size=size,
+                allocated_size=allocated_size,
                 is_dir=True,
                 status="SIMULATED",
                 reason="Dry-run simulation (directory intact)",
@@ -693,14 +714,14 @@ class PurgeEngine:
                 raise OSError("refusing to remove a directory tree named with '..' (it may resolve elsewhere)")
             if os.path.lexists(real_path):
                 if use_quarantine:
-                    self._quarantine_item(real_path, rel_path, size=0, tier=tier, is_dir=True)
+                    self._quarantine_item(real_path, rel_path, size=size, tier=tier, is_dir=True)
                 else:
                     self._make_writable_and_remove_dir(real_path)
             record = DeletionRecord(
                 path=real_path,
                 rel_path=rel_path,
-                size=0,
-                allocated_size=0,
+                size=size,
+                allocated_size=allocated_size,
                 is_dir=True,
                 status="QUARANTINED" if use_quarantine else "DELETED",
                 reason="Quarantined directory tree successfully" if use_quarantine else "Deleted directory tree successfully",
@@ -713,8 +734,8 @@ class PurgeEngine:
             record = DeletionRecord(
                 path=real_path,
                 rel_path=rel_path,
-                size=0,
-                allocated_size=0,
+                size=size,
+                allocated_size=allocated_size,
                 is_dir=True,
                 status="FAILED",
                 reason=f"Failed to remove directory: {exc}",
@@ -755,7 +776,8 @@ class PurgeEngine:
                     tier = None
 
             if is_dir:
-                rec = self.delete_dir(path, tier=tier)
+                raw_alloc = item.get("allocated_size") if hasattr(item, "get") else getattr(item, "allocated_size", 0)
+                rec = self.delete_dir(path, tier=tier, size=int(size or 0), allocated_size=int(raw_alloc or 0))
             else:
                 rec = self.delete_file(path, size, tier=tier)
 

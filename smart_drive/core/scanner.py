@@ -21,7 +21,12 @@ from dataclasses import asdict, dataclass, field
 from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 from smart_drive.core.exfat_compat import ExFatEngine
-from smart_drive.core.config import DEFAULT_EXCLUDE_DIRS, is_protected_root_dir
+from smart_drive.core.config import (
+    CLUSTER_SIZE_BYTES,
+    DEFAULT_EXCLUDE_DIRS,
+    calculate_allocated_bytes,
+    is_protected_root_dir,
+)
 
 
 def _normalize_rel_path(path: str, root_path: str) -> str:
@@ -420,10 +425,44 @@ class FastDirectoryScanner:
         return {e.rel_path: e for e in self.scan_iter()}
 
 
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x400  # NTFS junctions and other reparse points: never walked into
+
+
+def measure_tree(path: str, cluster_size: int = CLUSTER_SIZE_BYTES) -> Tuple[int, int]:
+    """Returns (nominal bytes, allocated bytes) of the regular files under ``path``.
+
+    Symlinks and junctions are neither followed nor counted, so what a link points at is never measured as if
+    it were inside the tree. Entries that cannot be read are skipped. Allocated bytes round every file up to
+    ``cluster_size``, the same model the auditor uses for single files.
+    """
+    nominal = allocated = 0
+    stack = [path]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            attrs = getattr(entry.stat(follow_symlinks=False), "st_file_attributes", 0)
+                            if not attrs & _FILE_ATTRIBUTE_REPARSE_POINT:
+                                stack.append(entry.path)
+                        elif entry.is_file(follow_symlinks=False):
+                            size = entry.stat(follow_symlinks=False).st_size
+                            nominal += size
+                            allocated += calculate_allocated_bytes(size, cluster_size)
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return nominal, allocated
+
+
 __all__ = [
     "ScanEntry",
     "ScanError",
     "ScanStats",
     "ScanOptions",
     "FastDirectoryScanner",
+    "measure_tree",
 ]
