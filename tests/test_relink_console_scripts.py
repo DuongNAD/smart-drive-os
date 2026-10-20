@@ -534,8 +534,15 @@ class TestRelinkConsoleScripts(SmartDriveTestCase):
         folder, name = ("Scripts", "pip.exe") if sys.platform == "win32" else ("bin", "pip")
         pip = new_proj / ".venv" / folder / name
 
-        before = subprocess.run([str(pip), "--version"], capture_output=True, text=True, timeout=120)
-        self.assertNotEqual(before.returncode, 0, "the moved pip should still start the old python")
+        # Windows starts the launcher, which cannot start the old python and exits with an error. On Linux and macOS
+        # the script begins with `#!<old venv>/bin/python`, which is gone, so the kernel cannot run it at all and
+        # subprocess raises FileNotFoundError instead of returning a code. Either way the moved pip does not work.
+        try:
+            before = subprocess.run([str(pip), "--version"], capture_output=True, text=True, timeout=120)
+            starts_before = before.returncode == 0
+        except OSError:
+            starts_before = False
+        self.assertFalse(starts_before, "the moved pip should still start the old python")
 
         report = self._relink([(str(old_proj), str(new_proj))])
 
