@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/banner.jpg" alt="SmartDrive-OS — Saturn and its orderly rings in deep space" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/DuongNAD/smart-drive-os/main/docs/banner.jpg" alt="SmartDrive-OS — Saturn and its orderly rings in deep space" width="100%"></p>
 <!-- mcp-name: io.github.DuongNAD/smart-drive-os -->
 
 # SmartDrive-OS
@@ -45,12 +45,29 @@ SmartDrive-OS is a zero-dependency drive operating suite and sub-10ms SQLite FTS
 ## Quickstart
 
 ### 1. Install (or run without installing)
+**uvx** (after the first PyPI release): needs only [uv](https://docs.astral.sh/uv/), which also downloads a Python when the machine has none.
 ```bash
+uvx smart-drive-os <subcommand>        # runs any subcommand, installs nothing
+uvx smart-drive-os mcp register --all  # registers `uvx smart-drive-os mcp` with your coding agents
+```
+**pipx** (after the first PyPI release; Python 3.9+):
+```bash
+pipx install smart-drive-os
+smart-drive <subcommand>
+smart-drive mcp register --all         # registers this install with your coding agents
+```
+`pip install smart-drive-os` works too.
+
+**From source**:
+```bash
+git clone https://github.com/DuongNAD/smart-drive-os.git
+cd smart-drive-os
 pip install -e .                    # editable install (`smart-drive` CLI)
 python -m smart_drive <subcommand>  # or run directly from the checkout
 py -m smart_drive <subcommand>      # Windows Python Launcher (when `python` is not on PATH)
 smart-drive self-path-check         # check PATH and print 1-click shell setup
 ```
+Editable installs (`pip install -e .`) need pip 21.3 or newer: with an older pip (the Python 3.9 that ships with Xcode on macOS has pip 21.2), run `python -m pip install -U pip` first.
 
 ### 2. Initialise the drive
 Run `Setup_SSD.bat` / `Setup_SSD.ps1` (Windows), `Setup_SSD.command` (macOS), `./Setup_SSD.sh` (Linux), or `smart-drive init --profile <name>` (see [Profiles](#profiles)):
@@ -77,6 +94,29 @@ Needs Node.js >= 22.4 and git. `--dry-run` previews; `--check --json` reports st
 ```bash
 smart-drive mcp register --all  # Antigravity, Claude, Cursor, Codex, Windsurf, .mcp.json
 ```
+Or add the entry yourself. For Claude Desktop (`claude_desktop_config.json`), Cursor (`~/.cursor/mcp.json`), Antigravity (`~/.gemini/antigravity/mcp_config.json`), Windsurf (`~/.codeium/windsurf/mcp_config.json`) and a project's `.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "smart-drive": {
+      "command": "uvx",
+      "args": ["smart-drive-os", "mcp"],
+      "env": { "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1" }
+    }
+  }
+}
+```
+Claude Code:
+```bash
+claude mcp add --scope user smart-drive -- uvx smart-drive-os mcp
+```
+Codex (`~/.codex/config.toml`):
+```toml
+[mcp_servers.smart-drive]
+command = "uvx"
+args = ["smart-drive-os", "mcp"]
+```
+With pipx use `"command": "smart-drive", "args": ["mcp"]` instead. Apps started from the desktop (Claude Desktop on macOS, for example) may not see `~/.local/bin`: if `uvx` or `smart-drive` is not found, put its full path in `command` (`which uvx` or `where uvx`); `smart-drive mcp register` writes full paths by itself. To pin a drive add `"--root", "E:\\"` to `args` or set `SMART_DRIVE_ROOT`; otherwise it looks for a SmartDrive root above the folder the agent starts it in, then on attached drives.
 
 ---
 
@@ -258,7 +298,7 @@ SmartDrive-OS exposes a JSON-RPC 2.0 `stdio` MCP server with **9 tools**:
 8. `ssd_auto_organize`: Autonomous drive auto-zoning and anti-slack relocation with `AcademicClassifier`. *(destructive)*
 9. `ssd_gitignore`: Stack-aware `.gitignore` governance, personal data defense, secrets audit, and safe untracking. *(idempotent)*
 
-Register across all agents via `smart-drive mcp register --all` (or `smart-drive mcp-config --all`). From a source checkout (without `pip install`), each entry sets `PYTHONPATH` to the checkout so clients can launch from any folder. Templates in `configs/`: `.mcp.json` (workspace), `mcp_config.json` (Antigravity), `claude_desktop_config.json` (Claude Desktop & Code), `cursor_mcp.json` (Cursor / Codex), `windsurf_mcp.json` (Windsurf).
+Register across all agents via `smart-drive mcp register --all` (or `smart-drive mcp-config --all`). A pipx or pip install registers its own Python, a `uvx smart-drive-os` run registers `uvx smart-drive-os mcp`, and from a source checkout (without `pip install`) each entry sets `PYTHONPATH` to the checkout so clients can launch from any folder. Templates in `configs/`: `.mcp.json` (workspace), `mcp_config.json` (Antigravity), `claude_desktop_config.json` (Claude Desktop & Code), `cursor_mcp.json` (Cursor / Codex), `windsurf_mcp.json` (Windsurf).
 
 <details>
 <summary>M8ven MCP Directory Certification (Grade A 100/100) & Token Efficiency</summary>

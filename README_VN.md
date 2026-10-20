@@ -44,12 +44,29 @@ SmartDrive-OS là bộ quản trị ổ đĩa và tìm kiếm tức thì (<10ms)
 ## Khởi Động Nhanh
 
 ### 1. Cài đặt (hoặc chạy trực tiếp không cần cài)
+**uvx** (sau bản phát hành PyPI đầu tiên): chỉ cần [uv](https://docs.astral.sh/uv/), uv còn tự tải Python khi máy chưa có.
 ```bash
+uvx smart-drive-os <lệnh>              # chạy lệnh con bất kỳ, không cài gì
+uvx smart-drive-os mcp register --all  # đăng ký `uvx smart-drive-os mcp` vào các coding agent của bạn
+```
+**pipx** (sau bản phát hành PyPI đầu tiên; cần Python 3.9+):
+```bash
+pipx install smart-drive-os
+smart-drive <lệnh>
+smart-drive mcp register --all         # đăng ký bản cài này vào các coding agent
+```
+`pip install smart-drive-os` cũng dùng được.
+
+**Từ mã nguồn**:
+```bash
+git clone https://github.com/DuongNAD/smart-drive-os.git
+cd smart-drive-os
 pip install -e .              # cài lệnh `smart-drive` từ bản clone
 python -m smart_drive <lệnh>  # hoặc chạy trực tiếp trong dự án
 py -m smart_drive <lệnh>      # Windows Python Launcher (khi `python` không có trong PATH)
 smart-drive self-path-check   # kiểm tra PATH và in lệnh cấu hình 1-chạm
 ```
+Cài ở chế độ editable (`pip install -e .`) cần pip 21.3 trở lên: nếu pip cũ hơn (Python 3.9 đi kèm Xcode trên macOS chỉ có pip 21.2), hãy chạy `python -m pip install -U pip` trước.
 
 ### 2. Khởi tạo ổ đĩa
 Chạy `Setup_SSD.bat` / `Setup_SSD.ps1` (Windows), `Setup_SSD.command` (macOS), `./Setup_SSD.sh` (Linux) hoặc `smart-drive init --profile <tên>` (xem [Cấu Hình Mẫu (Profiles)](#cấu-hình-mẫu-profiles)):
@@ -76,6 +93,29 @@ Cần Node.js >= 22.4 và git. `--dry-run` xem trước; `--check --json` báo t
 ```bash
 smart-drive mcp register --all  # Antigravity, Claude, Cursor, Codex, Windsurf, .mcp.json
 ```
+Hoặc tự thêm mục đăng ký. Với Claude Desktop (`claude_desktop_config.json`), Cursor (`~/.cursor/mcp.json`), Antigravity (`~/.gemini/antigravity/mcp_config.json`), Windsurf (`~/.codeium/windsurf/mcp_config.json`) và `.mcp.json` của dự án:
+```json
+{
+  "mcpServers": {
+    "smart-drive": {
+      "command": "uvx",
+      "args": ["smart-drive-os", "mcp"],
+      "env": { "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1" }
+    }
+  }
+}
+```
+Claude Code:
+```bash
+claude mcp add --scope user smart-drive -- uvx smart-drive-os mcp
+```
+Codex (`~/.codex/config.toml`):
+```toml
+[mcp_servers.smart-drive]
+command = "uvx"
+args = ["smart-drive-os", "mcp"]
+```
+Cài bằng pipx thì dùng `"command": "smart-drive", "args": ["mcp"]`. Ứng dụng có giao diện đồ họa (ví dụ Claude Desktop trên macOS) có thể không thấy `~/.local/bin`: nếu báo không tìm thấy `uvx` hay `smart-drive`, hãy ghi đường dẫn đầy đủ vào `command` (xem bằng `which uvx` hoặc `where uvx`); `smart-drive mcp register` tự ghi đường dẫn đầy đủ. Muốn cố định ổ đĩa, thêm `"--root", "E:\\"` vào `args` hoặc đặt biến `SMART_DRIVE_ROOT`; nếu không, máy chủ tìm thư mục gốc SmartDrive từ thư mục mà agent khởi động nó trở lên, rồi đến các ổ đang gắn vào máy.
 
 ---
 
@@ -257,7 +297,7 @@ SmartDrive-OS cung cấp máy chủ MCP chuẩn JSON-RPC 2.0 qua `stdio` với *
 8. `ssd_auto_organize`: Tự phân luồng và gom file giảm lãng phí slack kết hợp `AcademicClassifier`. *(sắp xếp/xóa rác)*
 9. `ssd_gitignore`: Kiểm toán và áp dụng khối `.gitignore` theo stack, bảo vệ dữ liệu cá nhân, kiểm toán secret và untrack an toàn. *(idempotent)*
 
-Đăng ký bằng `smart-drive mcp register --all` (hoặc `smart-drive mcp-config --all`). Khi chạy từ mã nguồn (chưa `pip install`), mỗi mục tự kèm `PYTHONPATH` trỏ về dự án. Mẫu trong `configs/`: `.mcp.json` (workspace), `mcp_config.json` (Antigravity), `claude_desktop_config.json` (Claude Desktop & Code), `cursor_mcp.json` (Cursor / Codex), `windsurf_mcp.json` (Windsurf).
+Đăng ký bằng `smart-drive mcp register --all` (hoặc `smart-drive mcp-config --all`). Cài bằng pipx hoặc pip thì mục đăng ký dùng chính Python đã cài gói, chạy bằng `uvx smart-drive-os` thì đăng ký `uvx smart-drive-os mcp`, còn khi chạy từ mã nguồn (chưa `pip install`), mỗi mục tự kèm `PYTHONPATH` trỏ về dự án. Mẫu trong `configs/`: `.mcp.json` (workspace), `mcp_config.json` (Antigravity), `claude_desktop_config.json` (Claude Desktop & Code), `cursor_mcp.json` (Cursor / Codex), `windsurf_mcp.json` (Windsurf).
 
 <details>
 <summary>Chứng chỉ M8ven MCP Directory (Hạng A 100/100) & Tối ưu Token</summary>
