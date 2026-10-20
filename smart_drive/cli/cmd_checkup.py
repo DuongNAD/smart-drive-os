@@ -160,7 +160,7 @@ def run_checkup(
     q_total_bytes = sum(int(b.get("total_bytes", 0) or 0) for b in q_batches)
 
     # 7. AutoZoner dry-run & system-protected folders
-    ref_index = SystemRefIndex.collect(home=home, reader=reader)
+    ref_index = SystemRefIndex.collect(home=home, reader=reader, shortcut_roots=[root_abs])
     zoner = AutoZoner(root_abs, cluster_size=real_cluster, system_refs=ref_index)
     zoning_plan = zoner.generate_plan()
     unorganized_count = len(zoning_plan)

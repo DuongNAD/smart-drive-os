@@ -1053,6 +1053,15 @@ class TestClassifierEdgeCases(_IsolatedClassifierTestCase):
             # Another app in the same taxonomy folder is not affected
             self.assertEqual(planned("05_Dev_Toolbox/Other/docs"), ["PLANNED"])
 
+    def test_drive_root_is_passed_as_a_shortcut_root_when_references_are_collected(self) -> None:
+        with TempWorkspace(prefix="test_cls_shortcut_root_") as tmp:
+            with patch(
+                "smart_drive.core.system_refs.SystemRefIndex.collect",
+                return_value=SystemRefIndex([]),
+            ) as collect:
+                ClassifierEngine(root_path=tmp).system_refs
+            collect.assert_called_once_with(shortcut_roots=[tmp.resolve()])
+
     def test_loose_documents_in_a_path_folder_are_classified_but_executables_stay(self) -> None:
         from smart_drive.core.system_refs import SystemRef, SystemRefIndex
 

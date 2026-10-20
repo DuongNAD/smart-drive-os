@@ -837,8 +837,12 @@ class SystemRefIndex:
         cls,
         home: Optional[Path] = None,
         reader: Optional[Union[RegistryReader, Mapping[str, Any]]] = None,
+        shortcut_roots: Optional[Sequence[Union[str, Path]]] = None,
     ) -> "SystemRefIndex":
-        """Collects system references from PATH, services, installed apps, startup entries, and shortcuts."""
+        """Collects system references from PATH, services, installed apps, startup entries, and shortcuts.
+
+        `shortcut_roots` are drive roots (or any folder) whose own `.lnk` files, not those in subfolders, count too.
+        """
         refs: List[SystemRef] = []
         reg_reader: Optional[RegistryReader]
         if isinstance(reader, RegistryReader):
@@ -864,8 +868,8 @@ class SystemRefIndex:
             cls._collect_startup_entries(reg_reader, refs)
 
         # 3. Shortcut (.lnk) files in Start Menu, Desktop, and Taskbar
-        if sys.platform == "win32" or home is not None or reg_reader is not None:
-            cls._collect_shortcuts(home, refs, reader=reg_reader)
+        if sys.platform == "win32" or home is not None or reg_reader is not None or shortcut_roots:
+            cls._collect_shortcuts(home, refs, reader=reg_reader, extra_dirs=shortcut_roots)
 
         return cls(refs)
 
@@ -994,6 +998,7 @@ class SystemRefIndex:
         home: Optional[Path],
         out: List[SystemRef],
         reader: Optional[RegistryReader] = None,
+        extra_dirs: Optional[Sequence[Union[str, Path]]] = None,
     ) -> None:
         dirs_to_scan: List[Tuple[Path, Optional[int]]] = []
         reg_desktop = cls._resolve_shell_folder(reader, cls._USER_SHELL_FOLDERS_KEYS, "Desktop")
@@ -1036,6 +1041,9 @@ class SystemRefIndex:
                 dirs_to_scan.append((reg_common_desktop, MAX_DESKTOP_WALK_DEPTH))
             elif public_dir:
                 dirs_to_scan.append((Path(public_dir) / "Desktop", MAX_DESKTOP_WALK_DEPTH))
+
+        for extra in extra_dirs or ():
+            dirs_to_scan.append((Path(extra), 1))  # only the .lnk files lying directly in the folder
 
         seen_dirs = set()
         for root_dir, max_depth in dirs_to_scan:
