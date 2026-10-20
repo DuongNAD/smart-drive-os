@@ -32,6 +32,7 @@ from smart_drive.core.config import (
     JunkTier,
     calculate_allocated_bytes,
     ensure_anti_indexing_markers,
+    is_inside_dependency_tree,
     is_protected_root_dir,
     is_protected_root_file,
     match_junk_rule,
@@ -274,7 +275,8 @@ class PurgeEngine:
     Key Features:
     1. Default `--dry-run`: safe by default, moves/unlinks files ONLY when explicit dry_run=False.
     2. Default quarantine: moves items into `<root>/.smart_drive/quarantine/<YYYYmmdd-HHMMSS>/` with `manifest.json`.
-    3. Boundary guard: intercepts all operations through SecurityGuard before touching disk.
+    3. Boundary guard: intercepts all operations through SecurityGuard before touching disk, and refuses Tier 2-3
+       items inside dependency trees (node_modules, site-packages...).
     4. Windows read-only clearing: strips `stat.S_IWRITE` before unlinking to prevent Win32 PermissionErrors.
     5. Anti-indexing restoration: ensures `.metadata_never_index` and `.fseventsd/no_log` exist post-purge.
     6. JSON audit logging: structured trail of every simulated or executed unlinking.
@@ -534,6 +536,17 @@ class PurgeEngine:
             return True, record.reason
         return False, record.reason
 
+    @staticmethod
+    def _dependency_tree_block(real_path: str, tier: Optional[int]) -> str:
+        """Why a Tier 2-3 item inside node_modules, site-packages... is not removed ("" when nothing stops it).
+
+        JunkDetector never reports such items; this holds for a list that came from anywhere else, because what
+        lies in an installed package is its code, not leftovers, and deleting it breaks the projects using it.
+        """
+        if tier is not None and int(tier) >= int(JunkTier.TIER_2_DEV_CACHE) and is_inside_dependency_tree(real_path):
+            return "Inside a dependency tree (node_modules, site-packages...): only Tier 1 junk is removed there"
+        return ""
+
     def _should_quarantine(self, tier: Optional[int]) -> bool:
         """Quarantines Tier 3 items and items with unknown tier (`tier is None`); only known Tier 1-2 items are deleted immediately."""
         return bool(self.quarantine and (tier is None or int(tier) >= int(JunkTier.TIER_3_SENSITIVE)))
@@ -570,6 +583,9 @@ class PurgeEngine:
         is_prot, reason = self.guard.is_protected(clean_path)
         if not is_prot:
             is_prot, reason = self.guard.is_protected(real_path)
+        if not is_prot:
+            reason = self._dependency_tree_block(real_path, tier)
+            is_prot = bool(reason)
         if is_prot:
             record = DeletionRecord(
                 path=real_path,
@@ -672,6 +688,9 @@ class PurgeEngine:
         is_prot, reason = self.guard.is_protected(clean_path)
         if not is_prot:
             is_prot, reason = self.guard.is_protected(real_path)
+        if not is_prot:
+            reason = self._dependency_tree_block(real_path, tier)
+            is_prot = bool(reason)
         if is_prot:
             record = DeletionRecord(
                 path=real_path,
