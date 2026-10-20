@@ -17,6 +17,7 @@ import os
 import shutil
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -407,6 +408,72 @@ class TestHashingRunsInParallel(_Tree):
             plan = self.detector(workers=2).generate_reclamation_plan()
 
         self.assertEqual(plan["duplicate_group_count"], 2)
+
+    def test_results_keep_the_order_of_the_files_whatever_finishes_first(self) -> None:
+        paths = [f"p{i}" for i in range(10)]
+        release = threading.Event()
+
+        def hash_one(path: str) -> str:
+            if path == "p0":
+                self.assertTrue(release.wait(20))  # the head of the line is the last to finish
+            elif path == "p9":
+                release.set()
+            return "digest-" + path
+
+        got = list(self.detector(workers=4)._hash_each(hash_one, paths))
+        self.assertEqual(got, [(p, "digest-" + p) for p in paths])
+
+    def test_one_slow_file_does_not_stop_the_others_from_being_hashed(self) -> None:
+        paths = [f"p{i}" for i in range(300)]
+        finished = []
+        enough = threading.Event()
+
+        def hash_one(path: str) -> str:
+            if path == "p0":
+                self.assertTrue(enough.wait(20))  # blocked until a hundred others are done, or the test fails
+            else:
+                finished.append(path)
+                if len(finished) >= 100:
+                    enough.set()
+            return "d"
+
+        got = list(self.detector(workers=4)._hash_each(hash_one, paths))
+        self.assertEqual([p for p, _ in got], paths)
+
+    def test_an_abandoned_run_does_not_wait_for_the_files_being_hashed(self) -> None:
+        started = threading.Barrier(3, timeout=20)
+        stopped: List[bool] = []
+
+        def hash_one(path: str) -> str:
+            if path == "fast":
+                return "d"
+            started.wait()  # both slow files are being "read"
+            stopped.append(duplicates._worker_state.abandoned.wait(20))  # until the run is abandoned
+            return ""
+
+        run = self.detector(workers=3)._hash_each(hash_one, ["fast", "slow1", "slow2"])
+        self.assertEqual(next(run), ("fast", "d"))
+        started.wait()
+        began = time.monotonic()
+        run.close()  # what Ctrl-C or an error in the caller's loop amounts to
+        self.assertLess(time.monotonic() - began, 10)  # it did not sit out the slow files
+        deadline = time.monotonic() + 20
+        while len(stopped) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(stopped, [True, True])  # both were told to stop
+
+    def test_a_big_file_is_not_read_to_the_end_once_the_run_is_abandoned(self) -> None:
+        big = self.write("big.bin", b"x" * 300000)
+        expected = duplicates.compute_full_sha256(str(big))
+        self.assertEqual(len(expected), 64)
+        abandoned = threading.Event()
+        abandoned.set()
+        duplicates._worker_state.abandoned = abandoned
+        try:
+            self.assertEqual(duplicates.compute_full_sha256(str(big)), "")
+        finally:
+            del duplicates._worker_state.abandoned
+        self.assertEqual(duplicates.compute_full_sha256(str(big)), expected)
 
     def test_a_file_that_cannot_be_read_is_left_out_of_its_group(self) -> None:
         for name in ("a", "b", "bad"):

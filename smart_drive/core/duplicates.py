@@ -20,9 +20,11 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
 from collections import defaultdict, deque
 from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import wait as wait_for
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, FrozenSet, Iterator, List, Optional, Set, Tuple
@@ -64,6 +66,16 @@ HASH_WORKERS = 8
 PROGRESS_INTERVAL_SECONDS = 2.0
 
 
+# Set on the threads of a hashing pool: the event of the run they work for. Set when the run is abandoned (Ctrl-C, an
+# error), it makes a thread stop reading a big file instead of finishing it.
+_worker_state = threading.local()
+
+
+def _run_abandoned() -> bool:
+    event = getattr(_worker_state, "abandoned", None)
+    return event is not None and event.is_set()
+
+
 def compute_partial_hash(filepath: str, chunk_size: int = 8192) -> str:
     """Computes a quick partial SHA-256 hash using the head of the file.
 
@@ -96,6 +108,8 @@ def compute_full_sha256(filepath: str, chunk_size: int = 65536) -> str:
             return EMPTY_FILE_SHA256
         with open(filepath, "rb") as f:
             while True:
+                if _run_abandoned():
+                    return ""
                 buf = f.read(chunk_size)
                 if not buf:
                     break
@@ -103,6 +117,14 @@ def compute_full_sha256(filepath: str, chunk_size: int = 65536) -> str:
         return hasher.hexdigest()
     except (OSError, PermissionError):
         return ""
+
+
+def _result_of(future: Future) -> str:
+    """The result of `future`, waited for in half-second slices: on Windows a wait without a timeout is not
+    interrupted by Ctrl-C, and a scan that cannot be stopped is the thing this exists to avoid."""
+    while not future.done():
+        wait_for([future], timeout=0.5)
+    return future.result()
 
 
 class DuplicateDetector:
@@ -299,19 +321,29 @@ class DuplicateDetector:
             for path in paths:
                 yield path, hash_one(path)
             return
-        pool = ThreadPoolExecutor(max_workers=self.workers)
+        abandoned = threading.Event()
+        pool = ThreadPoolExecutor(
+            max_workers=self.workers,
+            initializer=lambda: setattr(_worker_state, "abandoned", abandoned),
+        )
         pending: Deque[Tuple[str, Future]] = deque()
+        finished = False
         try:
             for path in paths:
                 pending.append((path, pool.submit(hash_one, path)))
-                if len(pending) >= self.workers * 4:  # a window of work in flight, not every future at once
+                # A window of work in flight, not every future at once; wide enough that one huge file at the head
+                # does not leave the other workers idle for long
+                if len(pending) >= self.workers * 64:
                     done, future = pending.popleft()
-                    yield done, future.result()
+                    yield done, _result_of(future)
             while pending:
                 done, future = pending.popleft()
-                yield done, future.result()
+                yield done, _result_of(future)
+            finished = True
         finally:
-            pool.shutdown(wait=True, cancel_futures=True)
+            if not finished:  # Ctrl-C or an error: files being read are told to stop, nothing more is started
+                abandoned.set()
+            pool.shutdown(wait=finished, cancel_futures=True)
 
     def filter_by_size(self) -> Dict[int, List[str]]:
         """Phase 1: Groups all files by exact byte size.
