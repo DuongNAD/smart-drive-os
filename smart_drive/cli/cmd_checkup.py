@@ -148,25 +148,27 @@ def run_checkup(
     auditor = StorageAuditor(root_abs, cluster_size=real_cluster)
     audit_rep = auditor.run_audit()
 
-    # 5. Tier 1-2 reclaimable junk (dry-run only)
-    detector = JunkDetector(root_abs, max_tier=JunkTier.TIER_2_DEV_CACHE)
+    # 5. What Windows and installed applications depend on: read once, then shared by the junk scan and AutoZoner
+    ref_index = SystemRefIndex.collect(home=home, reader=reader, shortcut_roots=[root_abs])
+
+    # 6. Tier 1-2 reclaimable junk (dry-run only; nothing inside a folder the system depends on)
+    detector = JunkDetector(root_abs, max_tier=JunkTier.TIER_2_DEV_CACHE, system_refs=ref_index)
     junk_items = detector.find_junk()
     junk_count = len(junk_items)
     junk_bytes = sum(int(getattr(j, "size", 0) or (j.get("size", 0) if isinstance(j, dict) else 0)) for j in junk_items)
 
-    # 6. Quarantine batches
+    # 7. Quarantine batches
     q_batches = list_quarantine_batches(root_abs)
     q_batch_count = len(q_batches)
     q_total_bytes = sum(int(b.get("total_bytes", 0) or 0) for b in q_batches)
 
-    # 7. AutoZoner dry-run & system-protected folders
-    ref_index = SystemRefIndex.collect(home=home, reader=reader, shortcut_roots=[root_abs])
+    # 8. AutoZoner dry-run & system-protected folders
     zoner = AutoZoner(root_abs, cluster_size=real_cluster, system_refs=ref_index)
     zoning_plan = zoner.generate_plan()
     unorganized_count = len(zoning_plan)
     protected_by_system = zoner.protected_by_system
 
-    # 8. Broken paths & stale agent/IDE entries (T16)
+    # 9. Broken paths & stale agent/IDE entries (T16)
     broken_report = inspect_broken_paths(
         root=root_abs,
         home=home,
@@ -181,7 +183,7 @@ def run_checkup(
     broken_fixable_on_drive = int(broken_report["fixable_on_drive_count"])
     stale_ide_count = len(broken_report["ide_and_agents"])
 
-    # 9. Large C: developer caches on Windows
+    # 10. Large C: developer caches on Windows
     do_c_scan = (sys.platform == "win32" and home is None) if scan_c_caches is None else scan_c_caches
     c_cache_summary: Optional[Dict[str, Any]] = None
     c_reclaimable_bytes = 0
@@ -194,7 +196,7 @@ def run_checkup(
         except Exception:
             c_cache_summary = None
 
-    # 10. Optional duplicate scan (--dup)
+    # 11. Optional duplicate scan (--dup)
     dup_summary: Optional[Dict[str, Any]] = None
     dup_reclaimable_bytes = 0
     dup_group_count = 0

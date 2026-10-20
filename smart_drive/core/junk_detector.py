@@ -33,9 +33,16 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.learning_units import find_unit_root
 from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOptions, measure_tree
+from smart_drive.core.system_refs import (
+    SystemRef,
+    SystemRefIndex,
+    format_protected_by_system_entry,
+    summarize_system_refs,
+)
 
 # Why an entry that looks like junk was kept (JunkDetector.kept maps each reason to how many entries it kept)
 KEPT_DEPENDENCY_TREE = "dependency_tree"  # inside node_modules, site-packages...: installed packages, not leftovers
+KEPT_SYSTEM_REFERENCED = "system_referenced"  # in a folder Windows or an installed application depends on
 
 
 def _drop_items_inside_junk_dirs(items: List["JunkItem"]) -> List["JunkItem"]:
@@ -127,7 +134,12 @@ class JunkDetector:
     5. Inviolable root file and root directory protection.
     6. Hardware-accurate 512KB cluster allocation math.
     7. Entries that only look like junk are kept, and counted by reason in ``kept``: Tier 2-3 matches inside
-       dependency trees (node_modules, site-packages...) are installed packages, not leftovers.
+       dependency trees (node_modules, site-packages...) are installed packages, not leftovers, and nothing
+       of any tier is reported inside a folder that Windows or an installed application depends on (the same
+       SystemRefIndex that keeps ``organize`` and ``classify`` from moving it).
+
+    ``system_refs`` is that index; without one it is collected from this computer the first time an entry needs
+    it (a scan that finds nothing that looks like junk never reads the registry).
     """
 
     def __init__(
@@ -135,13 +147,31 @@ class JunkDetector:
         drive_root: str,
         max_tier: JunkTier = JunkTier.TIER_3_SENSITIVE,
         cluster_size: int = CLUSTER_SIZE_BYTES,
+        system_refs: Optional[SystemRefIndex] = None,
     ) -> None:
         self.drive_root = os.path.realpath(os.path.abspath(drive_root))
         self.max_tier = max_tier
         self.cluster_size = cluster_size
         self._name_matchers, self._always_check = self._compile_name_matchers(max_tier)
+        self._system_refs: Optional[SystemRefIndex] = system_refs
+        # The drive root and everything above it is never judged: a drive root on PATH would protect the whole drive
+        self._root_key = os.path.normcase(self.drive_root)
+        self._below_root_prefix = self._root_key if self._root_key.endswith(os.sep) else self._root_key + os.sep
+        # Folder (normcase) -> (outermost folder from the drive root down to it that the system depends on, its refs)
+        self._folder_protection: Dict[str, Optional[Tuple[str, List[SystemRef]]]] = {}
         # Entries that matched a junk rule by name but were kept anyway: reason -> count (reset by find_junk)
         self.kept: Dict[str, int] = {}
+        self._entry_kept_reason: Optional[str] = None  # why the entry inspected last was kept, if it was
+        # The folders the system depends on that kept entries (reset by find_junk), as organize/classify list them
+        self.protected_by_system: List[Dict[str, Any]] = []
+        self._protected_entries: Dict[str, Dict[str, Any]] = {}
+
+    @property
+    def system_refs(self) -> SystemRefIndex:
+        """Lazily collects OS/application references once per JunkDetector instance."""
+        if self._system_refs is None:
+            self._system_refs = SystemRefIndex.collect(shortcut_roots=[self.drive_root])
+        return self._system_refs
 
     @staticmethod
     def _compile_name_matchers(max_tier: JunkTier) -> Tuple[Dict[bool, Optional["re.Pattern[str]"]], Dict[bool, bool]]:
@@ -190,18 +220,75 @@ class JunkDetector:
         except ValueError:
             return target_path.replace("\\", "/")
 
-    def _keep_reason(self, path: str, tier: JunkTier) -> Optional[str]:
+    def _protecting_folder(self, folder: str) -> Optional[Tuple[str, List[SystemRef]]]:
+        """The outermost folder, below the drive root and down to ``folder`` itself, that the system depends on.
+
+        "Depends on" is what keeps ``organize`` and ``classify`` from moving a folder: something Windows or an
+        application starts or reads lies in it (a PATH entry, a service image, an installed app's files, a
+        shortcut's target...), or it holds an uninstaller. Everything inside such a folder belongs to that
+        dependency, so the first one met on the way down decides. Answers are kept for the whole scan: it asks
+        about the same folders again and again, and each fresh one costs a listing of the folder.
+        """
+        cache = self._folder_protection
+        pending: List[Tuple[str, str]] = []  # folders without an answer yet, innermost first
+        outer: Optional[Tuple[str, List[SystemRef]]] = None
+        current = folder
+        while True:
+            key = os.path.normcase(current)
+            if key in cache:
+                outer = cache[key]
+                break
+            if key == self._root_key or not key.startswith(self._below_root_prefix):
+                break
+            pending.append((current, key))
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+        for current, key in reversed(pending):  # outermost first
+            if outer is None:
+                refs = self.system_refs.check_folder(current, is_file=False)
+                if refs:
+                    outer = (current, refs)
+            cache[key] = outer
+        return outer
+
+    def _system_dependency(self, path: str, is_dir: bool) -> Optional[Tuple[str, List[SystemRef]]]:
+        """The folder the system depends on that ``path`` is, or lies in, with the references that say so."""
+        if is_dir:
+            return self._protecting_folder(path)
+        found = self._protecting_folder(os.path.dirname(path))
+        if found is None:
+            refs = self.system_refs.check_folder(path, is_file=True)  # a file that is itself referenced
+            if refs:
+                found = (path, refs)
+        return found
+
+    def _keep_reason(self, path: str, tier: JunkTier, is_dir: bool) -> Optional[str]:
         """Why an entry whose name matches a rule of ``tier`` is still not junk, or None when it is."""
         if tier >= JunkTier.TIER_2_DEV_CACHE and is_inside_dependency_tree(path):
             return KEPT_DEPENDENCY_TREE
+        dependency = self._system_dependency(path, is_dir)
+        if dependency is not None:
+            folder, refs = dependency
+            entry = self._protected_entries.get(os.path.normcase(folder))
+            if entry is None:
+                entry = format_protected_by_system_entry(folder, refs)
+                entry["used_by"] = summarize_system_refs(refs)
+                entry["kept_items"] = 0
+                self._protected_entries[os.path.normcase(folder)] = entry
+                self.protected_by_system.append(entry)
+            entry["kept_items"] += 1
+            return KEPT_SYSTEM_REFERENCED
         return None
 
-    def _note_if_kept(self, path: str, tier: JunkTier) -> bool:
+    def _note_if_kept(self, path: str, tier: JunkTier, is_dir: bool) -> bool:
         """Applies the location checks to a name match; True (and counted in ``kept``) when the entry is to be kept."""
-        reason = self._keep_reason(path, tier)
+        reason = self._keep_reason(path, tier, is_dir)
         if reason is None:
             return False
         self.kept[reason] = self.kept.get(reason, 0) + 1
+        self._entry_kept_reason = reason
         return True
 
     def inspect_file(
@@ -224,6 +311,7 @@ class JunkDetector:
         Returns:
             JunkItem if identified as junk within max_tier and not protected; else None.
         """
+        self._entry_kept_reason = None
         clean_name = name.strip()
         norm_rel = rel_path if rel_path is not None else self._normalize_rel_path(path)
         if not self._may_be_junk(clean_name, is_dir, norm_rel):
@@ -268,7 +356,7 @@ class JunkDetector:
             )
             if is_polaris_cache:
                 if self.max_tier >= JunkTier.TIER_2_DEV_CACHE:
-                    if self._note_if_kept(path, JunkTier.TIER_2_DEV_CACHE):
+                    if self._note_if_kept(path, JunkTier.TIER_2_DEV_CACHE, is_dir):
                         return None
                     allocated_bytes = 0 if is_dir else calculate_allocated_bytes(size, self.cluster_size)
                     return JunkItem(
@@ -301,7 +389,7 @@ class JunkDetector:
             return None
 
         # A name that matches is not yet junk: where the entry lives can say otherwise
-        if self._note_if_kept(path, rule.tier):
+        if self._note_if_kept(path, rule.tier, is_dir):
             return None
 
         # Calculate allocated cluster bytes
@@ -344,6 +432,9 @@ class JunkDetector:
         scan_root = os.path.realpath(os.path.abspath(sub_path or self.drive_root))
         junk_items: List[JunkItem] = []
         self.kept = {}
+        self.protected_by_system = []
+        self._protected_entries = {}
+        self._folder_protection = {}
 
         # Only exclude version control, agent working directories, and SmartDrive metadata/quarantine during scan;
         # allow scanner to inspect system junk directories like $RECYCLE.BIN, .Trashes
@@ -362,6 +453,9 @@ class JunkDetector:
                     if item.is_dir:
                         # Purged as a whole and sized below: its files need not be listed one by one first.
                         scanner.skip_descent()
+                elif entry.is_dir and self._entry_kept_reason == KEPT_SYSTEM_REFERENCED:
+                    # Everything inside belongs to the same dependency, so none of it can be junk either.
+                    scanner.skip_descent()
         else:
             stack = [scan_root]
             while stack:
@@ -385,7 +479,7 @@ class JunkDetector:
                                     )
                                     if item:
                                         junk_items.append(item)
-                                    else:
+                                    elif self._entry_kept_reason != KEPT_SYSTEM_REFERENCED:
                                         stack.append(entry.path)
                                 else:
                                     st = entry.stat(follow_symlinks=False)
