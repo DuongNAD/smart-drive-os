@@ -432,3 +432,150 @@ Kỳ vọng:
 - Mỗi task đúng một commit (hoặc đúng số commit đã ghi), có test hồi quy, thông điệp đúng quy ước.
 - README đã cập nhật (T19).
 - Báo lại cho người dùng: danh sách commit, task nào bỏ qua/hoãn và vì sao, kết quả kiểm tra thủ công ở mục 4.
+
+---
+
+## 6. Sau v1.4 — kế hoạch phát triển tiếp
+
+> Thống nhất với người dùng ngày 2026-10-20, sau khi chạy thử v1.4 trên ổ `E:` thật. Nguyên tắc: **đo trước rồi mới tối ưu**,
+> **an toàn hơn tốc độ**, giữ Python làm thân chính và giữ `dependencies = []`. Đầu ra `--json` của các lệnh và schema công cụ MCP
+> là "hợp đồng" giữa các phần: mọi thay đổi lớn (kể cả chuyển ngôn ngữ) phải giữ nguyên chúng hoặc đổi có chủ đích.
+
+### 6.0 Hiện trạng (đo trên `E:`: NTFS 4 KB, 167 GB, 342 nghìn file, 40 nghìn thư mục)
+
+| Lệnh | Trước | Hiện tại |
+|---|---|---|
+| `checkup` | 571 s | 47–65 s |
+| `clean` (dry-run) | 491 s | 8–9 s |
+| `organize --dry-run` | 41 s | 4 s |
+| `dup` | > 15 phút, không in gì | 28 s lần đầu (Defender quét file mới mở), 2–3 s các lần sau |
+| `classify` (gợi ý) · `audit` · `repos` · `update` | — | 54 s · 26 s · 33 s · 9,5 s |
+
+- Đã vào `main`: PR #10 (7 lỗi nghiêm trọng, hỏi trước khi cài MCP, vá lỗ hổng bảo vệ thư mục, tài liệu), #11 (tăng tốc
+  `checkup`/`clean`, dung lượng rác thư mục thật, chỉ trừ điểm đường dẫn hỏng trên ổ), #12 (hỏi trước khi đăng ký MCP vào agent).
+- Chạy thử trên máy thật lộ ra thêm lỗi, sửa trên nhánh `fix/real-drive-safety`:
+  - `clean --tier 2` từng xóa vĩnh viễn `dist`/`build` trong `node_modules`, `site-packages` và trong phần mềm đã cài
+    (Arduino IDE, Git). Giờ: danh sách Tier 2 trên `E:` từ 4940 mục / 2,77 GiB còn 3828 mục / 0,55 GiB, 0 mục trong cây phụ
+    thuộc hay phần mềm đã cài; `build`/`dist`/`.cache` chỉ tính ở gốc dự án, bỏ qua thứ git theo dõi; `checkup` nói rõ là xóa
+    vĩnh viễn và gợi ý xem trước.
+  - Quy tắc Tier 3 `core.*` khớp nhầm 334 file mã nguồn/`.json`/`.map` (như `core.py`); giờ chỉ khớp `core` và `core.<số>`.
+  - `classify` từng định tách 861 file khỏi thư mục ứng dụng (EOS Client, Composer, SEB). Giờ mặc định chỉ xét file nằm ngay
+    trong thư mục được quét (0 lần chuyển); `--recursive` giữ nguyên mọi thư mục có chương trình, script, dự án, git hay chứa
+    thư mục chương trình (22 thư mục trên `E:`), kể cả khi chỉ định thẳng vào chúng.
+  - Công cụ MCP từ chối đường dẫn tuyệt đối khi gốc lưu trữ là gốc ổ (`E:\`); `sub_dir` nằm trong phần mềm đã cài không được
+    nhận ra. Cả hai đã sửa.
+  - `dup` quét cả `node_modules`/venv nên không xong; slack tính theo cluster 512 KB. Giờ bỏ qua cây phụ thuộc, cache và phần
+    mềm đã cài, băm song song, báo tiến độ, tính slack theo cluster thật.
+
+### 6.1 Giai đoạn A — Ổn định và phát hành v1.4.x (làm trước)
+
+#### A1. Chạy thử có hướng dẫn trên máy thật
+Sao lưu → `checkup` → `organize --dry-run` / `clean` / `classify --dry-run` → đóng Claude, Antigravity, VS Code, JetBrains →
+`Smart_Organize.bat` (hoặc `organize --apply`) → mở lại các IDE/agent và kiểm tra dự án → thử `undo --apply` trên một đợt nhỏ.
+Ghi kết quả và số đo vào bảng 6.0. Đây là điều kiện để phát hành.
+
+**Vòng đầu đã chạy (2026-10-20, người dùng cho phép chạy thật trên `E:`):**
+- Sandbox trên `E:` (chỉ file do kịch bản tạo): `clean --apply` (Tier 1–2 xóa đúng chỗ, Tier 3 vào khu cách ly rồi
+  `--restore latest`), `classify --apply` rồi `undo --apply`, `dup` — **42/42** kiểm tra đạt.
+- Thật: `organize --apply` chuyển `E:\project` (17 repo) và `E:\tool`, cập nhật 13 file cấu hình IDE/agent, git và worktree vẫn
+  chạy; `undo --apply` trả cả hai về, không thêm đường dẫn hỏng nào — **19/19** đạt.
+- Phát hiện: tiến trình `git fsmonitor--daemon` của repo bật `core.fsmonitor` khóa `E:\project`, làm lần chuyển đầu báo
+  "Access is denied" (công cụ báo lỗi đúng, không chuyển dở dang). Đã sửa trên nhánh này (xem A6).
+- Còn lại cho người dùng: đóng IDE/agent, chạy `Smart_Organize.bat`, mở lại IDE/agent và kiểm tra bằng mắt.
+
+#### A2. Phiên bản và nhật ký thay đổi ✅
+Xong trên nhánh `fix/real-drive-safety`: `1.4.0` ở `pyproject.toml`, `smart_drive/__init__.py` và `SERVER_VERSION` của MCP,
+`CHANGELOG.md`, test giữ ba chuỗi khớp nhau. Còn: tạo tag `v1.4.0` khi nhánh vào `main` (badge và link trong CHANGELOG trỏ tới tag).
+
+#### A3. Ký tự xuống dòng của launcher ✅
+Xong: `.gitattributes` (`*.sh`, `*.command` → LF; `*.bat`, `*.cmd`, `*.ps1` → CRLF; ảnh là binary) kèm test, kể cả bản ZIP
+`git archive` mà GitHub cho tải. Checkout cũ cần một lần `git rm --cached -q -- '*.sh' '*.command'` rồi
+`git checkout HEAD -- '*.sh' '*.command'`.
+
+#### A4. Bản `.exe` cho người dùng thường
+Đóng gói thành một thư mục chạy được không cần cài Python (PyInstaller hoặc Nuitka, hoặc Python embeddable kèm launcher),
+build trong CI cho Windows. Công cụ build chỉ dùng lúc đóng gói, không thành dependency khi chạy. Lưu ý SmartScreen: cần ký số
+nếu phát hành rộng.
+
+#### A5. Ngân sách hiệu năng
+Script benchmark tạo cây thư mục giả cỡ 200 nghìn file (có `node_modules`, venv, `__pycache__`) và đo `checkup`, `clean`,
+`organize --dry-run`, `dup`. Ngân sách đề xuất trên ổ cỡ 200 GB / 400 nghìn file: `checkup` < 60 s, `clean` < 30 s, `dup` < 5 phút.
+Chạy thủ công trước mỗi bản phát hành; vượt ngân sách thì sửa trước khi phát hành.
+
+#### A6. Giới hạn đã biết (mỗi mục một commit, có test; mục "cần xác minh" phải tái hiện trước khi sửa)
+- **Relink**: Android Studio (cấu hình ở `%APPDATA%\Google\AndroidStudio*`, không nằm trong `JetBrains`); `relink` chưa trỏ lại
+  `.lnk` ở gốc ổ; shell item của Windows 7/XP, đích UNC và `%VAR%` trong khối extra-data của `.lnk`; trạng thái từng workspace
+  của VS Code (`workspaceStorage`, các tab đang mở) không đi theo; console script của venv chỉ được cảnh báo.
+- **Chưa hỗ trợ**: Visual Studio (bản đầy đủ), Sublime Text, Zed, Eclipse, NetBeans, Notepad++.
+- **`paths --broken` / `checkup`**: đường dẫn hỏng trỏ vào ổ nhưng không tự sửa được vẫn bị trừ điểm; thêm lựa chọn gỡ mục
+  cũ khỏi danh sách gần đây của IDE/agent (có sao lưu, chỉ khi người dùng xác nhận).
+- **Launcher `.bat`** ✅: đã xác nhận `EnableDelayedExpansion` làm hỏng đường dẫn và từ khóa chứa `!` (thư mục `drive!one`
+  làm `cd` thất bại, `wow! a!b!c` thành `wowbc`) và đã tắt nó, chỉ bật quanh một dòng `echo`. Cùng đợt: `&` và `>` chưa escape
+  trong `Quick_Audit.bat`/`Quick_Search.bat` (dòng `size:>10MB` từng ghi ra file rác tên `10MB`). Còn: tên thư mục chứa `%VAR%`
+  bị `cmd /c` tự mở rộng, launcher không chặn được.
+- **Dò tiến trình** (`processes.py`): nếu `tasklist` lỗi hoặc quá 10 s thì coi như không có ứng dụng nào đang mở, nên
+  offload/relink chạy tiếp; nên coi là "không biết" và hỏi lại (cần xác minh).
+- **Khu cách ly**: mã đợt theo giờ máy cục bộ (lệch khi đổi giờ mùa hè/múi giờ); manifest ghi sau khi đổi tên, nằm ngoài `try`;
+  hai tiến trình trong cùng một giây dùng chung đợt; `clean --purge-quarantine --apply` mặc định `--older-than 0` (cần xác minh).
+- **MCP**: `ssd_check_safety` đọc `E:x` như đường dẫn tương đối của gốc; gốc lưu trữ được báo là an toàn. Mô tả công cụ
+  `ssd_find_duplicates` vẫn ghi "512KB physical cluster" (bị `test_mcp_grade_a` ghim).
+- **`dup`**: bản cài portable không đăng ký với Windows (ví dụ SonarQube trong `E:\tool`) vẫn có `.jar` trùng được liệt kê;
+  cần dùng lại heuristic "thư mục ứng dụng" của `classify` hoặc cho người dùng tự loại trừ. Biểu thức "cluster đã phát hiện,
+  nếu không thì 512 KB" lặp ở `cmd_audit`, `cmd_checkup`, `cmd_dup`, `server.py`: gom vào một helper trong `fsinfo.py`.
+- **`clean`**: không áp dụng được riêng Tier 3 (`--tier 3 --apply` xóa luôn Tier 1–2) → thêm `--only-tier`; `*.dmp` có thể là
+  file export của Oracle (Tier 3 nên chỉ vào khu cách ly, cần theo dõi); `*.pyc` lẻ không có mã nguồn vẫn là Tier 1;
+  `__pycache__` trong `site-packages` của venv vẫn được liệt kê (vô hại, Python tạo lại).
+- **`classify`**: rất thận trọng — giữ nguyên cả `E:\project` (một repo con có `tunnel.ps1`) và thư mục kiểu Downloads có file
+  cài đặt; cân nhắc bỏ qua thư mục con là repo khi xét "chứa thư mục chương trình".
+- **Menu** ✅: `SmartDrive.*` có mục [11] "Relink lại đợt chuyển gần nhất" (xem trước bằng `relink --dry-run`, hỏi, rồi
+  `relink --wait`), cho quy trình: chạy organize trong Claude Code → tắt Claude → chạy [11]. Cùng đợt sửa: dấu `&` chưa escape
+  trong menu `SmartDrive.bat`, mục 0 của `SmartDrive.ps1` không thoát được.
+- **Khóa thư mục do git fsmonitor** ✅: repo bật `core.fsmonitor=true` để lại tiến trình `git fsmonitor--daemon` giữ handle
+  bên trong (`status`, `ls-files`, `check-ignore`, `diff` đều bật nó), làm `organize`/`undo` báo "Access is denied". Đã sửa:
+  dừng daemon của các repo bên trong (và của worktree liên kết) trước khi chuyển, mọi lệnh git do công cụ gọi dùng
+  `-c core.fsmonitor=false`, lỗi khóa nêu nguyên nhân có thể (trên Windows còn nêu tên tiến trình qua Restart Manager); đã chạy
+  thật trên `E:` với daemon đang bật. Còn: phần xem trước của `Smart_Organize` và dry-run của MCP `ssd_auto_organize` chưa liệt
+  kê daemon sẽ dừng; chưa thử lại nếu IDE bật lại daemon giữa lúc dừng và lúc đổi tên.
+
+### 6.2 Giai đoạn B — Tăng tốc có chọn lọc (chỉ khi số đo vượt ngân sách A5)
+
+1. **Song song bằng Python trước**: `hashlib` nhả GIL với khối dữ liệu lớn, nên `ThreadPoolExecutor` cho `dup` (băm) và cho
+   quét nhiều nhánh thư mục cùng lúc đã nhanh hơn rõ mà không cần code native.
+2. **Dùng lại chỉ mục**: `update` đã đồng bộ tăng dần vào `index.db`; cho `audit`/`checkup`/`dup` đọc kích thước và mtime từ đó
+   thay vì quét lại cả ổ, chỉ quét lại phần đã đổi.
+3. **Trợ thủ native tùy chọn**: một chương trình nhỏ (Rust hoặc Go) chỉ làm quét thư mục, tính dung lượng và SHA-256, xuất
+   NDJSON ra stdout. Python gọi nó nếu có (đi kèm bản `.exe` ở A4), không có thì chạy bản Python như cũ. Nhờ vậy vẫn giữ
+   `dependencies = []`, và mọi lớp bảo vệ vẫn nằm ở Python.
+
+### 6.3 Giai đoạn C — Viết lại bằng Rust hoặc Go (dài hạn, chỉ khi có lý do sản phẩm)
+
+**Khi nào đáng làm**: muốn chạy nền theo dõi ổ liên tục (dịch vụ, icon khay), có giao diện đồ họa, ổ hàng triệu file, hoặc phát
+hành một file chạy đã ký số cho nhiều người. Chỉ "nhanh hơn" thì chưa đủ lý do: chỗ chậm nằm ở thao tác đĩa và quét virus của
+Windows, ngôn ngữ nào cũng phải chờ như nhau.
+
+**Chọn ngôn ngữ**:
+- **Rust**: nhanh và tiết kiệm bộ nhớ nhất, an toàn bộ nhớ, hợp với dịch vụ chạy nền lâu dài; học và viết chậm hơn.
+- **Go**: viết nhanh hơn, dễ build `.exe` cho mọi hệ điều hành, đủ nhanh cho kiểu việc nặng về đọc ghi đĩa này.
+- Cả hai đều có sẵn thư viện cho registry Windows, SQLite có FTS5, JSON/TOML/XML và SDK MCP; kiểm tra lại phiên bản và độ
+  trưởng thành khi bắt đầu.
+
+**Cách chuyển (thay dần từng phần, không viết lại một lần)**:
+1. **Chốt hợp đồng**: viết JSON Schema cho đầu ra `--json` của từng lệnh, mã thoát và schema 9 công cụ MCP vào `docs/contracts/`.
+2. **Biến test thành test hộp đen**: các test e2e gọi CLI chạy được với một binary bất kỳ qua biến môi trường
+   (ví dụ `SMART_DRIVE_BIN`), để cùng một bộ test kiểm cả bản Python lẫn bản mới.
+3. **Chuyển theo thứ tự rủi ro tăng dần**: `status`/`health`/`audit` (chỉ đọc) → `search`/`index` → `dup` → `clean` (kèm mọi lớp
+   bảo vệ) → `checkup` → `organize`/`classify`/`undo` → `relink` (phức tạp nhất: SQLite của VS Code, XML của JetBrains, `.lnk`,
+   cấu hình agent) → máy chủ MCP → `setup`.
+4. **Mỗi phần chuyển xong** phải qua bộ test hộp đen, và cho ra JSON giống bản Python khi dry-run trên ổ thật (so sánh từng trường).
+5. **Chạy song song**: bản Python vẫn là mặc định cho tới khi bản mới qua hết kiểm tra trong hai lần phát hành liên tiếp.
+
+**Rủi ro chính**: làm lại các lớp chống mất dữ liệu (mỗi lớp từng là một lỗi thật ở v1.4); phần đọc đặc thù Windows (`.lnk`,
+registry, `state.vscdb`); CI ba hệ điều hành; ký số `.exe`.
+
+### 6.4 Thứ tự và tiêu chí xong
+
+| Giai đoạn | Bắt đầu khi | Xong khi |
+|---|---|---|
+| A | PR sửa lỗi sau chạy thử đã vào `main` | A1 đạt trên máy thật, A2–A6 xong hoặc được người dùng hoãn |
+| B | Một số đo ở A5 vượt ngân sách | Số đo trở lại trong ngân sách, kết quả JSON không đổi |
+| C | Người dùng quyết định làm sản phẩm chạy nền hoặc có giao diện | Bản mới qua bộ test hộp đen và hai lần phát hành song song |
