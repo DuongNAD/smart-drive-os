@@ -34,7 +34,7 @@ from smart_drive.core.system_refs import RegistryReader, SystemRefIndex
 SCORE_WEIGHTS: Dict[str, int] = {
     "free_space": 25,          # Low free space (<15% warning, <5% critical)
     "reclaimable_junk": 20,    # Tier 1-2 junk files & caches accumulating on drive
-    "broken_paths": 20,        # Stale IDE/agent project paths, broken shortcuts (.lnk), or broken PATH
+    "broken_paths": 20,        # Stale IDE/agent/shortcut/PATH references into the drive (others are listed, not scored)
     "unorganized_root": 15,    # Loose unorganized folders/files at the drive root
     "trim_and_shields": 10,    # SSD TRIM disabled or anti-indexing markers missing
     "quarantine_and_aux": 10,  # Unpurged quarantine batches, C: caches, or duplicate files (with --dup)
@@ -175,6 +175,10 @@ def run_checkup(
     )
     broken_total = int(broken_report["total_broken"])
     broken_fixable = int(broken_report["fixable_count"])
+    # Only references into this drive are scored and recommended: the rest of the computer's stale entries
+    # (an IDE's recent-project list, a PATH folder on C:) cannot be repaired by anything done on the drive.
+    broken_on_drive = int(broken_report["on_drive_count"])
+    broken_fixable_on_drive = int(broken_report["fixable_on_drive_count"])
     stale_ide_count = len(broken_report["ide_and_agents"])
 
     # 9. Large C: developer caches on Windows
@@ -229,8 +233,8 @@ def run_checkup(
             penalties["reclaimable_junk"] = 6
 
     # C. Broken paths & stale agent/IDE entries (max 20)
-    if broken_total > 0:
-        penalties["broken_paths"] = min(20, 5 + broken_total * 3)
+    if broken_on_drive > 0:
+        penalties["broken_paths"] = min(20, 5 + broken_on_drive * 3)
 
     # D. Unorganized root folders/files (max 15)
     if unorganized_count > 0:
@@ -260,13 +264,19 @@ def run_checkup(
     # ==========================================================================
     candidate_steps: List[Dict[str, Any]] = []
 
-    if broken_total > 0:
-        cmd = "smart-drive paths --broken --fix" if broken_fixable > 0 else "smart-drive paths --broken"
+    if broken_on_drive > 0:
+        cmd = "smart-drive paths --broken --fix" if broken_fixable_on_drive > 0 else "smart-drive paths --broken"
         if resolved_lang == "vi":
-            title = f"Sửa {broken_total} đường dẫn IDE/shortcut/PATH bị gãy ({broken_fixable} mục sửa tự động được)"
+            title = (
+                f"Sửa {broken_on_drive} đường dẫn IDE/shortcut/PATH bị gãy trỏ vào ổ này "
+                f"({broken_fixable_on_drive} mục sửa tự động được)"
+            )
             desc = "Cập nhật lại đường dẫn dự án cho IDE, coding agent và shortcut sau khi dời thư mục."
         else:
-            title = f"Repair {broken_total} broken IDE/shortcut/PATH reference(s) ({broken_fixable} auto-fixable)"
+            title = (
+                f"Repair {broken_on_drive} broken IDE/shortcut/PATH reference(s) into this drive "
+                f"({broken_fixable_on_drive} auto-fixable)"
+            )
             desc = "Repoint stale IDE recent projects, coding agents, and Windows shortcuts."
         candidate_steps.append({
             "priority": 100,
@@ -481,6 +491,8 @@ def run_checkup(
         "broken_paths": {
             "total_broken": broken_total,
             "fixable_count": broken_fixable,
+            "on_drive_count": broken_on_drive,
+            "fixable_on_drive_count": broken_fixable_on_drive,
             "stale_ide_and_agent_count": stale_ide_count,
             "broken_shortcut_count": len(broken_report["shortcuts"]),
             "broken_path_entry_count": len(broken_report["path_entries"]),
@@ -545,8 +557,8 @@ def _print_checkup(report: Dict[str, Any]) -> None:
         print(f"  - Khu cách ly:        {quar['batch_count']} đợt ({_format_bytes(quar['total_bytes'])})")
         print(f"  - Mục lẻ ở gốc ổ:     {unorg['count']} mục")
         print(
-            f"  - Đường dẫn bị gãy:   {broken['total_broken']} mục "
-            f"({broken['fixable_count']} mục sửa tự động được)"
+            f"  - Đường dẫn bị gãy:   {broken['on_drive_count']} mục trỏ vào ổ này "
+            f"(cả máy: {broken['total_broken']}; {broken['fixable_count']} mục sửa tự động được)"
         )
         print(f"  - Được bảo vệ (OS):   {len(prot)} thư mục")
         print("\n3 việc nên làm tiếp theo:")
@@ -564,8 +576,8 @@ def _print_checkup(report: Dict[str, Any]) -> None:
         print(f"  - Quarantine:         {quar['batch_count']} batch(es) ({_format_bytes(quar['total_bytes'])})")
         print(f"  - Loose Root Items:   {unorg['count']} item(s)")
         print(
-            f"  - Broken Paths:       {broken['total_broken']} item(s) "
-            f"({broken['fixable_count']} auto-fixable)"
+            f"  - Broken Paths:       {broken['on_drive_count']} item(s) into this drive "
+            f"({broken['total_broken']} on the whole computer; {broken['fixable_count']} auto-fixable)"
         )
         print(f"  - System-Protected:   {len(prot)} folder(s)")
         print("\nTop 3 recommended next steps:")

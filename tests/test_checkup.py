@@ -224,6 +224,58 @@ class TestCheckup(SmartDriveTestCase):
         parsed = json.loads(out_json.getvalue())
         self.assertIn("score", parsed)
 
+    def _remember_folders(self, *folders: Path) -> None:
+        """Makes a fake VS Code remember `folders` as recent workspaces."""
+        def _to_uri(p: Path) -> str:
+            if sys.platform == "win32":
+                return "file:///" + p.as_posix().replace(":", "%3A", 1)
+            return "file://" + p.as_posix()
+
+        code_gs = self.fake_appdata / "Code" / "User" / "globalStorage"
+        code_gs.mkdir(parents=True, exist_ok=True)
+        (code_gs / "storage.json").write_text(
+            json.dumps({"backupWorkspaces": {"folders": [{"folderUri": _to_uri(f)} for f in folders], "workspaces": []}}),
+            encoding="utf-8",
+        )
+
+    def _checkup(self) -> dict:
+        return run_checkup(
+            root=str(self.drive),
+            lang="en",
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            reader=RegistryReader(tree={}),
+            scan_c_caches=False,
+        )
+
+    def test_03_stale_references_elsewhere_on_the_computer_are_listed_but_not_scored(self) -> None:
+        """A recent project that no longer exists off the drive cannot be repaired by anything done on the drive."""
+        elsewhere = self.test_dir / "projects_off_drive" / "gone_app"
+        self._remember_folders(elsewhere)
+
+        rep = self._checkup()
+
+        self.assertEqual(rep["broken_paths"]["total_broken"], 1)
+        self.assertEqual(rep["broken_paths"]["on_drive_count"], 0)
+        self.assertEqual(rep["penalties"]["broken_paths"], 0)
+        self.assertNotIn("broken_paths", [s["category"] for s in rep["next_steps"]])
+
+    def test_04_stale_references_into_the_drive_are_scored_and_recommended(self) -> None:
+        elsewhere = self.test_dir / "projects_off_drive" / "gone_app"
+        on_drive = self.drive / "demo_repo"  # organized away from the drive root: nothing there any more
+        (self.drive / "03_Development_Projects" / "demo_repo" / "src").mkdir(parents=True)
+        self._remember_folders(elsewhere, on_drive, on_drive / "src")  # a remembered subfolder makes the move sure
+
+        rep = self._checkup()
+
+        self.assertEqual(rep["broken_paths"]["total_broken"], 2)
+        self.assertEqual(rep["broken_paths"]["on_drive_count"], 1)
+        self.assertEqual(rep["broken_paths"]["fixable_on_drive_count"], 1)
+        self.assertEqual(rep["penalties"]["broken_paths"], 5 + 1 * 3)
+        step = next(s for s in rep["next_steps"] if s["category"] == "broken_paths")
+        self.assertEqual(step["command"], "smart-drive paths --broken --fix")
+        self.assertIn("Repair 1 broken", step["title"])
+
 
 if __name__ == "__main__":
     unittest.main()
