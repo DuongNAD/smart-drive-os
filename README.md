@@ -235,7 +235,7 @@ smart-drive relink --find --apply --ask --wait           # ...and ask y/N for ea
 smart-drive paths --broken                               # inspect broken shortcuts, IDE entries, PATH, and agent configs
 smart-drive paths --broken --fix                         # repair sure matches via relink
 ```
-Menu option `[8]` in `SmartDrive` (or `[10]` / `Smart_Organize.*` for the guided organizer with 1-key `U` undo) handles this interactively. Close open coding agents and IDEs before relinking, or pass `--wait` so SmartDrive waits for them to close, then reopen them. If a command in a moved `.venv` still points at the old place, run `uv sync --reinstall` in that project.
+Menu option `[8]` in `SmartDrive` (or `[10]` / `Smart_Organize.*` for the guided organizer with 1-key `U` undo) handles this interactively, and `[11]` re-applies the latest `organize`/`classify` batch: it previews `smart-drive relink --dry-run`, asks `[y/N]`, then runs `smart-drive relink --wait`. Use `[11]` after running `organize --apply` from inside a coding agent: quit the agent first (a running one may write its old paths back), then open `SmartDrive` and pick `[11]`. Close open coding agents and IDEs before relinking, or pass `--wait` so SmartDrive waits for them to close, then reopen them. If a command in a moved `.venv` still points at the old place, run `uv sync --reinstall` in that project.
 
 `--find` marks a folder ✓ only when the move journal, or what the agents remember inside the old folder, shows where it went. A folder found by its name alone is marked `?` and never relinked by `--apply` on its own, since it may be another project and the old one deleted: check it, then run the `smart-drive relink "OLD" "NEW"` command printed next to it. Or add `--ask` (menu option `[8]` does): it asks `Relink OLD -> NEW? [y/N]` for each `?` folder with one candidate, and relinks the ones you answer `y` together with the ✓ ones. Enter means no. It asks only in a terminal: with `--json` or piped input it asks nothing.
 
@@ -402,7 +402,7 @@ All 24 portable launchers reside in both the repo root and `launchers/` (zero Gi
 | **Quick Clean** | `Quick_Clean.bat` | `Quick_Clean.ps1` | `Quick_Clean.command` | `Quick_Clean.sh` | Dry-run junk preview followed by confirmed Tier 1 deletion |
 | **Quick Audit** | `Quick_Audit.bat` | `Quick_Audit.ps1` | `Quick_Audit.command` | `Quick_Audit.sh` | Instant storage breakdown and cluster slack audit |
 | **Safe Guided Organizer** | `Smart_Organize.bat` | `Smart_Organize.ps1` | `Smart_Organize.command` | `Smart_Organize.sh` | Step-by-step dry-run preview, busy-app wait, `YES` confirmation, post-move verification, and 1-key `U` undo (EN/VI) |
-| **Interactive Menu** | `SmartDrive.bat` | `SmartDrive.ps1` | `SmartDrive.command` | `SmartDrive.sh` | Full interactive TUI menu (including `[8]` Relink Agents, `[9]` Checkup, `[10]` Safe Guided Organizer) |
+| **Interactive Menu** | `SmartDrive.bat` | `SmartDrive.ps1` | `SmartDrive.command` | `SmartDrive.sh` | Full interactive TUI menu (including `[8]` Relink Agents after hand moves, `[9]` Checkup, `[10]` Safe Guided Organizer, `[11]` Relink to the latest move) |
 
 `smart-drive self-path-check` checks the running Python environment (venv, pyenv, user scripts) and prints the PowerShell `SetEnvironmentVariable`, `~/.bashrc`/`~/.zshrc` export, or `pyenv rehash` command if `smart-drive` is not on `PATH`.
 

@@ -73,10 +73,11 @@ echo   [7] Register AI Coding Agents MCP (smart-drive mcp register)
 echo   [8] Relink Coding Agents After Moving Folders (smart-drive relink --find)
 echo   [9] Drive Health Checkup & Score (smart-drive checkup)
 echo   [10] Safe Guided Organizer (Smart_Organize)
+echo   [11] Relink Coding Agents to the Latest Move (smart-drive relink)
 echo   [0] Exit
 echo.
 set "OPT="
-set /p OPT="Select an option [0-10]: "
+set /p OPT="Select an option [0-11]: "
 
 if "%OPT%"=="1" goto OP_INIT
 if "%OPT%"=="2" goto OP_SENTINEL
@@ -88,6 +89,7 @@ if "%OPT%"=="7" goto OP_MCP
 if "%OPT%"=="8" goto OP_RELINK
 if "%OPT%"=="9" goto OP_CHECKUP
 if "%OPT%"=="10" goto OP_SMART_ORGANIZE
+if "%OPT%"=="11" goto OP_RELINK_LATEST
 if "%OPT%"=="0" goto OP_EXIT
 goto MENU_LOOP
 
@@ -203,6 +205,23 @@ if exist "%~dp0Smart_Organize.bat" (
     echo.
     pause
 )
+goto MENU_LOOP
+
+:OP_RELINK_LATEST
+echo.
+%PYTHON_CMD% -m smart_drive relink --dry-run
+echo.
+set "CONF_LAT=N"
+set /p CONF_LAT="Relink the coding agents to the latest move now? Open coding agents will be waited for, so quit them. [y/N]: "
+if /i "%CONF_LAT%"=="y" (
+    echo.
+    %PYTHON_CMD% -m smart_drive relink --wait
+) else (
+    echo.
+    echo Relink aborted.
+)
+echo.
+pause
 goto MENU_LOOP
 
 :OP_EXIT

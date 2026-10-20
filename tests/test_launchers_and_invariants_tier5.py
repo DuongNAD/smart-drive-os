@@ -6,7 +6,7 @@ Tier 5 Empirical Challenger Suite:
 3. Zero hardcoded machine-specific usernames or home directory paths.
 4. `PYTHONDONTWRITEBYTECODE=1` cluster slack defense verification and empirical bytecode suppression test.
 5. Host isolation verification (`GIT_TERMINAL_PROMPT=0`, `GIT_CONFIG_NOSYSTEM=1`, UTF-8).
-6. Master menu interactive options [0]-[8] CLI mapping verification and empirical execution.
+6. Master menu interactive options [0]-[11] CLI mapping verification and empirical execution.
 7. exFAT cluster geometry invariants (512KB allocation unit, cluster boundary math, edge cases).
 8. Anti-indexing shields verification and auto-healing lifecycle.
 9. Whitelist immutability for `AGENTS.md` and `GEMINI.md` across SecurityGuard, PurgeEngine, JunkDetector, and MCP.
@@ -21,6 +21,8 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from typing import ClassVar, Pattern
@@ -136,6 +138,30 @@ class TestLauncherInventoryAndSynchronization(unittest.TestCase):
                         raw.isascii() or raw.startswith(b"\xef\xbb\xbf"),
                         f"{path} must be ASCII or start with a UTF-8 BOM",
                     )
+
+    @unittest.skipUnless(sys.platform == "win32" and shutil.which("powershell"), "needs Windows PowerShell")
+    def test_powershell_launchers_parse_in_windows_powershell(self):
+        """A parse error in a .ps1 launcher kills the whole script, so Windows PowerShell 5.1 must parse each one."""
+        paths = [
+            str(path)
+            for name in ALL_20_LAUNCHER_NAMES
+            if name.endswith(".ps1")
+            for path in (LAUNCHERS_DIR / name, REPO_ROOT / name)
+        ]
+        quoted = ", ".join("'" + path.replace("'", "''") + "'" for path in paths)
+        command = (
+            f"$bad = 0; foreach ($p in @({quoted})) {{ $errs = $null; $toks = $null; "
+            "[void][System.Management.Automation.Language.Parser]::ParseFile($p, [ref]$toks, [ref]$errs); "
+            "foreach ($e in $errs) { Write-Output ($p + ': ' + $e.ToString()); $bad++ } }; exit $bad"
+        )
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, f"PowerShell parse errors:\n{proc.stdout}\n{proc.stderr}")
 
 
 class TestLauncherSecurityAndHardcodedPaths(unittest.TestCase):
@@ -494,8 +520,158 @@ class TestLauncherHostIsolation(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
 
 
+# Where option [11] (relink the latest move batch) starts and ends in each flavour of SmartDrive, and the pieces
+# it must contain in this order: the preview, the [y/N] question, the check of the answer, the relink, the "no" branch.
+_SH_OPTION_11 = {
+    "start": "        11)\n",
+    "end": "        0)\n",
+    "preview": '"$PYTHON_CMD" -m smart_drive relink --dry-run',
+    "ask": "[y/N]",
+    "guard": 'if [ "$CONF_LAT" = "y" ] || [ "$CONF_LAT" = "Y" ]; then',
+    "apply": '"$PYTHON_CMD" -m smart_drive relink --wait',
+    "aborted": 'echo "Relink aborted."',
+}
+OPTION_11_LAYOUT = {
+    ".bat": {
+        "dispatch": 'if "%OPT%"=="11" goto OP_RELINK_LATEST\n',
+        "start": ":OP_RELINK_LATEST\n",
+        "end": ":OP_EXIT\n",
+        "preview": "%PYTHON_CMD% -m smart_drive relink --dry-run",
+        "ask": "[y/N]",
+        "guard": 'if /i "%CONF_LAT%"=="y" (',
+        "apply": "%PYTHON_CMD% -m smart_drive relink --wait",
+        "aborted": "echo Relink aborted.",
+    },
+    ".ps1": {
+        "start": '        "11" {\n',
+        "end": '        "0" {\n',
+        "preview": 'Run-SmartDrive @("relink", "--dry-run")',
+        "ask": "[y/N]",
+        "guard": 'if ($Confirm -eq "y" -or $Confirm -eq "Y") {',
+        "apply": 'Run-SmartDrive @("relink", "--wait")',
+        "aborted": 'Write-Host "Relink aborted."',
+    },
+    ".sh": _SH_OPTION_11,
+    ".command": _SH_OPTION_11,
+}
+
+FAKE_SMART_DRIVE_MAIN = (
+    "import os\n"
+    "import sys\n"
+    "with open(os.environ['FAKE_SD_LOG'], 'a', encoding='utf-8') as handle:\n"
+    "    handle.write(' '.join(sys.argv[1:]) + '\\n')\n"
+)
+
+
+def _make_fake_repo(prefix: str) -> Path:
+    """A temp folder holding only a fake `smart_drive` package that records the arguments it is given.
+
+    A launcher copied in here runs `python -m smart_drive ...` against the fake, so a menu option can be
+    driven end to end without ever running the real smart-drive (and so without touching real agents).
+    """
+    repo_dir = Path(tempfile.mkdtemp(prefix=prefix))
+    pkg_dir = repo_dir / "smart_drive"
+    pkg_dir.mkdir()
+    (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
+    (pkg_dir / "__main__.py").write_text(FAKE_SMART_DRIVE_MAIN, encoding="utf-8")
+    return repo_dir
+
+
+def _fake_repo_env(log_path: Path) -> dict[str, str]:
+    """Environment for a launcher run against `_make_fake_repo`: the fake logs its arguments to `log_path`."""
+    env = {k: v for k, v in os.environ.items() if k not in ("SMART_DRIVE_ROOT", "PYTHONPATH")}
+    env["FAKE_SD_LOG"] = str(log_path)
+    # The folder of this interpreter first, so the launcher's python probe finds a working Python at once.
+    env["PATH"] = str(Path(sys.executable).resolve().parent) + os.pathsep + env.get("PATH", "")
+    return env
+
+
+def _logged_calls(log_path: Path) -> list[str]:
+    """The argument lines the fake smart_drive wrote so far (see `_make_fake_repo`)."""
+    return log_path.read_text(encoding="utf-8").splitlines() if log_path.exists() else []
+
+
+def _drive_prompts(command, env, cwd, steps, timeout=90.0):
+    """Runs `command`, answering its prompts one at a time. Returns (returncode, stdout, stderr).
+
+    Each step is (wait, text): `wait` is a marker to look for in the output after the previous step, or a function
+    that gets the output so far and says whether the program has got far enough; `text` is then typed as it is.
+    The answers cannot be piped in at once: cmd.exe takes whatever a pipe holds for the first `set /p` and drops
+    the rest, and `pause` takes a single character, so each answer is sent only once its question is on screen.
+    """
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        cwd=cwd,
+        bufsize=0,
+    )
+    stdout_bytes = bytearray()
+    stderr_bytes = bytearray()
+
+    def pump(stream, sink):
+        while True:
+            chunk = stream.read(4096)
+            if not chunk:
+                return
+            sink.extend(chunk)
+
+    pumps = [
+        threading.Thread(target=pump, args=(process.stdout, stdout_bytes), daemon=True),
+        threading.Thread(target=pump, args=(process.stderr, stderr_bytes), daemon=True),
+    ]
+    for thread in pumps:
+        thread.start()
+
+    position = 0
+
+    def reached(wait):
+        """Where the output stood when `wait` was met, or None while it is not met yet."""
+        output = bytes(stdout_bytes)
+        if callable(wait):
+            return len(output) if wait(output.decode("utf-8", "replace")) else None
+        needle = wait.encode("utf-8")
+        found = output.find(needle, position)
+        return None if found < 0 else found + len(needle)
+
+    deadline = time.monotonic() + timeout
+    try:
+        for wait, text in steps:
+            while True:
+                end = reached(wait)
+                if end is not None:
+                    break
+                if process.poll() is not None:
+                    for thread in pumps:
+                        thread.join(timeout=5)
+                    end = reached(wait)
+                    if end is not None:
+                        break
+                    raise AssertionError(f"the program ended before {wait!r} was reached")
+                if time.monotonic() > deadline:
+                    tail = bytes(stdout_bytes).decode("utf-8", "replace")[-500:]
+                    raise AssertionError(f"timed out waiting for {wait!r}; the output ends with {tail!r}")
+                time.sleep(0.05)
+            position = end
+            process.stdin.write(text.encode("utf-8"))
+            process.stdin.flush()
+        process.stdin.close()
+        returncode = process.wait(timeout=max(1.0, deadline - time.monotonic()))
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        for thread in pumps:
+            thread.join(timeout=5)
+        for stream in (process.stdin, process.stdout, process.stderr):
+            stream.close()
+    return returncode, bytes(stdout_bytes).decode("utf-8", "replace"), bytes(stderr_bytes).decode("utf-8", "replace")
+
+
 class TestLauncherMasterMenuMapping(unittest.TestCase):
-    """Verifies that master menu options [0]-[8] in SmartDrive.* map 1:1 to valid CLI commands."""
+    """Verifies that master menu options [0]-[11] in SmartDrive.* map 1:1 to valid CLI commands."""
 
     def setUp(self):
         self.parser = build_parser()
@@ -569,6 +745,22 @@ class TestLauncherMasterMenuMapping(unittest.TestCase):
         args_9 = self.parser.parse_args(["checkup"])
         self.assertEqual(args_9.subcommand, "checkup")
 
+        # Option 11: relink --dry-run (preview the latest move batch) / relink --wait (re-apply it)
+        args_11_preview = self.parser.parse_args(["relink", "--dry-run"])
+        self.assertEqual(args_11_preview.subcommand, "relink")
+        self.assertTrue(args_11_preview.dry_run)
+        self.assertFalse(args_11_preview.find)
+        self.assertIsNone(args_11_preview.old)
+        self.assertIsNone(args_11_preview.new)
+
+        args_11_apply = self.parser.parse_args(["relink", "--wait"])
+        self.assertEqual(args_11_apply.subcommand, "relink")
+        self.assertFalse(args_11_apply.dry_run)
+        self.assertFalse(args_11_apply.find)
+        self.assertIsNone(args_11_apply.old)
+        self.assertIsNone(args_11_apply.new)
+        self.assertEqual(args_11_apply.wait, 30.0)
+
     def test_master_menu_option_8_asks_about_each_question_mark_folder(self):
         """Option [8] relinks with --ask, so a ? folder can be confirmed and relinked without leaving the menu."""
         for ext in EXPECTED_EXTENSIONS:
@@ -579,6 +771,27 @@ class TestLauncherMasterMenuMapping(unittest.TestCase):
                 else:
                     self.assertIn("-m smart_drive relink --find --apply --ask --wait", text)
                 self.assertIn("ask about each ? folder? Open coding agents will be waited for. [y/N]", text)
+
+    def test_master_menu_option_11_previews_then_relinks_only_after_a_yes(self):
+        """Option [11] shows `relink --dry-run`, asks [y/N], and runs `relink --wait` only in the yes branch."""
+        for ext, layout in OPTION_11_LAYOUT.items():
+            with self.subTest(launcher=f"SmartDrive{ext}"):
+                text = (LAUNCHERS_DIR / f"SmartDrive{ext}").read_text(encoding="utf-8")
+                self.assertIn("[11] Relink Coding Agents to the Latest Move (smart-drive relink)", text)
+                self.assertIn("Select an option [0-11]", text)
+                self.assertNotIn("[0-10]", text)
+                if "dispatch" in layout:
+                    self.assertIn(layout["dispatch"], text)
+                start = text.index(layout["start"])
+                block = text[start : text.index(layout["end"], start)]
+                steps = ("preview", "ask", "guard", "apply", "aborted")
+                positions = [block.index(layout[step]) for step in steps]
+                self.assertEqual(positions, sorted(positions), f"option [11] must run in this order: {steps}")
+                self.assertEqual(block.count(layout["preview"]), 1)
+                self.assertEqual(block.count(layout["apply"]), 1)
+                # It re-applies the latest batch: no OLD/NEW, no --find, and --wait holds it until the agents are closed.
+                self.assertNotIn("--find", block)
+                self.assertNotIn("--apply", block)
 
     @unittest.skipIf(sys.platform == "win32", "POSIX interactive bash execution")
     def test_empirical_master_menu_loop_option_0_exit(self):
@@ -611,6 +824,67 @@ class TestLauncherMasterMenuMapping(unittest.TestCase):
         self.assertIn("SSD HEALTH & SELF-HEALING AUDIT", proc.stdout)
         self.assertNotIn("KINGSTON XS2000", proc.stdout, "the banner must not name a specific drive model")
         self.assertIn("Exiting SmartDrive-OS. Goodbye!", proc.stdout)
+
+    @unittest.skipIf(sys.platform == "win32", "POSIX interactive bash execution")
+    def test_empirical_menu_option_11_asks_before_relinking(self):
+        """Drives option [11] of SmartDrive.sh and .command against a fake smart_drive that only logs its arguments."""
+        both = ["relink --dry-run", "relink --wait"]
+        for ext in (".sh", ".command"):
+            for answer, expected_calls in (("y", both), ("Y", both), ("n", both[:1]), ("", both[:1])):
+                with self.subTest(launcher=f"SmartDrive{ext}", answer=answer):
+                    repo_dir = _make_fake_repo("test_menu_11_")
+                    try:
+                        log = repo_dir / "calls.log"
+                        launcher = repo_dir / f"SmartDrive{ext}"
+                        shutil.copy2(LAUNCHERS_DIR / f"SmartDrive{ext}", launcher)
+                        proc = subprocess.run(
+                            ["/bin/bash", str(launcher)],
+                            input=f"11\n{answer}\n\n0\n",
+                            text=True,
+                            capture_output=True,
+                            env=_fake_repo_env(log),
+                            cwd=str(repo_dir),
+                            timeout=30,
+                            check=False,
+                        )
+                        self.assertEqual(proc.returncode, 0, f"{proc.stdout}\n{proc.stderr}")
+                        self.assertEqual(_logged_calls(log), expected_calls)
+                        self.assertEqual("Relink aborted." in proc.stdout, expected_calls == both[:1])
+                    finally:
+                        shutil.rmtree(repo_dir, ignore_errors=True)
+
+    @unittest.skipUnless(sys.platform == "win32", "cmd.exe batch execution")
+    def test_empirical_batch_menu_option_11_asks_before_relinking(self):
+        """Drives option [11] of SmartDrive.bat against a fake smart_drive that only logs its arguments."""
+        both = ["relink --dry-run", "relink --wait"]
+        for answer, expected_calls in (("y", both), ("n", both[:1]), ("", both[:1])):
+            with self.subTest(answer=answer):
+                repo_dir = _make_fake_repo("test_menu_11_bat_")
+                try:
+                    log = repo_dir / "calls.log"
+                    launcher = repo_dir / "SmartDrive.bat"
+                    shutil.copy2(LAUNCHERS_DIR / "SmartDrive.bat", launcher)
+
+                    def answered(output, log=log):
+                        return "Relink aborted." in output or len(_logged_calls(log)) >= 2
+
+                    returncode, stdout, stderr = _drive_prompts(
+                        ["cmd.exe", "/c", str(launcher)],
+                        _fake_repo_env(log),
+                        str(repo_dir),
+                        [
+                            ("Select an option [0-11]: ", "11\r\n"),
+                            ("[y/N]: ", answer + "\r\n"),
+                            # Any key ends the `pause` that follows (its own text is in the language of Windows).
+                            (answered, "x"),
+                            ("Select an option [0-11]: ", "0\r\n"),
+                        ],
+                    )
+                    self.assertEqual(returncode, 0, f"{stdout}\n{stderr}")
+                    self.assertEqual(_logged_calls(log), expected_calls)
+                    self.assertEqual("Relink aborted." in stdout, expected_calls == both[:1])
+                finally:
+                    shutil.rmtree(repo_dir, ignore_errors=True)
 
 
 class TestExfatClusterGeometryInvariants(unittest.TestCase):

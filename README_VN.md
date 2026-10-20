@@ -235,7 +235,7 @@ smart-drive relink --find --apply --ask --wait           # ...và hỏi y/N cho 
 smart-drive paths --broken                               # kiểm tra shortcut, mục IDE, PATH và cấu hình agent bị đứt
 smart-drive paths --broken --fix                         # tự sửa các mục khớp chắc chắn qua relink
 ```
-Mục `[8]` trong menu `SmartDrive` (hoặc mục `[10]` / `Smart_Organize.*` cho trình dời an toàn có phím `U` hoàn tác ngay) làm việc này trực quan. Đóng các coding agent và IDE trước khi relink, hoặc thêm `--wait` để SmartDrive chờ chúng đóng rồi mới ghi tệp. Nếu lệnh trong `.venv` đã dời vẫn trỏ về chỗ cũ, chạy `uv sync --reinstall` trong dự án đó.
+Mục `[8]` trong menu `SmartDrive` (hoặc mục `[10]` / `Smart_Organize.*` cho trình dời an toàn có phím `U` hoàn tác ngay) làm việc này trực quan, còn mục `[11]` áp dụng lại đợt dời `organize`/`classify` gần nhất: xem trước bằng `smart-drive relink --dry-run`, hỏi `[y/N]`, rồi chạy `smart-drive relink --wait`. Dùng `[11]` sau khi chạy `organize --apply` từ bên trong một coding agent: hãy thoát agent trước (agent còn chạy có thể ghi lại đường dẫn cũ), rồi mở `SmartDrive` và chọn `[11]`. Đóng các coding agent và IDE trước khi relink, hoặc thêm `--wait` để SmartDrive chờ chúng đóng rồi mới ghi tệp. Nếu lệnh trong `.venv` đã dời vẫn trỏ về chỗ cũ, chạy `uv sync --reinstall` trong dự án đó.
 
 `--find` chỉ đánh dấu ✓ khi nhật ký dời thư mục, hoặc những gì agent nhớ bên trong thư mục cũ, cho biết thư mục đã tới đâu. Thư mục chỉ trùng tên được đánh dấu `?` và `--apply` không bao giờ tự cập nhật nó, vì đó có thể là một dự án khác còn thư mục cũ đã bị xóa: hãy kiểm tra rồi chạy lệnh `smart-drive relink "CŨ" "MỚI"` được in ngay bên cạnh. Hoặc thêm `--ask` (mục `[8]` đã dùng sẵn): lệnh hỏi `Relink CŨ -> MỚI? [y/N]` cho từng thư mục `?` chỉ có một ứng viên, rồi cập nhật các thư mục bạn trả lời `y` cùng lúc với các mục ✓. Nhấn Enter nghĩa là không. Lệnh chỉ hỏi khi chạy trong terminal: với `--json` hoặc đầu vào qua pipe thì không hỏi gì.
 
@@ -402,7 +402,7 @@ Tệp rác chia làm 3 tầng với mặc định chạy thử (`--dry-run`, c�
 | **Dọn rác Nhanh** | `Quick_Clean.bat` | `Quick_Clean.ps1` | `Quick_Clean.command` | `Quick_Clean.sh` | Xem trước file rác (dry-run) rồi xác nhận xóa Tier 1 |
 | **Kiểm toán Dung lượng** | `Quick_Audit.bat` | `Quick_Audit.ps1` | `Quick_Audit.command` | `Quick_Audit.sh` | Thống kê dung lượng và đo lãng phí cluster slack |
 | **Dời An Toàn Có Dẫn Dắt** | `Smart_Organize.bat` | `Smart_Organize.ps1` | `Smart_Organize.command` | `Smart_Organize.sh` | Xem trước dry-run, chờ đóng ứng dụng bận, xác nhận `YES`, kiểm tra sau dời và hoàn tác 1 phím `U` (EN/VI) |
-| **Menu Tương tác** | `SmartDrive.bat` | `SmartDrive.ps1` | `SmartDrive.command` | `SmartDrive.sh` | Menu TUI đầy đủ (gồm mục `[8]` Relink Agents, `[9]` Checkup, `[10]` Smart_Organize) |
+| **Menu Tương tác** | `SmartDrive.bat` | `SmartDrive.ps1` | `SmartDrive.command` | `SmartDrive.sh` | Menu TUI đầy đủ (gồm mục `[8]` Relink Agents sau khi dời tay, `[9]` Checkup, `[10]` Smart_Organize, `[11]` Relink theo đợt dời gần nhất) |
 
 `smart-drive self-path-check` kiểm tra môi trường Python (venv, pyenv, user) và in lệnh PowerShell `SetEnvironmentVariable`, `export` cho `~/.bashrc`/`~/.zshrc` hoặc `pyenv rehash` nếu `smart-drive` chưa có trong `PATH`.
 

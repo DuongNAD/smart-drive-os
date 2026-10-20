@@ -66,9 +66,10 @@ while true; do
     echo "  [8] Relink Coding Agents After Moving Folders (smart-drive relink --find)"
     echo "  [9] Drive Health Checkup & Score (smart-drive checkup)"
     echo "  [10] Safe Guided Organizer (Smart_Organize)"
+    echo "  [11] Relink Coding Agents to the Latest Move (smart-drive relink)"
     echo "  [0] Exit"
     echo ""
-    if ! read -r -p "Select an option [0-10]: " OPT; then
+    if ! read -r -p "Select an option [0-11]: " OPT; then
         echo ""
         break
     fi
@@ -175,6 +176,21 @@ while true; do
                 echo ""
                 read -r -p "Press Enter to return to menu..."
             fi
+            ;;
+        11)
+            echo ""
+            "$PYTHON_CMD" -m smart_drive relink --dry-run
+            echo ""
+            read -r -p "Relink the coding agents to the latest move now? Open coding agents will be waited for, so quit them. [y/N]: " CONF_LAT
+            if [ "$CONF_LAT" = "y" ] || [ "$CONF_LAT" = "Y" ]; then
+                echo ""
+                "$PYTHON_CMD" -m smart_drive relink --wait
+            else
+                echo ""
+                echo "Relink aborted."
+            fi
+            echo ""
+            read -r -p "Press Enter to return to menu..."
             ;;
         0)
             echo ""
