@@ -10,6 +10,7 @@ carries `-c core.fsmonitor=false`.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
@@ -102,6 +103,26 @@ class TestEveryGitCommandDisablesTheDaemon(unittest.TestCase):
         self.assertEqual(len(run.commands), 1)
         run.assert_every_command_disables_the_daemon(self)
         self.assertEqual(run.commands[0][3:], ["status", "--porcelain", "-b"])
+
+
+class TestNoGitCommandSkipsTheFlag(unittest.TestCase):
+    """A scan of the sources, so that a git command added later cannot forget the flag unnoticed."""
+
+    GIT_COMMAND = re.compile(r'\[\s*(?:"git"|git|git_bin)\s*,')
+
+    def test_every_git_command_line_in_the_package_carries_it(self) -> None:
+        package = Path(__file__).resolve().parent.parent / "smart_drive"
+        found = 0
+        offenders: List[str] = []
+        for path in sorted(package.rglob("*.py")):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if not self.GIT_COMMAND.search(line):
+                    continue
+                found += 1
+                if "NO_FSMONITOR" not in line and '"--version"' not in line:  # a version probe starts no daemon
+                    offenders.append(f"{path.relative_to(package.parent)}:{number}: {line.strip()}")
+        self.assertGreaterEqual(found, 7, "the scan no longer finds the git call sites")
+        self.assertEqual(offenders, [])
 
 
 @unittest.skipIf(GIT is None, "git executable not found on PATH")
