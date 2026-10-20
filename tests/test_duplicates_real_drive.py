@@ -3,8 +3,9 @@
 Regression: `smart-drive dup --json` ran for 15 minutes on a 167 GB NTFS drive (342k files, 40k folders) and
 printed nothing. It grouped files by size, then opened and hashed every file of every same-size group, and it walked
 into dependency trees full of small files that are copies of one another by design: node_modules (about a thousand
-packages), Python virtualenvs and site-packages, caches. With Windows Defender scanning each opened file that is
-~16 files a second. Such "duplicates" are expected and are never offered for reclamation.
+packages), Python virtualenvs and site-packages, caches, and into installed applications. With Windows Defender
+scanning each opened file that is ~16 files a second. Such "duplicates" are expected and are never offered for
+reclamation.
 """
 
 from __future__ import annotations
@@ -13,19 +14,31 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from unittest.mock import patch
 
 import smart_drive.core.duplicates as duplicates
 from smart_drive.core.duplicates import DEPENDENCY_DIR_NAMES, DuplicateDetector
+from smart_drive.core.system_refs import SystemRef, SystemRefIndex
 
 SAME = b"the same bytes in every copy\n" * 20
+OTHER = b"a different payload, shared by another set of copies\n" * 10
 
 
 class _Tree(unittest.TestCase):
+    """A temp tree; the machine's own Registry, PATH and shortcuts are never read (an index is injected)."""
+
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="sd_dup_deps_")).resolve()
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        collect = patch(
+            "smart_drive.core.system_refs.SystemRefIndex.collect",
+            side_effect=AssertionError(
+                "SystemRefIndex.collect() must not be called in unit tests; inject system_refs=SystemRefIndex([])"
+            ),
+        )
+        collect.start()
+        self.addCleanup(collect.stop)
 
     def write(self, rel: str, data: bytes = SAME) -> Path:
         path = self.root.joinpath(*rel.split("/"))
@@ -35,6 +48,10 @@ class _Tree(unittest.TestCase):
 
     def rel(self, path: str) -> str:
         return Path(path).relative_to(self.root).as_posix()
+
+    def detector(self, root: Optional[Path] = None, **kwargs: Any) -> DuplicateDetector:
+        kwargs.setdefault("system_refs", SystemRefIndex([]))
+        return DuplicateDetector(str(root or self.root), **kwargs)
 
     def reported(self, plan: Dict[str, Any]) -> List[str]:
         return sorted(self.rel(f) for g in plan["duplicate_groups"] for f in g["files"])
@@ -57,7 +74,7 @@ class TestDependencyTreesAreNotScanned(_Tree):
         self.write("docs/original.bin")
         self.write("backup/copy.bin")
 
-        plan = DuplicateDetector(str(self.root)).generate_reclamation_plan()
+        plan = self.detector().generate_reclamation_plan()
 
         self.assertEqual(self.reported(plan), ["backup/copy.bin", "docs/original.bin"])
         self.assertEqual(plan["duplicate_group_count"], 1)
@@ -67,7 +84,7 @@ class TestDependencyTreesAreNotScanned(_Tree):
         self.write("a/Node_Modules/x/data.bin")
         self.write("b/NODE_MODULES/x/data.bin")
         self.write("c/Site-Packages/x/data.bin")
-        plan = DuplicateDetector(str(self.root)).generate_reclamation_plan()
+        plan = self.detector().generate_reclamation_plan()
         self.assertEqual(plan["duplicate_group_count"], 0)
         self.assertEqual(plan["skipped_dependency_dirs"], 3)
 
@@ -78,7 +95,7 @@ class TestDependencyTreesAreNotScanned(_Tree):
         self.write("proj/src/module.py")  # the project's own copy
         self.write("archive/module.py")
 
-        plan = DuplicateDetector(str(self.root)).generate_reclamation_plan()
+        plan = self.detector().generate_reclamation_plan()
 
         self.assertEqual(self.reported(plan), ["archive/module.py", "proj/src/module.py"])
         self.assertEqual(plan["skipped_dependency_dirs"], 3)
@@ -86,14 +103,14 @@ class TestDependencyTreesAreNotScanned(_Tree):
     def test_a_folder_without_pyvenv_cfg_is_not_taken_for_a_virtualenv(self) -> None:
         self.write("proj/venv/Lib/some/module.py")
         self.write("proj/src/module.py")
-        plan = DuplicateDetector(str(self.root)).generate_reclamation_plan()
+        plan = self.detector().generate_reclamation_plan()
         self.assertEqual(self.reported(plan), ["proj/src/module.py", "proj/venv/Lib/some/module.py"])
         self.assertEqual(plan["skipped_dependency_dirs"], 0)
 
     def test_git_internals_are_not_scanned(self) -> None:
         self.write("repo/.git/objects/aa/blob")
         self.write("other/.git/objects/aa/blob")
-        plan = DuplicateDetector(str(self.root)).generate_reclamation_plan()
+        plan = self.detector().generate_reclamation_plan()
         self.assertEqual(plan["duplicate_group_count"], 0)
 
     def test_the_files_of_a_dependency_tree_are_never_opened(self) -> None:
@@ -117,7 +134,7 @@ class TestDependencyTreesAreNotScanned(_Tree):
         with patch.object(duplicates, "compute_partial_hash", partial), patch.object(
             duplicates, "compute_full_sha256", full
         ):
-            DuplicateDetector(str(self.root)).generate_reclamation_plan()
+            self.detector().generate_reclamation_plan()
 
         self.assertTrue(opened)  # the two ordinary copies were compared
         self.assertEqual(sorted(set(opened)), ["backup/copy.bin", "docs/original.bin"])
@@ -125,21 +142,107 @@ class TestDependencyTreesAreNotScanned(_Tree):
     def test_dependency_trees_are_scanned_when_asked_to(self) -> None:
         self.write("a/node_modules/x/data.bin")
         self.write("b/node_modules/x/data.bin")
-        plan = DuplicateDetector(str(self.root), skip_dependency_dirs=False).generate_reclamation_plan()
+        plan = self.detector(skip_dependency_dirs=False).generate_reclamation_plan()
         self.assertEqual(self.reported(plan), ["a/node_modules/x/data.bin", "b/node_modules/x/data.bin"])
         self.assertEqual(plan["skipped_dependency_dirs"], 0)
 
     def test_the_folder_asked_for_is_scanned_even_when_it_is_a_dependency_tree(self) -> None:
         self.write("node_modules/a/data.bin")
         self.write("node_modules/b/data.bin")
-        plan = DuplicateDetector(str(self.root / "node_modules")).generate_reclamation_plan()
+        plan = self.detector(self.root / "node_modules").generate_reclamation_plan()
         self.assertEqual(plan["duplicate_group_count"], 1)
 
         self.write("env/pyvenv.cfg", b"home = /usr/bin\n")
         self.write("env/x/data.bin")
         self.write("env/y/data.bin")
-        plan = DuplicateDetector(str(self.root / "env")).generate_reclamation_plan()
+        plan = self.detector(self.root / "env").generate_reclamation_plan()
         self.assertEqual(plan["duplicate_group_count"], 1)
+
+
+class TestFoldersUsedBySystemAreNotScanned(_Tree):
+    """Windows and installed apps depend on these folders: nothing in them is ever offered for reclamation."""
+
+    def test_folders_windows_or_installed_apps_depend_on_are_not_scanned(self) -> None:
+        for rel in ("App/a.bin", "App/sub/b.bin", "Svc/data/c.bin", "tool/d.bin", "Tools/e.bin"):
+            self.write(rel)
+        self.write("tool/unins000.exe", b"MZ")  # an uninstaller marks an installed app, no registry entry needed
+        self.write("docs/original.bin")
+        self.write("backup/copy.bin")
+        index = SystemRefIndex([
+            SystemRef(kind="installed_app", source='installed app "Demo"', target=str(self.root / "App")),
+            SystemRef(kind="service", source="service DemoSvc", target=str(self.root / "Svc" / "Binn" / "svc.exe")),
+            SystemRef(kind="path", source="PATH (User)", target=str(self.root / "Tools" / "bin")),
+        ])
+
+        plan = self.detector(system_refs=index).generate_reclamation_plan()
+
+        self.assertEqual(self.reported(plan), ["backup/copy.bin", "docs/original.bin"])  # the copies inside are no group
+        self.assertEqual(plan["skipped_protected_dirs"], 4)
+        why = {Path(e["path"]).name: e["refs"][0]["kind"] for e in plan["protected_by_system"]}
+        self.assertEqual(why, {"App": "installed_app", "Svc": "service", "tool": "uninstaller", "Tools": "path"})
+
+    def test_a_protected_folder_is_not_entered_so_its_files_are_never_opened(self) -> None:
+        for i in range(6):
+            self.write(f"App/lib{i}/data.bin")
+        self.write("docs/original.bin")
+        self.write("backup/copy.bin")
+        index = SystemRefIndex([SystemRef(kind="shortcut", source="Demo.lnk", target=str(self.root / "App" / "demo.exe"))])
+        opened: List[str] = []
+        real = duplicates.compute_partial_hash
+
+        def partial(path: str, *args: Any, **kwargs: Any) -> str:
+            opened.append(self.rel(path))
+            return real(path, *args, **kwargs)
+
+        with patch.object(duplicates, "compute_partial_hash", partial):
+            self.detector(system_refs=index).generate_reclamation_plan()
+
+        self.assertEqual(sorted(opened), ["backup/copy.bin", "docs/original.bin"])
+
+    def test_references_to_other_places_protect_nothing(self) -> None:
+        self.write("a/x.bin")
+        self.write("b/x.bin")
+        other = Path(tempfile.gettempdir()) / "sd_dup_elsewhere_never_created"
+        index = SystemRefIndex([
+            SystemRef(kind="installed_app", source='installed app "Far"', target=str(other)),
+            SystemRef(kind="path", source="PATH", target=str(other / "bin")),
+        ])
+        plan = self.detector(system_refs=index).generate_reclamation_plan()
+        self.assertEqual(self.reported(plan), ["a/x.bin", "b/x.bin"])
+        self.assertEqual((plan["skipped_protected_dirs"], plan["protected_by_system"]), (0, []))
+
+    def test_the_scanned_root_is_judged_only_by_what_lies_below_it(self) -> None:
+        # A drive root that is itself on PATH: its folders and documents are still scanned, but a script Windows can
+        # start by name from there is pinned, as `organize` pins it
+        self.write("a.bin")
+        self.write("sub/a_copy.bin")
+        self.write("launch.ps1", OTHER)
+        self.write("sub/launch_copy.ps1", OTHER)
+        index = SystemRefIndex([SystemRef(kind="path", source="PATH (User)", target=str(self.root))])
+
+        plan = self.detector(system_refs=index).generate_reclamation_plan()
+
+        self.assertEqual(self.reported(plan), ["a.bin", "sub/a_copy.bin"])
+        self.assertEqual([Path(e["path"]).name for e in plan["protected_by_system"]], ["launch.ps1"])
+        self.assertEqual(plan["skipped_protected_dirs"], 0)  # a file, not a folder
+
+    def test_references_are_collected_once_for_the_scanned_root(self) -> None:
+        for rel in ("a/x.bin", "b/x.bin", "c/d/x.bin"):
+            self.write(rel)
+        fake = SystemRefIndex([SystemRef(kind="installed_app", source="app", target=str(self.root / "c"))])
+        with patch("smart_drive.core.system_refs.SystemRefIndex.collect", return_value=fake) as collect:
+            det = DuplicateDetector(str(self.root))
+            first = det.generate_reclamation_plan()
+            second = det.generate_reclamation_plan()
+        collect.assert_called_once_with(shortcut_roots=[str(self.root)])
+        self.assertEqual(self.reported(first), ["a/x.bin", "b/x.bin"])
+        self.assertEqual(self.reported(second), ["a/x.bin", "b/x.bin"])
+        self.assertEqual(len(second["protected_by_system"]), 1)  # reported per run, not piled up
+
+    def test_nothing_is_collected_when_an_index_is_given(self) -> None:
+        self.write("a/x.bin")
+        self.write("b/x.bin")
+        self.detector().generate_reclamation_plan()  # the guard in setUp would raise
 
 
 class TestExistingScanOptionsKeepWorking(_Tree):
@@ -147,21 +250,21 @@ class TestExistingScanOptionsKeepWorking(_Tree):
         self.write("skipme/a.bin")
         self.write("keep/b.bin")
         self.write("$RECYCLE.BIN/c.bin")  # excluded by default, but not when the caller passes its own set
-        plan = DuplicateDetector(str(self.root), exclude_dirs={"SkipMe"}).generate_reclamation_plan()
+        plan = self.detector(exclude_dirs={"SkipMe"}).generate_reclamation_plan()
         self.assertEqual(self.reported(plan), ["$RECYCLE.BIN/c.bin", "keep/b.bin"])
 
     def test_the_default_exclusions_still_apply(self) -> None:
         self.write("$RECYCLE.BIN/a.bin")
         self.write("keep/b.bin")
         self.write("keep2/c.bin")
-        plan = DuplicateDetector(str(self.root)).generate_reclamation_plan()
+        plan = self.detector().generate_reclamation_plan()
         self.assertEqual(self.reported(plan), ["keep/b.bin", "keep2/c.bin"])
 
     def test_folders_and_files_scanned_are_reported(self) -> None:
         self.write("a/one.bin", b"1")
         self.write("a/b/two.bin", b"22")
         self.write("c/three.bin", b"333")
-        plan = DuplicateDetector(str(self.root)).generate_reclamation_plan()
+        plan = self.detector().generate_reclamation_plan()
         self.assertEqual((plan["folders_scanned"], plan["files_scanned"]), (4, 3))  # the root counts as a folder
 
 
