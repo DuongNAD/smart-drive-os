@@ -8,7 +8,8 @@ This module rewrites remembered paths under moved folders across supported codin
 (Claude Code, Claude desktop, Codex, Gemini CLI, Antigravity, Cursor, Windsurf, Constellation,
 and workspace ``.mcp.json``), carries Claude Code project history and memory over to the new
 project slug, repairs git worktrees, and updates moved Python virtualenvs: ``.pth`` / ``.egg-link``
-entries and the interpreter path of their console scripts (pip launchers and scripts with a shebang).
+entries, the interpreter path of their console scripts (pip launchers and scripts with a shebang) and the
+venv path in their activation scripts (``activate``, ``activate.bat``, ...).
 
 Safety invariants:
 - Rolling backup (``<file>.bak.smart-drive``) before modifying config files (except Claude desktop
@@ -39,7 +40,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 import urllib.parse
 import zipfile
 
@@ -679,6 +680,7 @@ class RelinkReport:
     warnings: List[str] = field(default_factory=list)
     errors: List[Dict[str, str]] = field(default_factory=list)
     console_scripts: Dict[str, int] = field(default_factory=dict)  # venv -> console scripts repointed (or would be)
+    activation_scripts: Dict[str, int] = field(default_factory=dict)  # venv -> activate scripts repointed (or would be)
 
     @property
     def agents(self) -> Dict[str, int]:
@@ -2108,26 +2110,155 @@ def _relink_console_scripts(
     return repointed, stuck
 
 
+_ACTIVATION_AGENT = "Python activation scripts"
+# activate, activate.bat, activate.fish, activate.csh, activate.nu, Activate.ps1, activate_this.py, deactivate.bat
+_ACTIVATION_NAME_RE = re.compile(r"(?i)^(?:de)?activate(?:_this)?(?:\.[a-z0-9]+)?$")
+_NAME_BYTES = rb"A-Za-z0-9_.\-\x80-\xff"  # what continues the name of a folder
+
+
+def _venv_path_spellings(old: str, new: str) -> List[Tuple[str, str]]:
+    """The ways a script can write the path of a venv: (old spelling, the same spelling of the new path).
+
+    The path as it is, with forward slashes, with backslashes, with doubled backslashes (inside a string), and for
+    a Windows drive path also the forms of Git Bash/MSYS (/e/dir/venv) and of Cygwin (/cygdrive/e/dir/venv).
+    """
+    pairs = [(old, new)]
+    drive_old = re.match(r"([A-Za-z]):[\\/](.*)$", old, re.S)
+    drive_new = re.match(r"([A-Za-z]):[\\/](.*)$", new, re.S)
+    if drive_old and drive_new:  # Windows paths, which a script may write in any of these ways
+        backslashed = (old.replace("/", "\\"), new.replace("/", "\\"))
+        pairs.append((old.replace("\\", "/"), new.replace("\\", "/")))
+        pairs.append(backslashed)
+        pairs.append((backslashed[0].replace("\\", "\\\\"), backslashed[1].replace("\\", "\\\\")))
+        for prefix in ("/", "/cygdrive/"):
+            old_form = f"{prefix}{drive_old.group(1).lower()}/{drive_old.group(2)}".replace("\\", "/")
+            new_form = f"{prefix}{drive_new.group(1).lower()}/{drive_new.group(2)}".replace("\\", "/")
+            pairs.append((old_form, new_form))
+    spellings: List[Tuple[str, str]] = []
+    for spelled_old, spelled_new in pairs:
+        if spelled_old and spelled_old != spelled_new and all(spelled_old != done for done, _ in spellings):
+            spellings.append((spelled_old, spelled_new))
+    return spellings
+
+
+def _activation_rewriter(old: str, new: str) -> Optional[Callable[[bytes], Tuple[bytes, int]]]:
+    """A function that replaces the path of the venv at `old` by `new` in the bytes of an activation script.
+
+    Only whole paths are replaced: the old path must not continue a longer folder name or path on either side
+    (another venv next to it, `venv-old`, `venv2`), and every other byte of the script stays as it is. The
+    function returns the new bytes and the number of paths replaced. None if no path can be written.
+    """
+    table: Dict[bytes, bytes] = {}
+    for spelled_old, spelled_new in _venv_path_spellings(old, new):
+        old_bytes, new_bytes = _utf8(spelled_old), _utf8(spelled_new)
+        if old_bytes is None or new_bytes is None:
+            return None
+        table.setdefault(old_bytes.lower() if _CASE_INSENSITIVE else old_bytes, new_bytes)
+    if not table:
+        return None
+    alternatives = b"|".join(re.escape(key) for key in sorted(table, key=len, reverse=True))
+    pattern = re.compile(
+        rb"(?<![" + _NAME_BYTES + rb"/\\])(" + alternatives + rb")(?![" + _NAME_BYTES + rb"])",
+        re.IGNORECASE if _CASE_INSENSITIVE else 0,
+    )
+
+    def rewrite(data: bytes) -> Tuple[bytes, int]:
+        return pattern.subn(lambda found: table[found.group(1).lower() if _CASE_INSENSITIVE else found.group(1)], data)
+
+    return rewrite
+
+
+def _read_activation_script(path: Path) -> Optional[bytes]:
+    """The bytes of a text script of at most _MAX_SCRIPT_BYTES that is not a launcher or a shebang script."""
+    try:
+        if path.stat().st_size > _MAX_SCRIPT_BYTES:
+            return None
+        data = path.read_bytes()
+    except OSError:
+        return None
+    return None if data[:2] in (b"MZ", b"#!") or b"\x00" in data[:512] else data
+
+
+def _relink_activation_scripts(
+    venv_dir: Path,
+    old_venv: str,
+    new_venv: str,
+    mapper: PathMapper,
+    report: RelinkReport,
+    dry_run: bool,
+) -> Tuple[int, List[str]]:
+    """Writes the new path of a moved virtualenv into its activation scripts (activate, activate.bat, ...).
+
+    Those scripts hold the venv's path as text: activating a moved venv would put its old folder on PATH. Returns
+    how many scripts were rewritten (in a dry run: would be) and the names of those that could not be written.
+    """
+    rewrite = _activation_rewriter(old_venv, new_venv)
+    repointed = 0
+    stuck: List[str] = []
+    if rewrite is None:
+        return repointed, stuck
+    for path in _console_script_files(venv_dir):
+        if not _ACTIVATION_NAME_RE.match(path.name):
+            continue
+        try:
+            data = _read_activation_script(path)
+            if data is None:
+                continue
+            updated, count = rewrite(data)
+            if not count or updated == data:
+                continue
+            if dry_run:
+                mapped_file = mapper.map(str(path)) or str(path)
+                report.updated.append({"file": mapped_file, "agent": _ACTIVATION_AGENT, "paths": count})
+                repointed += 1
+                continue
+            script = AgentFile(path=path, agent=_ACTIVATION_AGENT, kind="activation", backup=True)
+            if _write_agent_file(script, updated, report):
+                report.updated.append({"file": str(path), "agent": _ACTIVATION_AGENT, "paths": count})
+                repointed += 1
+            else:
+                stuck.append(path.name)
+        except Exception as err:
+            report.errors.append({"file": str(path), "error": str(err)})
+    return repointed, stuck
+
+
+def _path_elsewhere(path: Path, base: Path, root: str) -> Optional[str]:
+    """`path`, which lies under `base`, as it is spelled under `root` instead (in the style of root)."""
+    try:
+        parts = path.relative_to(base).parts
+    except ValueError:
+        return None
+    sep = "\\" if "\\" in root else "/"
+    return root.rstrip("\\/") + "".join(sep + part for part in parts)
+
+
+def _name_list(names: Sequence[str], limit: int = 5) -> str:
+    """names for a warning: the first few, then how many more."""
+    return ", ".join(names[:limit]) + (f" and {len(names) - limit} more" if len(names) > limit else "")
+
+
 def _relink_virtualenvs(
     moves: Sequence[Move],
     mapper: PathMapper,
     report: RelinkReport,
     dry_run: bool = False,
 ) -> None:
-    """Updates moved Python virtualenvs: their .pth, .egg-link and editable finder files, and the interpreter
-    path in their console scripts (pip launchers, scripts with a shebang).
+    """Updates moved Python virtualenvs: their .pth, .egg-link and editable finder files, the interpreter path in
+    their console scripts (pip launchers, scripts with a shebang) and the path in their activation scripts.
 
     A venv is listed only when one of its files was rewritten (or, in a dry run, would be): a venv that already
-    follows the move has nothing left to change. A console script that cannot be rewritten is warned about.
+    follows the move has nothing left to change. A console or activation script that cannot be rewritten is
+    warned about.
     """
     seen_venvs: Set[str] = set()
     for old_path, new_path in moves:
         new_p = Path(new_path)
         old_p = Path(old_path)
         if _is_dir(new_p):
-            base = new_p
+            base, other_root, at_new_place = new_p, old_path, True
         elif dry_run and _is_dir(old_p):
-            base = old_p
+            base, other_root, at_new_place = old_p, new_path, False
         else:
             continue
         for venv_dir in _candidate_venv_dirs(base):
@@ -2184,16 +2315,28 @@ def _relink_virtualenvs(
                         report.errors.append({"file": str(af.path), "error": str(err)})
 
             repointed, stuck = _relink_console_scripts(venv_dir, mapper, report, dry_run)
-            if rewritten or repointed:
+            there = str(venv_dir)
+            elsewhere = _path_elsewhere(venv_dir, base, other_root)
+            activated, unwritten = 0, []
+            if elsewhere is not None:
+                old_venv, new_venv = (elsewhere, there) if at_new_place else (there, elsewhere)
+                activated, unwritten = _relink_activation_scripts(venv_dir, old_venv, new_venv, mapper, report, dry_run)
+            if rewritten or repointed or activated:
                 if reported_venv not in report.venvs:
                     report.venvs.append(reported_venv)
             if repointed:
                 report.console_scripts[reported_venv] = report.console_scripts.get(reported_venv, 0) + repointed
+            if activated:
+                report.activation_scripts[reported_venv] = report.activation_scripts.get(reported_venv, 0) + activated
             if stuck:
-                names = ", ".join(stuck[:5]) + (f" and {len(stuck) - 5} more" if len(stuck) > 5 else "")
                 report.warnings.append(
                     f"Python venv {reported_venv}: console scripts of that venv could not be repointed and may "
-                    f"still start the old path ({names}); fix with `uv sync --reinstall` or a fresh venv."
+                    f"still start the old path ({_name_list(stuck)}); fix with `uv sync --reinstall` or a fresh venv."
+                )
+            if unwritten:
+                report.warnings.append(
+                    f"Python venv {reported_venv}: activation scripts of that venv could not be repointed and "
+                    f"still name the old folder ({_name_list(unwritten)}); recreate the venv or edit them."
                 )
 
 

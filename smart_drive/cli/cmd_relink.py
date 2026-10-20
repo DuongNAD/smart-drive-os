@@ -50,9 +50,12 @@ def print_relink(report: Optional[RelinkReport], busy_hint_when_idle: bool = Tru
 
     venv_verb = "would be updated" if report.dry_run else "updated"
     for venv in report.venvs:
-        scripts = report.console_scripts.get(venv, 0)
-        noun = "console script" if scripts == 1 else "console scripts"
-        note = f" ({scripts} {noun} {'would be repointed' if report.dry_run else 'repointed'})" if scripts else ""
+        counted = (
+            (report.console_scripts.get(venv, 0), "console script"),
+            (report.activation_scripts.get(venv, 0), "activation script"),
+        )
+        what = " and ".join(f"{count} {noun}{'' if count == 1 else 's'}" for count, noun in counted if count)
+        note = f" ({what} {'would be repointed' if report.dry_run else 'repointed'})" if what else ""
         print(f"  ✓ Python venv {venv_verb}: {venv}{note}")
 
     idle = not report.changed and not report.warnings and not report.errors
