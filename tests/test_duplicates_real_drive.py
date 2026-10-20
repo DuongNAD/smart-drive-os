@@ -15,6 +15,7 @@ import io
 import json
 import shutil
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -334,6 +335,90 @@ class TestDupCommandMinSize(_Tree):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as refused:
             self.run_dup("--min-size", "lots")
         self.assertEqual(refused.exception.code, 2)
+
+
+class TestHashingRunsInParallel(_Tree):
+    """Opening a file is what costs (Windows Defender scans it): the opens overlap, the answer does not change."""
+
+    def seed_mixed_tree(self) -> None:
+        head, tail = b"H" * 8192, b"T" * 8192
+        for i in range(12):  # real duplicates of different sizes, three copies each
+            payload = (f"payload {i} ".encode() * (50 + 400 * i))[: 300 + 2500 * i]
+            for copy in range(3):
+                self.write(f"set{i % 4}/dir{copy}/file{i}.bin", payload)
+        for i in range(6):  # same size, same head and tail, different middle: only the full hash tells them apart
+            self.write(f"lookalikes/a{i}.bin", head + bytes([i]) * 20000 + tail)
+            self.write(f"lookalikes/b{i}.bin", head + bytes([i + 100]) * 20000 + tail)
+        for i in range(5):
+            self.write(f"unique/u{i}.bin", b"u" * (i + 1))
+
+    def expected_groups(self) -> List[List[str]]:
+        """Duplicate groups worked out independently of the detector: whole-file SHA-256 of every file."""
+        import hashlib
+
+        by_digest: Dict[str, List[str]] = {}
+        for path in sorted(self.root.rglob("*")):
+            if path.is_file():
+                by_digest.setdefault(hashlib.sha256(path.read_bytes()).hexdigest(), []).append(path.relative_to(self.root).as_posix())
+        return sorted(sorted(files) for files in by_digest.values() if len(files) > 1)
+
+    def test_the_groups_are_the_same_whatever_the_number_of_workers(self) -> None:
+        self.seed_mixed_tree()
+        sequential = self.detector(workers=1).generate_reclamation_plan()
+        parallel = self.detector(workers=8).generate_reclamation_plan()
+        self.assertEqual(sequential, parallel)  # same groups, same order, same counts
+        found = sorted(sorted(self.rel(f) for f in g["files"]) for g in parallel["duplicate_groups"])
+        self.assertEqual(found, self.expected_groups())
+        self.assertEqual(parallel["duplicate_group_count"], 12)
+
+    def test_what_was_opened_is_reported(self) -> None:
+        self.write("u1", b"x" * 11)
+        self.write("u2", b"x" * 12)  # alone with its size
+        self.write("d1", b"d" * 3000)
+        self.write("d2", b"d" * 3000)  # real duplicates: hashed on the head, then in full
+        self.write("e1", b"1" * 20000)
+        self.write("e2", b"2" * 20000)  # same size, different head: the partial hash settles it
+        plan = self.detector().generate_reclamation_plan()
+        self.assertEqual(plan["files_scanned"], 6)
+        self.assertEqual(plan["size_candidate_files"], 4)
+        self.assertEqual(plan["files_partially_hashed"], 4)
+        self.assertEqual(plan["files_fully_hashed"], 2)
+
+    def test_several_files_are_hashed_at_the_same_time(self) -> None:
+        for name in ("a1", "a2"):
+            self.write(f"x/{name}.bin", b"a" * 500)
+        for name in ("b1", "b2"):
+            self.write(f"y/{name}.bin", b"b" * 600)
+        meet = threading.Barrier(2, timeout=20)  # two files must be inside the hash function together, or this breaks
+        real = duplicates.compute_partial_hash
+
+        def partial(path: str, *args: Any, **kwargs: Any) -> str:
+            meet.wait()
+            return real(path, *args, **kwargs)
+
+        with patch.object(duplicates, "compute_partial_hash", partial):
+            plan = self.detector(workers=2).generate_reclamation_plan()
+
+        self.assertEqual(plan["duplicate_group_count"], 2)
+
+    def test_a_file_that_cannot_be_read_is_left_out_of_its_group(self) -> None:
+        for name in ("a", "b", "bad"):
+            self.write(f"{name}.bin", b"same" * 100)
+        real = duplicates.compute_partial_hash
+
+        def partial(path: str, *args: Any, **kwargs: Any) -> str:
+            return "" if path.endswith("bad.bin") else real(path, *args, **kwargs)  # what an OSError turns into
+
+        with patch.object(duplicates, "compute_partial_hash", partial):
+            plan = self.detector().generate_reclamation_plan()
+
+        self.assertEqual(self.reported(plan), ["a.bin", "b.bin"])
+
+    def test_the_number_of_workers_is_at_least_one(self) -> None:
+        self.assertEqual(self.detector().workers, duplicates.HASH_WORKERS)
+        self.assertEqual(self.detector(workers=0).workers, 1)
+        self.assertEqual(self.detector(workers=-4).workers, 1)
+        self.assertEqual(self.detector(workers=3).workers, 3)
 
 
 class TestExistingScanOptionsKeepWorking(_Tree):
