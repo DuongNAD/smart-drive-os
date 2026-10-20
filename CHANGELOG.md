@@ -24,6 +24,15 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   and `--fix` leaves them alone, as `relink --find --apply` does. A folder that holds what the shortcut or `PATH` entry
   pointed to inside the old one is still `same-name`. Agent and IDE entries matched by their name alone, which the
   report listed as "not found", are shown the same way.
+- `relink --dry-run` no longer asks to close coding agents the run does not touch, and `relink` asks to restart them
+  only after it changed one of their config files. The dry run listed every running agent under "Close these before
+  --apply", and the real run ended with "Restart the coding agents that are open...", also when all it changed were a
+  virtual environment's console or activation scripts, editable installs, Windows shortcuts or git worktrees, which no
+  running agent holds. The hint now names only the running agents whose own config files would change (the ones the
+  real run warns about) and reads "Close these before running it without --dry-run" (`relink` applies by default;
+  `--apply` only goes with `--find`), and the restart lines appear only when an agent's config file was rewritten.
+  `organize`, `undo`, `classify` and `paths` print what they printed before, and `busy_apps` in the `--json` of
+  `organize` and `undo` still lists every running agent.
 
 ## [1.4.1] - 2026-10-20
 

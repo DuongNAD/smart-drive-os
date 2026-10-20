@@ -4,6 +4,9 @@ Running relink again for a move that was already relinked finds nothing to do. T
 no Python venv "updated", no console-script warning and no git worktree "repaired", in a dry run and in the real
 run alike, so that the command ends with "Nothing left to change" instead of claiming work that did not happen.
 
+It also asks to close or restart a coding agent only when one of that agent's own config files changes: a venv,
+an editable install or a shortcut is no agent's file.
+
 100% isolated: every test uses a fake home and fake AppData inside a temporary directory and never reads or
 writes real coding agent configuration files on the host machine.
 """
@@ -22,8 +25,9 @@ import unittest
 from typing import Any, Dict, List, Sequence, Tuple
 from unittest.mock import patch
 
+from smart_drive.cli.cmd_relink import print_relink
 from smart_drive.cli.main import main as cli_main
-from smart_drive.core.relink import AgentFile, PathMapper, RelinkReport, relink
+from smart_drive.core.relink import AgentFile, NOT_AGENT_CONFIGS, PathMapper, RelinkReport, relink
 import smart_drive.core.relink as relink_core
 from tests.helpers import SmartDriveTestCase
 
@@ -36,7 +40,12 @@ class TestRelinkUpToDate(SmartDriveTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.fake_home = self.test_dir / "fake_home"
-        self.fake_appdata = self.fake_home / "AppData" / "Roaming"
+        # macOS looks for AppData under <home>/Library/Application Support, whatever APPDATA says
+        self.fake_appdata = (
+            self.fake_home / "Library" / "Application Support"
+            if sys.platform == "darwin"
+            else self.fake_home / "AppData" / "Roaming"
+        )
         self.fake_temp = self.test_dir / "sys_temp"
         self.fake_home.mkdir(parents=True, exist_ok=True)
         self.fake_appdata.mkdir(parents=True, exist_ok=True)
@@ -95,6 +104,22 @@ class TestRelinkUpToDate(SmartDriveTestCase):
         pth_file = sp_dir / pth_name
         pth_file.write_text("".join(f"{line}\n" for line in pth_lines), encoding="utf-8")
         return pth_file
+
+    @staticmethod
+    def _file_uri(path: Path) -> str:
+        """The file URI under which VS Code remembers a folder."""
+        if sys.platform == "win32":
+            return "file:///" + path.as_posix().replace(":", "%3A", 1)
+        return "file://" + path.as_posix()
+
+    def _vscode_remembers(self, *folders: Path) -> Path:
+        """VS Code's storage.json in the fake AppData, with the given folders among its open ones; returns it."""
+        storage = self.fake_appdata / "Code" / "User" / "globalStorage" / "storage.json"
+        storage.parent.mkdir(parents=True, exist_ok=True)
+        remembered = [{"folderUri": self._file_uri(folder)} for folder in folders]
+        payload = {"backupWorkspaces": {"folders": remembered, "workspaces": []}}
+        storage.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return storage
 
     @staticmethod
     def _console_script_warnings(report: RelinkReport) -> List[str]:
@@ -441,12 +466,15 @@ class TestRelinkUpToDate(SmartDriveTestCase):
         old_proj = drive / "my_pkg"
         new_proj = drive / "03_Development_Projects" / "my_pkg"
         self._make_venv(new_proj / ".venv", [str(old_proj / "src")])
+        self._vscode_remembers(old_proj)  # a coding agent's own file to change, which a venv alone is not
         move = ["relink", str(old_proj), str(new_proj), "--root", str(drive)]
 
         with patch("smart_drive.core.relink._running_processes", return_value={"Code.exe"}):
             rc, pending = self._cli(move + ["--dry-run"])
             self.assertEqual(rc, 0, pending)
-            self.assertIn("Close these before --apply: VS Code", pending)  # there is something to apply
+            # there is something to apply; relink applies by default, so --apply is not the way to do it
+            self.assertIn("Close these before running it without --dry-run: VS Code", pending)
+            self.assertNotIn("--apply", pending)
 
             rc, applied = self._cli(move)
             self.assertEqual(rc, 0, applied)
@@ -460,6 +488,116 @@ class TestRelinkUpToDate(SmartDriveTestCase):
         self.assertTrue(idle_dry.endswith(done), idle_dry)
         self.assertNotIn("Close these", idle_dry)
         self.assertEqual(idle_dry.split("\n", 1)[1], idle_real.split("\n", 1)[1])
+
+    def test_17_a_venv_alone_never_asks_to_close_or_restart_an_agent(self) -> None:
+        drive = self.test_dir / "drive"
+        old_proj = drive / "my_pkg"
+        new_proj = drive / "03_Development_Projects" / "my_pkg"
+        venv_dir = new_proj / ".venv"
+        self._make_venv(venv_dir, [str(old_proj / "src")])
+        move = ["relink", str(old_proj), str(new_proj), "--root", str(drive)]
+
+        with patch("smart_drive.core.relink._running_processes", return_value={"Code.exe", "claude.exe"}):
+            rc, preview = self._cli(move + ["--dry-run"])
+            self.assertEqual(rc, 0, preview)
+            rc, applied = self._cli(move)
+            self.assertEqual(rc, 0, applied)
+
+        # No coding agent holds a venv's files: there is nothing to close before and nothing to restart after
+        self.assertIn(f"Python venv would be updated: {venv_dir}", preview)
+        self.assertNotIn("Close these", preview)
+        self.assertIn(f"Python venv updated: {venv_dir}", applied)
+        for said in ("Restart the coding agents", "If one of them was open", "is running"):
+            self.assertNotIn(said, applied)
+
+    def test_18_only_the_agents_whose_own_files_change_are_asked_to_close_and_restart(self) -> None:
+        drive = self.test_dir / "drive"
+        old_proj = drive / "my_pkg"
+        new_proj = drive / "03_Development_Projects" / "my_pkg"
+        self._make_venv(new_proj / ".venv", [str(old_proj / "src")])
+        storage = self._vscode_remembers(old_proj)  # of the two apps that run, only VS Code remembers the old folder
+        move = ["relink", str(old_proj), str(new_proj), "--root", str(drive)]
+
+        with patch("smart_drive.core.relink._running_processes", return_value={"Code.exe", "claude.exe"}):
+            rc, preview = self._cli(move + ["--dry-run"])
+            self.assertEqual(rc, 0, preview)
+            rc, applied = self._cli(move)
+            self.assertEqual(rc, 0, applied)
+
+        closing = [line for line in preview.splitlines() if "Close these" in line]
+        self.assertEqual(closing, ["  ! Close these before running it without --dry-run: VS Code"])
+        self.assertIn(self._file_uri(new_proj), storage.read_text(encoding="utf-8"))
+        # relink's own warning names the same agent, and the restart advice follows
+        running = [line for line in applied.splitlines() if "is running" in line]
+        self.assertEqual(len(running), 1, applied)
+        self.assertTrue(running[0].startswith("  ! VS Code is running: "), running[0])
+        self.assertIn("  Restart the coding agents that are open so they load the new paths", applied)
+        self.assertIn("  If one of them was open during the move, run `smart-drive relink` again", applied)
+
+    def test_19_find_apply_dry_run_asks_to_close_the_same_agents_in_the_same_words(self) -> None:
+        drive = self.test_dir / "drive"
+        old_proj = drive / "my_pkg"
+        new_proj = drive / "03_Development_Projects" / "my_pkg"
+        (new_proj / "src").mkdir(parents=True)
+        self._vscode_remembers(old_proj / "src")  # inside the old folder, so that --find marks the new one with a tick
+
+        with patch("smart_drive.core.relink._running_processes", return_value={"Code.exe", "claude.exe"}):
+            rc, out = self._cli(["relink", "--find", "--apply", "--dry-run", "--root", str(drive)])
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"✓ {old_proj} -> {new_proj}  (same-name; VS Code)", out)
+        closing = [line for line in out.splitlines() if "Close these" in line]
+        self.assertEqual(closing, ["  ! Close these before running it without --dry-run: VS Code"])
+        self.assertNotIn("before --apply", out)
+
+    def test_20_print_relink_without_relink_only_prints_what_organize_undo_classify_and_paths_print(self) -> None:
+        def printed(dry_run: bool, **options: bool) -> str:
+            report = RelinkReport(
+                dry_run=dry_run,
+                updated=[{"file": "f", "agent": "Python venv", "paths": 1}],
+                venvs=["v"],
+                busy_apps=["Claude Code"],
+            )
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                print_relink(report, **options)
+            return out.getvalue()
+
+        self.assertIn("  ! Close these before --apply: Claude Code\n", printed(True))
+        restart = printed(False)
+        self.assertIn("  Restart the coding agents that are open so they load the new paths", restart)
+        self.assertIn("  If one of them was open during the move, run `smart-drive relink` again", restart)
+        # `smart-drive relink` itself leaves both out: a venv is no coding agent's file
+        for dry_run in (True, False):
+            text = printed(dry_run, relink_only=True)
+            self.assertNotIn("Close these", text)
+            self.assertNotIn("Restart the coding agents", text)
+            self.assertNotIn("If one of them was open", text)
+
+    def test_21_relink_only_asks_to_close_and_restart_only_for_an_agents_own_files(self) -> None:
+        def printed(labels: Sequence[str], dry_run: bool) -> str:
+            report = RelinkReport(
+                dry_run=dry_run,
+                updated=[{"file": "f", "agent": label, "paths": 1} for label in labels],
+                busy_apps=["Claude Code", "VS Code"],
+            )
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                print_relink(report, relink_only=True)
+            return out.getvalue()
+
+        for label in sorted(NOT_AGENT_CONFIGS):
+            for dry_run in (True, False):
+                with self.subTest(label=label, dry_run=dry_run):
+                    text = printed([label], dry_run)
+                    self.assertNotIn("Close these", text)
+                    self.assertNotIn("Restart the coding agents", text)
+
+        # One agent's own file among them is enough, and then only the busy agents that have one are named
+        self.assertIn(
+            "  ! Close these before running it without --dry-run: VS Code\n", printed(["Python venv", "VS Code"], True)
+        )
+        self.assertIn("  Restart the coding agents that are open", printed(["Python venv", "VS Code"], False))
 
 
 if __name__ == "__main__":

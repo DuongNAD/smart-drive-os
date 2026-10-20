@@ -13,6 +13,7 @@ from smart_drive.core.relink import (
     BACKUP_SUFFIX,
     Move,
     MovedFolder,
+    NOT_AGENT_CONFIGS,
     RelinkReport,
     agents_still_running,
     calling_agents,
@@ -24,11 +25,16 @@ from smart_drive.core.relink import (
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 
 
-def print_relink(report: Optional[RelinkReport], busy_hint_when_idle: bool = True) -> None:
+def print_relink(report: Optional[RelinkReport], busy_hint_when_idle: bool = True, relink_only: bool = False) -> None:
     """Prints a human-readable summary of a RelinkReport.
 
     A dry run lists the running coding agents under "Close these before --apply". When it has nothing to apply,
     busy_hint_when_idle=False leaves that out, so that it ends like the real run: "Nothing left to change".
+
+    relink_only=True is `smart-drive relink` itself, which moves nothing: only the running agents whose own config
+    files change need to close, its real run is the same command without --dry-run, and agents need a restart only
+    when one of their config files changed. A change to a file of NOT_AGENT_CONFIGS (a venv, an editable install or a
+    shortcut) calls for neither.
     """
     if report is None:
         return
@@ -66,12 +72,20 @@ def print_relink(report: Optional[RelinkReport], busy_hint_when_idle: bool = Tru
         print(f"  ! {warning}")
 
     if report.dry_run and report.busy_apps and (busy_hint_when_idle or not idle):
-        print(f"  ! Close these before --apply: {', '.join(report.busy_apps)}")
+        if relink_only:
+            # Only the agents whose own config files change, the rule of the warning at the end of relink()
+            closing = sorted(set(report.agents) & set(report.busy_apps))
+            if closing:
+                print(f"  ! Close these before running it without --dry-run: {', '.join(closing)}")
+        else:
+            print(f"  ! Close these before --apply: {', '.join(report.busy_apps)}")
 
     for err in report.errors:
         print(f"  ✗ {err['file']}: {err['error']}")
 
-    if not report.dry_run and report.updated:
+    # A venv, an editable install or a shortcut is no coding agent's file, so none of them has to restart for it
+    restart = any(agent not in NOT_AGENT_CONFIGS for agent in report.agents) if relink_only else bool(report.updated)
+    if not report.dry_run and restart:
         print(
             "  Restart the coding agents that are open so they load the new paths "
             f"(backups: <file>{BACKUP_SUFFIX})."
@@ -265,7 +279,7 @@ def cmd_relink(args: argparse.Namespace) -> int:
             reason = "no folder is marked ✓ or confirmed" if asked else "no folder is marked ✓"
             print(f"  Nothing to relink: {reason}.")
         elif report is not None:
-            print_relink(report, busy_hint_when_idle=False)
+            print_relink(report, busy_hint_when_idle=False, relink_only=True)
 
         return 1 if (report is not None and report.errors) else 0
 
@@ -325,7 +339,7 @@ def cmd_relink(args: argparse.Namespace) -> int:
     else:
         header = "Coding agents (dry-run preview):" if dry_run else "Coding agents relinked:"
         print(header)
-        print_relink(report, busy_hint_when_idle=False)
+        print_relink(report, busy_hint_when_idle=False, relink_only=True)
 
     return 1 if report.errors else 0
 
