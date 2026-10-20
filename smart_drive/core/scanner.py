@@ -180,6 +180,12 @@ class FastDirectoryScanner:
         self._exclude_dirs_lower: Set[str] = {
             d.lower().replace("\\", "/").strip("/") for d in self.exclude_dirs
         }
+        # A multi-segment exclusion ("a/b") can only match a path whose last segment is its own last one ("b"),
+        # so the per-segment test below runs for the few entries with such a name, not for every entry.
+        self._compound_exclude_tails: Set[str] = {
+            d.rsplit("/", 1)[1] for d in self._exclude_dirs_lower if "/" in d
+        }
+        self._skip_requested = False
 
         self.stats = ScanStats()
         self.errors: List[ScanError] = []
@@ -232,6 +238,14 @@ class FastDirectoryScanner:
         else:
             logger.warning("Scanner error [%s] on %s: %s", error_type, path, msg)
 
+    def skip_descent(self) -> None:
+        """Do not list the contents of the directory entry that `scan_iter` yielded last.
+
+        Call it while holding that entry. For consumers that treat a whole directory as one item (junk caches
+        that are purged as a unit), so its files are not scanned, one by one, to be thrown away again.
+        """
+        self._skip_requested = True
+
     def scan_iter(self) -> Iterator[ScanEntry]:
         """Stream ScanEntry records iteratively using stack-based DFS.
 
@@ -239,10 +253,13 @@ class FastDirectoryScanner:
             ScanEntry: Slotted metadata record for each discovered item.
         """
         t0 = time.perf_counter()
-        stack: List[Tuple[str, int]] = [(self.root_path, 0)]
+        # (directory, depth, its path relative to the root with '/'): children extend it instead of re-deriving
+        # it from the absolute path (two normpath calls and a relpath per entry were a fifth of a scan)
+        stack: List[Tuple[str, int, str]] = [(self.root_path, 0, "")]
+        compound_tails = self._compound_exclude_tails
 
         while stack:
-            current_dir, depth = stack.pop()
+            current_dir, depth, current_rel = stack.pop()
 
             try:
                 scandir_it = os.scandir(current_dir)
@@ -275,27 +292,16 @@ class FastDirectoryScanner:
                         continue
 
                     norm_path = os.path.normpath(entry.path)
-                    rel_path = _normalize_rel_path(norm_path, self.root_path)
-                    rel_path_lower = rel_path.lower().replace("\\", "/").strip("/")
+                    rel_path = f"{current_rel}/{entry_name}" if current_rel else entry_name
 
-                    # Support compound paths and path segment exclusions
-                    if (
-                        rel_path in self.exclude_dirs
-                        or rel_path_lower in self._exclude_dirs_lower
-                    ):
+                    # Support compound paths: a run of segments ending here that names an exclusion. Runs that end
+                    # higher up were tested when that directory was reached (an excluded one is never entered).
+                    if rel_path in self.exclude_dirs:
                         continue
-
-                    parts = rel_path_lower.split("/")
-                    is_excluded = False
-                    for i in range(len(parts)):
-                        for j in range(i + 1, len(parts) + 1):
-                            if "/".join(parts[i:j]) in self._exclude_dirs_lower:
-                                is_excluded = True
-                                break
-                        if is_excluded:
-                            break
-                    if is_excluded:
-                        continue
+                    if entry_name_lower in compound_tails:
+                        parts = rel_path.lower().split("/")
+                        if any("/".join(parts[i:]) in self._exclude_dirs_lower for i in range(len(parts))):
+                            continue
 
                     # 1. Symlink probe and safety guard
                     try:
@@ -325,8 +331,9 @@ class FastDirectoryScanner:
 
                     if is_d:
                         # Add directory to DFS stack if item_depth allows further descent
-                        if self.max_depth is None or item_depth < self.max_depth:
-                            stack.append((norm_path, item_depth))
+                        descends = self.max_depth is None or item_depth < self.max_depth
+                        if descends:
+                            stack.append((norm_path, item_depth, rel_path))
                         self.stats.total_dirs += 1
 
                         if self.yield_dirs:
@@ -338,6 +345,7 @@ class FastDirectoryScanner:
                             except (PermissionError, FileNotFoundError, OSError):
                                 mtime = time.time()
 
+                            self._skip_requested = False
                             yield ScanEntry(
                                 path=norm_path,
                                 rel_path=rel_path,
@@ -353,6 +361,10 @@ class FastDirectoryScanner:
                                 inode=0,
                                 device=0,
                             )
+                            if self._skip_requested:
+                                self._skip_requested = False
+                                if descends:
+                                    stack.pop()  # the directory pushed just above; nothing else was pushed since
                     else:
                         # 3. Regular file probe
                         try:
