@@ -87,6 +87,32 @@ class TestJunkDetectionTiers(SmartDriveTestCase):
         self.assertNotIn(".metadata_never_index", names)
         self.assertNotIn("no_log", names)
 
+    def test_rules_do_not_match_substrings_of_the_path(self) -> None:
+        """User folders whose path merely contains a rule name (build, dist, ._) are never junk."""
+        root = self.test_dir / "drive"
+        user_files = [
+            "Photos/buildings_2024/IMG_1.jpg",
+            "Docs/my_dist_notes/notes.txt",
+            "web/node_modules/lodash._basecopy/index.js",
+        ]
+        for rel in user_files:
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("user data", encoding="utf-8")
+        (root / "proj" / "build").mkdir(parents=True)
+        (root / "proj" / "build" / "out.o").write_bytes(b"x")
+        (root / "unit" / "polaris" / ".cache").mkdir(parents=True)
+        (root / "unit" / "polaris" / ".cache" / "api.json").write_text("{}", encoding="utf-8")
+
+        junk_items = JunkDetector(str(root), max_tier=JunkTier.TIER_3_SENSITIVE).find_junk()
+        rel_paths = {item.rel_path.replace("\\", "/") for item in junk_items}
+
+        for rel in user_files:
+            for prefix in (rel, rel.rsplit("/", 1)[0]):
+                self.assertNotIn(prefix, rel_paths)
+        self.assertIn("proj/build", rel_paths)
+        self.assertIn("unit/polaris/.cache", rel_paths)
+
 
 class TestInviolableWhitelistGuards(SmartDriveTestCase):
     """Tier 1 & Tier 2: Inviolable whitelist safeguards against accidental purges."""

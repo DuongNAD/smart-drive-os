@@ -635,11 +635,15 @@ def match_junk_rule(
             continue
         if rule.tier > max_tier:
             continue
-        if fnmatch.fnmatch(name_lower, rule.pattern.lower()):
+        pattern_lower = rule.pattern.lower()
+        if fnmatch.fnmatch(name_lower, pattern_lower):
             return rule
-        if rel_path:
-            norm_rel_lower = rel_path.strip().replace("\\", "/").lower()
-            if fnmatch.fnmatch(norm_rel_lower, f"*{rule.pattern.lower()}*") or fnmatch.fnmatch(norm_rel_lower, rule.pattern.lower()):
+        # Path rules (e.g. polaris/.cache) match the trailing path components only,
+        # never a substring of the path: Photos/buildings_2024 is not a `build` dir.
+        if rel_path and "/" in pattern_lower:
+            rel_parts = [p for p in rel_path.strip().replace("\\", "/").lower().split("/") if p]
+            depth = len(pattern_lower.split("/"))
+            if len(rel_parts) >= depth and fnmatch.fnmatch("/".join(rel_parts[-depth:]), pattern_lower):
                 return rule
 
     return None
