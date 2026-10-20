@@ -111,10 +111,14 @@ class TestTheHintText(unittest.TestCase):
         holders: List[str],
         retry: str = "organize",
         in_use: Any = (),
+        pins: Any = (),
     ) -> str:
+        """The hint for ``err`` on E:\\project, with what the lookups find replaced by the given answers."""
         with patch.object(move_hint, "watching_repositories", return_value=daemons), patch.object(
             move_hint, "holding_processes", return_value=holders
-        ), patch.object(move_hint, "find_in_use", return_value=list(in_use)):
+        ), patch.object(move_hint, "find_in_use", return_value=list(in_use)), patch.object(
+            move_hint, "_pinned_below", return_value=list(pins)
+        ):
             return move_failure_hint(err, "E:\\project", retry)
 
     def test_a_refused_move_lists_the_usual_holders_and_ends_with_how_to_retry(self) -> None:
@@ -166,7 +170,9 @@ class TestTheHintText(unittest.TestCase):
     def test_a_probe_that_fails_leaves_the_rest_of_the_hint(self) -> None:
         with patch.object(move_hint, "watching_repositories", return_value=["E:\\project\\repo"]), patch.object(
             move_hint, "holding_processes", return_value=["Code (pid 9)"]
-        ), patch.object(move_hint, "find_in_use", side_effect=RuntimeError("probe broke")):
+        ), patch.object(move_hint, "find_in_use", side_effect=RuntimeError("probe broke")), patch.object(
+            move_hint, "_pinned_below", side_effect=AssertionError("nothing is known to be open")
+        ):
             refused = inspect_refused_move(PermissionError("denied"), "E:\\project")
         self.assertEqual(refused.in_use, [])
         self.assertIn("is using the folder", refused.hint)
@@ -237,10 +243,79 @@ class TestTheHintText(unittest.TestCase):
             inspect_refused_move(PermissionError("denied"), str(folder))
         asked.assert_called_once_with(str(folder), also=[str(folder / "sub" / "data.db")])
 
+    # Explorer keeps a change-notification handle on every folder listed in Quick Access. That handle kept
+    # E:\project from being renamed: unpinning alone did not release it and a restart of Windows did not either,
+    # restarting Windows Explorer did.
+
+    PINNED = (
+        "{subject} pinned in Explorer's Quick Access, and Explorer keeps pinned folders open: unpin {object} "
+        "(right-click → Unpin from Quick access), restart Windows Explorer (Task Manager → Windows Explorer → "
+        "Restart) and run organize again"
+    )
+
+    def test_a_folder_pinned_in_quick_access_is_said_plainly_with_how_to_release_it(self) -> None:
+        text = self.hint(PermissionError("denied"), [], [], in_use=[IMAGES], pins=[IMAGES])
+        self.assertEqual(text, f"in use: {IMAGES}; " + self.PINNED.format(subject="that folder is", object="it"))
+
+    def test_the_pin_takes_the_place_of_the_resource_monitor_tip_and_of_the_general_advice(self) -> None:
+        text = self.hint(PermissionError("denied"), [], [], in_use=[IMAGES], pins=[IMAGES])
+        self.assertNotIn("Resource Monitor", text)
+        self.assertNotIn(PLAIN, text)
+        self.assertIn("(right-click → Unpin from Quick access)", text)
+        self.assertIn("(Task Manager → Windows Explorer → Restart)", text)
+        self.assertTrue(text.endswith("and run organize again"), text)
+
+    def test_several_pinned_folders_are_unpinned_one_by_one(self) -> None:
+        pins = ["E:\\project\\a", "E:\\project\\b"]
+        text = self.hint(PermissionError("denied"), [], [], in_use=pins, pins=pins)
+        self.assertEqual(text, "in use: E:\\project\\a, E:\\project\\b; " + self.PINNED.format(subject="those folders are", object="each"))
+
+    def test_a_pinned_folder_that_is_not_among_the_entries_named_is_named_too(self) -> None:
+        text = self.hint(PermissionError("denied"), [], [], in_use=["E:\\project\\repo\\main.py"], pins=["E:\\project\\docs"])
+        self.assertEqual(
+            text,
+            "in use: E:\\project\\repo\\main.py; "
+            + self.PINNED.format(subject="E:\\project\\docs is", object="it"),
+        )
+
+    def test_the_command_of_the_caller_ends_the_advice_about_the_pin(self) -> None:
+        text = self.hint(PermissionError("denied"), [], [], retry="smart-drive undo --apply", in_use=[IMAGES], pins=[IMAGES])
+        self.assertTrue(text.endswith("(Task Manager → Windows Explorer → Restart) and run smart-drive undo --apply again"), text)
+
+    def test_a_pin_does_not_hide_the_process_or_the_daemon_that_was_named(self) -> None:
+        text = self.hint(
+            PermissionError("denied"), ["E:\\project\\repo"], ["Code (pid 9)"], in_use=["E:\\project\\repo\\main.py"], pins=[IMAGES]
+        )
+        self.assertIn("a git fsmonitor daemon is still running in E:\\project\\repo", text)
+        self.assertIn("files in it are held open by Code (pid 9)", text)
+        self.assertIn(f"{IMAGES} is pinned in Explorer's Quick Access", text)
+
+    def test_without_a_pin_the_tip_still_names_explorer(self) -> None:
+        text = self.hint(PermissionError("denied"), [], [], in_use=[IMAGES], pins=[])
+        self.assertIn("explorer.exe (an open Explorer window or Quick Access)", text)
+        self.assertNotIn("pinned in Explorer's Quick Access", text)
+
+    def test_quick_access_is_only_asked_when_something_is_open_and_never_makes_the_hint_fail(self) -> None:
+        asked = MagicMock(return_value=[IMAGES])
+        with patch.object(move_hint, "watching_repositories", return_value=[]), patch.object(
+            move_hint, "holding_processes", return_value=[]
+        ), patch.object(move_hint, "find_in_use", return_value=[]), patch.object(move_hint, "_pinned_below", asked):
+            move_failure_hint(PermissionError("denied"), "E:\\project")
+        asked.assert_not_called()
+        with patch.object(move_hint, "watching_repositories", return_value=[]), patch.object(
+            move_hint, "holding_processes", return_value=[]
+        ), patch.object(move_hint, "find_in_use", return_value=[IMAGES]), patch.object(
+            move_hint, "_pinned_below", side_effect=RuntimeError("powershell broke")
+        ):
+            text = move_failure_hint(PermissionError("denied"), "E:\\project")
+        self.assertEqual(text, f"in use: {IMAGES}; {UNNAMED}")
+
     def test_the_findings_come_back_with_the_hint(self) -> None:
         with patch.object(move_hint, "watching_repositories", return_value=[]), patch.object(
             move_hint, "holding_processes", return_value=[]
-        ), patch.object(move_hint, "find_in_use", return_value=[IMAGES]):
+        ), patch.object(move_hint, "find_in_use", return_value=[IMAGES]), patch.object(
+            move_hint, "_pinned_below", return_value=[]
+        ):
             refused = inspect_refused_move(PermissionError(errno.EACCES, "Access is denied"), "E:\\project", "organize")
         self.assertIsInstance(refused, RefusedMove)
         self.assertEqual(refused.in_use, [IMAGES])
@@ -349,6 +424,36 @@ class TestHoldingProcesses(unittest.TestCase):
         self.assertIsInstance(holding_processes(str(self.folder / "sub")), list)
 
 
+class TestPinnedBelow(unittest.TestCase):
+    """Which of the folders in Explorer's Quick Access are inside the folder that cannot be moved."""
+
+    def setUp(self) -> None:
+        self.base = Path(tempfile.mkdtemp(prefix="sd_pins_")).resolve()
+        self.addCleanup(shutil.rmtree, self.base, onerror=_force_remove)
+        for relative in ("moved/a/Images", "moved/b", "elsewhere/c", "moved_not/d"):
+            (self.base / relative).mkdir(parents=True)
+
+    def pinned(self, listed: List[str]) -> List[str]:
+        with patch.object(move_hint, "quick_access_folders", return_value=listed):
+            return move_hint._pinned_below(str(self.base / "moved"))
+
+    def test_the_folders_inside_and_the_folder_itself_are_found(self) -> None:
+        inside = str(self.base / "moved" / "a" / "Images")
+        itself = str(self.base / "moved")
+        listed = [inside, str(self.base / "elsewhere" / "c"), itself, str(self.base / "moved" / "b")]
+        self.assertEqual(self.pinned(listed), [inside, itself, str(self.base / "moved" / "b")])
+
+    def test_a_folder_that_only_starts_like_it_or_lies_above_it_is_not_inside(self) -> None:
+        self.assertEqual(self.pinned([str(self.base / "moved_not" / "d"), str(self.base / "moved_not"), str(self.base)]), [])
+
+    def test_a_pin_whose_folder_is_gone_cannot_hold_anything(self) -> None:
+        gone = str(self.base / "moved" / "deleted_since_it_was_pinned")
+        self.assertEqual(self.pinned([gone]), [])
+
+    def test_nothing_listed_gives_nothing(self) -> None:
+        self.assertEqual(self.pinned([]), [])
+
+
 class TestRefusedMovesAreExplained(SmartDriveTestCase):
     """The three ways smart-drive moves a folder give the same advice when Windows refuses."""
 
@@ -364,6 +469,7 @@ class TestRefusedMovesAreExplained(SmartDriveTestCase):
             patch.object(move_hint, "watching_repositories", return_value=["E:\\p\\r"]),
             patch.object(move_hint, "holding_processes", return_value=["Code (pid 9)"]),
             patch.object(move_hint, "find_in_use", return_value=[]),
+            patch.object(move_hint, "_pinned_below", return_value=[]),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -481,6 +587,19 @@ class TestRefusedMovesAreExplained(SmartDriveTestCase):
         self.assertTrue(entry["error"].endswith(f"(in use: {IMAGES}; {UNNAMED})"), entry["error"])
         self.assertTrue((proj / "package.json").is_file())
 
+    def test_organize_says_when_a_pinned_folder_is_what_keeps_the_folder_open(self) -> None:
+        _drive, proj, zoner, plan = self.planned_app()
+        images = proj / "datathon-2026-round-1" / "Nop_bai" / "Images"
+        images.mkdir(parents=True)
+        with self.found_in_use([str(images)]), patch.object(
+            move_hint, "_pinned_below", return_value=[str(images)]
+        ), patch("smart_drive.core.auto_zoner.os.rename", side_effect=PermissionError(errno.EACCES, "Access is denied")):
+            res = zoner.apply_plan(plan)
+        entry = res["errors"][0]
+        self.assertEqual(entry["in_use"], [str(images)])
+        self.assertIn(f"in use: {images}; that folder is pinned in Explorer's Quick Access", entry["error"])
+        self.assertTrue(entry["error"].endswith("restart Windows Explorer (Task Manager → Windows Explorer → Restart) and run organize again)"))
+
     def test_organize_has_nothing_in_use_when_none_was_found_and_for_other_failures(self) -> None:
         for number, err in enumerate((PermissionError(errno.EACCES, "Access is denied"), OSError("disk on fire"))):
             with self.subTest(err=repr(err)):
@@ -578,6 +697,7 @@ class TestARealRefusedMove(SmartDriveTestCase):
             patch("smart_drive.core.relink._resolve_locations", return_value=(fake_home, fake_appdata, False)),
             patch("smart_drive.core.relink._running_processes", return_value=set()),
             patch("smart_drive.core.system_refs.SystemRefIndex.collect", return_value=SystemRefIndex([])),
+            patch.object(move_hint, "quick_access_folders", return_value=[]),  # not the user's real Quick Access
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
