@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from smart_drive.core.auto_zoner import AutoZoner
-from smart_drive.core.relink import after_moves, relink
+from smart_drive.core.relink import last_undoable_moves, relink
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 
 
@@ -70,6 +70,9 @@ I18N_STRINGS: Dict[str, Dict[str, str]] = {
         "retrying": "Retrying relink and post-move verification...",
         "undoing": "Undoing batch via `smart-drive undo --apply`...",
         "undo_done": "Undo completed: restored {restored} item(s) to original locations.",
+        "undo_partial": "Undo only partly done: restored {restored} item(s), {failed} could not be moved back. Close the apps using them and run `smart-drive undo --apply` again.",
+        "undo_not_this_run": "Nothing was undone: this run moved no folders, or the move journal does not match this run. Review the latest batch with `smart-drive undo`.",
+        "retry_no_moves": "This run moved no folders, so there is nothing to retry.",
         "kept_done": "Changes kept. Safe organization complete!",
         "selftest_ok": "[SELFTEST OK] Read-only Smart_Organize self-test passed (lang={lang}, root={root}).",
     },
@@ -105,6 +108,9 @@ I18N_STRINGS: Dict[str, Dict[str, str]] = {
         "retrying": "Đang thử lại relink và kiểm tra sau khi dời...",
         "undoing": "Đang hoàn tác đợt dời qua `smart-drive undo --apply`...",
         "undo_done": "Đã hoàn tác: trả {restored} mục về vị trí ban đầu.",
+        "undo_partial": "Mới hoàn tác được một phần: trả {restored} mục, còn {failed} mục chưa trả về được. Hãy đóng các ứng dụng đang dùng chúng rồi chạy lại `smart-drive undo --apply`.",
+        "undo_not_this_run": "Chưa hoàn tác gì: lần chạy này không dời thư mục nào, hoặc nhật ký dời không khớp với lần chạy này. Xem đợt gần nhất bằng `smart-drive undo`.",
+        "retry_no_moves": "Lần chạy này không dời thư mục nào nên không có gì để thử lại.",
         "kept_done": "Đã giữ nguyên thay đổi. Hoàn tất dời an toàn!",
         "selftest_ok": "[SELFTEST OK] Kiểm tra tự động Smart_Organize (chỉ đọc) thành công (lang={lang}, root={root}).",
     },
@@ -363,7 +369,6 @@ def run_smart_organize(
     resolved_lang = lang or detect_language()
     root_abs = os.path.abspath(root)
     log_file = get_log_path(root_abs)
-    run_after_moves = after_moves_fn or after_moves
     run_relink = relink_fn or relink
 
     def emit(line: str = "") -> None:
@@ -514,11 +519,13 @@ def run_smart_organize(
         zoner,
     )
     applied_moves = list(zoning_res.get("moved") or [])
-    moved_pairs = [
+    # Exactly what this run moved (and journaled); retry and undo act on these only.
+    applied_pairs = [
         (str(m.get("src")), str(m.get("dest")))
         for m in applied_moves
         if isinstance(m, dict) and m.get("src") and m.get("dest")
     ]
+    moved_pairs = list(applied_pairs)
     if not moved_pairs:
         moved_pairs = [
             (src, dst) for (src, dst) in planned_pairs if os.path.exists(dst)
@@ -603,27 +610,42 @@ def run_smart_organize(
             choice = ""
 
         if choice == "R":
-            emit(t("retrying", resolved_lang))
             append_organize_log(root_abs, "ACTION", "RETRY")
+            if not applied_pairs:
+                emit(t("retry_no_moves", resolved_lang))
+                continue
+            emit(t("retrying", resolved_lang))
+            # The moves are already journaled by the apply step: only re-run the relink.
             try:
-                run_after_moves(root_abs, moved_pairs, "organize")
-            except Exception:
-                pass
+                run_relink(applied_pairs, root=root_abs, dry_run=False)
+            except Exception as err:
+                append_organize_log(root_abs, "RETRY_ERROR", str(err))
             continue
         elif choice == "U":
-            emit(t("undoing", resolved_lang))
             append_organize_log(root_abs, "ACTION", "UNDO")
+            # `smart-drive undo` reverts the latest journal batch: only run it when that batch is this run's.
+            latest = last_undoable_moves(root_abs)
+            if not applied_pairs or latest is None or set(latest.get("moves") or []) != set(applied_pairs):
+                emit(t("undo_not_this_run", resolved_lang))
+                append_organize_log(root_abs, "UNDO_REFUSED", "latest undoable batch is not this run's")
+                continue
+            emit(t("undoing", resolved_lang))
             from smart_drive.cli.cmd_undo import cmd_undo
 
             undo_buf = io.StringIO()
             undo_args = argparse.Namespace(root=root_abs, apply=True, dry_run=False, json=True)
             with redirect_stdout(undo_buf):
-                cmd_undo(undo_args)
+                undo_rc = cmd_undo(undo_args)
             try:
                 undo_rep = json.loads(undo_buf.getvalue().strip() or "{}")
             except json.JSONDecodeError:
                 undo_rep = {}
             restored = int(undo_rep.get("restored_count", 0) or 0)
+            failed = int(undo_rep.get("failed_count", 0) or 0)
+            if undo_rc or failed:
+                emit(t("undo_partial", resolved_lang, restored=restored, failed=max(failed, 1)))
+                append_organize_log(root_abs, "END", f"undo_partial restored={restored} failed={failed}")
+                return 1
             emit(t("undo_done", resolved_lang, restored=restored))
             append_organize_log(
                 root_abs,
