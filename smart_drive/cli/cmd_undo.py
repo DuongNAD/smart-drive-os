@@ -13,7 +13,7 @@ from smart_drive.cli.cmd_organize import get_default_db_path
 from smart_drive.cli.cmd_relink import print_relink
 from smart_drive.core.auto_zoner import _move
 from smart_drive.core.git_locks import watching_repositories
-from smart_drive.core.move_hint import explain_refused_move
+from smart_drive.core.move_hint import inspect_refused_move
 from smart_drive.core.relink import after_moves, last_undoable_moves, record_moves, relink, running_agents
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
@@ -120,7 +120,7 @@ def cmd_undo(args: argparse.Namespace) -> int:
         return 0
 
     executed_moves: List[Tuple[str, str]] = []
-    errors: List[Dict[str, str]] = []
+    errors: List[Dict[str, Any]] = []
     fsmonitor_stopped: List[str] = []
     for src, dest in valid_pairs:
         if not os.path.lexists(src):
@@ -144,10 +144,12 @@ def cmd_undo(args: argparse.Namespace) -> int:
             fsmonitor_stopped.extend(_move(src, dest) or [])
             executed_moves.append((src, dest))
         except OSError as err:
+            refused = inspect_refused_move(err, src, "smart-drive undo --apply")
             errors.append({
                 "src": src,
                 "dest": dest,
-                "error": explain_refused_move(err, src, "smart-drive undo --apply"),
+                "error": refused.explained(),
+                "in_use": refused.in_use,  # what is open below the folder (Windows), [] when unknown
             })
 
     relinked = after_moves(root, executed_moves, "undo") if executed_moves else None
