@@ -1030,6 +1030,119 @@ class TestSmartOrganizeLauncher(unittest.TestCase):
             shutil.rmtree(temp_drive, ignore_errors=True)
 
 
+class TestSmartOrganizeRetryAndUndo(unittest.TestCase):
+    """The guided runner's R (retry) and U (undo) choices act on this run's moves only."""
+
+    def setUp(self) -> None:
+        self.drive = Path(tempfile.mkdtemp(prefix="test_smart_org_choices_"))
+        self.fake_home = Path(tempfile.mkdtemp(prefix="test_smart_org_home_"))
+        (self.fake_home / "AppData" / "Roaming").mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, self.drive, True)
+        self.addCleanup(shutil.rmtree, self.fake_home, True)
+
+    def _make_repo(self, name: str) -> Path:
+        repo = self.drive / name
+        (repo / ".git").mkdir(parents=True)
+        (repo / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        (repo / "pyproject.toml").write_text(f"[project]\nname='{name}'\n", encoding="utf-8")
+        return repo
+
+    def _journal(self) -> list:
+        import json
+
+        path = self.drive / ".smart_drive" / "moves.jsonl"
+        if not path.is_file():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    def _run_flow(self, answers: list, relink_calls: list = None, lang: str = "en") -> tuple:
+        import io
+        from unittest import mock
+        from smart_drive.cli.smart_organize_runner import run_smart_organize
+        from smart_drive.core.system_refs import SystemRefIndex
+
+        answers_it = iter(answers)
+
+        def fake_relink(pairs, dry_run=True, **kwargs):
+            if relink_calls is not None:
+                relink_calls.append((list(pairs), dry_run))
+            return {"busy_apps": [], "changed": []}
+
+        out = io.StringIO()
+        with mock.patch("smart_drive.core.system_refs.SystemRefIndex.collect", return_value=SystemRefIndex([])),              mock.patch(
+                 "smart_drive.core.relink._resolve_locations",
+                 return_value=(self.fake_home, self.fake_home / "AppData" / "Roaming", False),
+             ),              mock.patch("smart_drive.core.relink._running_processes", return_value=set()):
+            rc = run_smart_organize(
+                str(self.drive),
+                lang=lang,
+                input_fn=lambda _prompt: next(answers_it),
+                output_stream=out,
+                relink_fn=fake_relink,
+            )
+        return rc, out.getvalue()
+
+    def test_retry_only_relinks_and_does_not_journal_the_batch_again(self) -> None:
+        self._make_repo("my_service")
+        calls: list = []
+
+        rc, out = self._run_flow(["YES", "R", "R", ""], relink_calls=calls)
+
+        self.assertEqual(rc, 0, out)
+        journal = self._journal()
+        self.assertEqual([rec["tool"] for rec in journal], ["organize"], "retry must not add journal batches")
+        retries = [pairs for pairs, dry_run in calls if not dry_run]
+        self.assertEqual(len(retries), 2)
+        for pairs in retries:
+            self.assertEqual(
+                [(os.path.basename(src), os.path.relpath(dest, self.drive)) for src, dest in pairs],
+                [("my_service", os.path.join("03_Development_Projects", "my_service"))],
+            )
+
+    def test_undo_is_refused_when_this_run_moved_nothing(self) -> None:
+        from unittest import mock
+        from smart_drive.cli.smart_organize_runner import t
+        from smart_drive.core.relink import record_moves
+
+        older_old = self.drive / "older.txt"
+        older_new = self.drive / "02_Learning_Knowledge" / "Notes" / "older.txt"
+        older_new.parent.mkdir(parents=True)
+        older_new.write_text("older batch", encoding="utf-8")
+        record_moves(str(self.drive), [(str(older_old), str(older_new))], "organize")
+        repo = self._make_repo("my_service")
+
+        nothing_moved = {
+            "moved": [],
+            "moved_count": 0,
+            "errors": [{"src": str(repo), "dest": str(self.drive / "x"), "error": "locked"}],
+            "total_bytes_moved": 0,
+            "total_slack_rebalanced": 0,
+        }
+        with mock.patch("smart_drive.core.auto_zoner.AutoZoner.apply_plan", return_value=nothing_moved):
+            rc, out = self._run_flow(["YES", "U", ""])
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn(t("undo_not_this_run", "en"), out)
+        self.assertTrue(older_new.is_file(), "an older, unrelated batch must not be reverted")
+        self.assertFalse(older_old.exists())
+        self.assertTrue(repo.is_dir())
+        self.assertEqual(len(self._journal()), 1)
+
+    def test_undo_failure_is_reported_and_returns_nonzero(self) -> None:
+        from unittest import mock
+
+        self._make_repo("my_service")
+
+        with mock.patch("smart_drive.cli.cmd_undo._move", side_effect=OSError("locked")):
+            rc, out = self._run_flow(["YES", "U"])
+
+        self.assertEqual(rc, 1, out)
+        self.assertIn("Undo only partly done", out)
+        self.assertNotIn("Undo completed", out)
+        self.assertTrue((self.drive / "03_Development_Projects" / "my_service").is_dir())
+        self.assertFalse((self.drive / "my_service").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
 
