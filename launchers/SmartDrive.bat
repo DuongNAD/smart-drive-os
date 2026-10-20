@@ -1,5 +1,6 @@
 @echo off
-setlocal EnableDelayedExpansion
+setlocal DisableDelayedExpansion
+:: Delayed expansion stays off, so an exclamation mark in the folder of this file or in a typed query is kept.
 chcp 65001 >nul
 title SmartDrive-OS - Master 1-Touch Control Center
 
@@ -56,8 +57,11 @@ echo ========================================================
 echo   SmartDrive-OS: Master 1-Touch Control Center
 echo   Autonomous Storage Management for External SSDs
 echo ========================================================
+:: The one line that needs delayed expansion: it shows the drive root exactly as it is, whatever characters it holds.
 if defined SMART_DRIVE_ROOT (
+    setlocal EnableDelayedExpansion
     echo   Drive Root: !SMART_DRIVE_ROOT!
+    endlocal
 ) else (
     echo   Drive Root: ^(auto^)
 )
