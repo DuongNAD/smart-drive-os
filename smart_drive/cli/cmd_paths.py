@@ -40,7 +40,10 @@ def _locate_missing_target(
     """Checks if `target` is missing on a mounted volume and locates where its top missing folder went.
 
     Returns None if `target` exists or is not a valid local path, a dict with `{"unmounted": root}`
-    if its volume is disconnected, or a broken-target resolution dictionary.
+    if its volume is disconnected, or a broken-target resolution dictionary whose `kind` is one of:
+    journal (a recorded move), same-name (the one same-named folder that also holds what lay below the
+    missing one), name-only (the one same-named folder, with nothing below the missing one to check: a guess),
+    ambiguous (several candidates) or not-found.
     """
     parsed = _split(target)
     if parsed is None:
@@ -106,12 +109,11 @@ def _locate_missing_target(
         else:
             same_passing = [str(c) for c in same_all]
 
-        if len(same_all) == 1 and len(same_passing) == 1:
+        if len(same_passing) == 1:
             resolved_new = same_passing[0]
-            resolved_kind = "same-name"
-        elif len(same_passing) == 1 and len(same_all) > 1:
-            resolved_new = same_passing[0]
-            resolved_kind = "same-name"
+            # A name alone proves nothing (the old folder may be deleted and this one another program's): only a
+            # folder that also holds what lay below the old one is sure, as in find_moved
+            resolved_kind = "same-name" if rel_tail else "name-only"
         elif same_all:
             resolved_kind = "ambiguous"
             candidates = [str(c) for c in same_all]
@@ -190,6 +192,12 @@ def inspect_broken_paths(
             seen_shortcuts.add(dedup_key)
             if info["kind"] in ("journal", "same-name") and info["suggested_target"]:
                 suggestion = f"Can be repointed to {info['suggested_target']} with `smart-drive paths --broken --fix`"
+            elif info["kind"] == "name-only":
+                missing, found = info["missing_folder"], info["suggested_folder"]
+                suggestion = (
+                    "Only the folder name matches; if you moved it there, run: "
+                    f'smart-drive relink "{missing}" "{found}"'
+                )
             elif info["kind"] == "ambiguous":
                 suggestion = f"Multiple candidates found ({', '.join(info['candidates'])}); update or delete shortcut manually"
             else:
@@ -212,7 +220,12 @@ def inspect_broken_paths(
             if dedup_key in seen_paths:
                 continue
             seen_paths.add(dedup_key)
-            if info["suggested_target"]:
+            if info["kind"] == "name-only":
+                suggestion = (
+                    "Only the folder name matches; if you moved it there, update the "
+                    f"{ref.source} entry to {info['suggested_target']}, otherwise remove it"
+                )
+            elif info["suggested_target"]:
                 suggestion = f"Update {ref.source} entry to {info['suggested_target']}"
             else:
                 suggestion = f"Remove stale directory {info['target']} from {ref.source}"
@@ -227,7 +240,7 @@ def inspect_broken_paths(
                 "suggestion": suggestion,
             })
 
-    # Collect unique sure moves across IDE/agents and shortcuts
+    # Collect unique sure moves across IDE/agents and shortcuts (a name-only match is a guess: --fix never relinks it)
     sure_moves: List[Move] = []
     seen_moves = set()
     for e in ide_entries:
@@ -308,6 +321,11 @@ def _print_broken_report(data: Dict[str, Any], show_fix_hint: bool = True) -> No
                     print(f"  ✓ {old} -> {new}  ({kind}; {agents_str})")
                 elif kind == "renamed":
                     print(f'  ? {old} -> {new}  (renamed? check it, then run: smart-drive relink "{old}" "{new}")')
+                elif kind == "name-only":
+                    print(
+                        f"  ? {old} -> maybe moved to {new}  ({agents_str}; only the name matches; "
+                        f'if you moved it there, run: smart-drive relink "{old}" "{new}")'
+                    )
                 elif kind == "ambiguous":
                     cands = ", ".join(entry.get("candidates") or [])
                     print(f"  ? {old}: several candidates: {cands} ({agents_str})")
@@ -324,6 +342,8 @@ def _print_broken_report(data: Dict[str, Any], show_fix_hint: bool = True) -> No
                 target = sc["target"]
                 if kind in ("journal", "same-name") and sc["suggested_target"]:
                     print(f"  ✓ {lnk}: {target} -> {sc['suggested_target']}  ({kind})")
+                elif kind == "name-only":
+                    print(f"  ? {lnk}: {target} -> maybe moved to {sc['suggested_target']}  ({sc['suggestion']})")
                 elif kind == "ambiguous":
                     cands = ", ".join(sc["candidates"])
                     print(f"  ? {lnk}: {target} (several candidates: {cands})")
@@ -334,7 +354,8 @@ def _print_broken_report(data: Dict[str, Any], show_fix_hint: bool = True) -> No
             print("\nSystem / User PATH Entries:")
             for pe in path_entries:
                 if pe["suggested_target"]:
-                    print(f"  ? [{pe['source']}] {pe['target']} -> moved to {pe['suggested_target']} ({pe['suggestion']})")
+                    moved = "maybe moved to" if pe["kind"] == "name-only" else "moved to"
+                    print(f"  ? [{pe['source']}] {pe['target']} -> {moved} {pe['suggested_target']} ({pe['suggestion']})")
                 else:
                     print(f"  ✗ [{pe['source']}] {pe['target']} (missing — {pe['suggestion']})")
 
