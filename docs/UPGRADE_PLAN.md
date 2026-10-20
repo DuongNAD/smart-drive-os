@@ -505,7 +505,13 @@ Chạy thủ công trước mỗi bản phát hành; vượt ngân sách thì s�
 #### A6. Giới hạn đã biết (mỗi mục một commit, có test; mục "cần xác minh" phải tái hiện trước khi sửa)
 - **Relink**: Android Studio (cấu hình ở `%APPDATA%\Google\AndroidStudio*`, không nằm trong `JetBrains`); `relink` chưa trỏ lại
   `.lnk` ở gốc ổ; shell item của Windows 7/XP, đích UNC và `%VAR%` trong khối extra-data của `.lnk`; trạng thái từng workspace
-  của VS Code (`workspaceStorage`, các tab đang mở) không đi theo; console script của venv chỉ được cảnh báo.
+  của VS Code (`workspaceStorage`, các tab đang mở) không đi theo. Console script (`pip.exe`, `fastapi.exe`…) và script
+  `activate*` của venv đã được tự trỏ lại từ 1.4.1 ✅; còn: launcher do uv tạo (chưa xác minh định dạng), venv nằm sâu hơn
+  một cấp dưới thư mục được chuyển, dòng `command =` trong `pyvenv.cfg` (chỉ để tham khảo).
+- **Khóa thư mục khi chuyển** ✅ (1.4.1): lỗi "Access is denied" giờ chỉ ra thư mục con đang bị giữ (dò chỉ đọc) và nhận ra
+  thư mục ghim trong Quick Access của Explorer. Bài học trên `E:` (2026-10-20): `…\Nop_bai\Images` được ghim trong Quick
+  Access, `explorer.exe` giữ handle và mở lại sau mỗi lần đăng nhập, nên khởi động lại máy hay chạy bằng quyền admin đều không
+  giúp; phải bỏ ghim rồi khởi động lại Explorer. Còn: Restart Manager không nêu được tiến trình giữ một *thư mục*.
 - **Chưa hỗ trợ**: Visual Studio (bản đầy đủ), Sublime Text, Zed, Eclipse, NetBeans, Notepad++.
 - **`paths --broken` / `checkup`**: đường dẫn hỏng trỏ vào ổ nhưng không tự sửa được vẫn bị trừ điểm; thêm lựa chọn gỡ mục
   cũ khỏi danh sách gần đây của IDE/agent (có sao lưu, chỉ khi người dùng xác nhận).
