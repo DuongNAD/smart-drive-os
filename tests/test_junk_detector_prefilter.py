@@ -15,13 +15,18 @@ from pathlib import Path
 from typing import List
 from unittest.mock import patch
 
-from smart_drive.core.config import JUNK_RULES, JunkTier, match_junk_rule
+from smart_drive.core.config import JUNK_RULES, JunkRule, JunkTier, match_junk_rule
 from smart_drive.core.junk_detector import JunkDetector
 
+# A name that each rule with a `name_regex` matches: the wildcards of a glob cannot be filled in for those
+REGEX_RULE_SAMPLES = {"core.<pid>": "core.4321"}
 
-def _sample_name(pattern: str) -> str:
-    """A name that the glob `pattern` matches."""
-    return pattern.replace("*", "x").replace("?", "x")
+
+def _sample_name(rule: JunkRule) -> str:
+    """A name that the rule matches."""
+    if rule.name_regex is not None:
+        return REGEX_RULE_SAMPLES[rule.pattern]
+    return rule.pattern.replace("*", "x").replace("?", "x")
 
 
 class TestPrefilterNeverHidesAMatch(unittest.TestCase):
@@ -30,13 +35,15 @@ class TestPrefilterNeverHidesAMatch(unittest.TestCase):
             detector = JunkDetector(tempfile.gettempdir(), max_tier=max_tier)
             for rule in JUNK_RULES:
                 for variant in (str.lower, str.upper):
-                    full = variant(_sample_name(rule.pattern))
+                    full = variant(_sample_name(rule))
                     name = full.rsplit("/", 1)[-1]
                     rel_path = f"projects/{full}"
                     matched = match_junk_rule(
                         name, rule.is_directory, max_tier=max_tier, is_root_level=False, rel_path=rel_path
                     )
                     if matched is None:
+                        if rule.tier <= max_tier:  # (above the chosen tier a rule is rightly silent)
+                            self.assertIsNone(rule.name_regex, f"{rule.pattern}: its sample name matches no rule")
                         continue
                     with self.subTest(tier=int(max_tier), pattern=rule.pattern, variant=variant.__name__):
                         self.assertTrue(detector._may_be_junk(name, rule.is_directory, rel_path))
