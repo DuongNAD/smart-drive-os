@@ -43,7 +43,10 @@ def probe_running_processes(run_fn: Any = None) -> Optional[Set[str]]:
 
 
 def running_processes() -> Set[str]:
-    """Returns running process names from `tasklist` (Windows) or `ps` (POSIX)."""
+    """Returns running process names from `tasklist` (Windows) or `ps` (POSIX).
+
+    An unreadable list gives an empty set: callers that act on the answer use `probe_running_processes()`.
+    """
     return probe_running_processes() or set()
 
 
