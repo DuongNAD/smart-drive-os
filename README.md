@@ -181,7 +181,7 @@ All commands run via `smart-drive <command>`, `python -m smart_drive <command>`,
 | Command | Key Arguments | Description |
 |---|---|---|
 | `self-path-check` | *(none)* | Inspects Python CLI script paths on system `PATH` and outputs 1-click setup commands. |
-| `checkup` | `--root <path>`, `--dup`, `--lang {en,vi}`, `--json` | 1-screen drive health score (`0–100`, grade `A–F`), comparison against previous run, and prioritized next-step commands. |
+| `checkup` | `--root <path>`, `--dup`, `--lang {en,vi}`, `--json` | 1-screen drive health score (`0–100`), comparison against previous run, and prioritized next-step commands. |
 | `init` | `--profile <name>`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
 | `status` | `--root <path>`, `--json` | Inspect SSD mount point, detected filesystem, geometry, shield health, and taxonomy status. |
 | `audit` | `--root <path>`, `--html [file]`, `--json`, `--markdown`, `--export <file>` | Storage & cluster slack audit using the drive's real cluster size (4 KB NTFS, 512 KB exFAT, etc.). `--html` exports a self-contained offline treemap report (default `<root>/.smart_drive/reports/audit.html`). Hard links counted once; symlinks/junctions skipped and counted. |
@@ -190,7 +190,7 @@ All commands run via `smart-drive <command>`, `python -m smart_drive <command>`,
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Auto-zoning, loose-file relocation, `AcademicClassifier` routing, `protected_by_system` guard, and agent/IDE/shortcut relinking; logs move batches to `.smart_drive/moves.jsonl`. |
 | `undo` | `--apply`, `--dry-run`, `--root <path>`, `--json` | Reverses the latest `organize`/`classify` move batch that has not been undone yet, skips items instead of overwriting when the original place is taken, and relinks agents/IDEs/shortcuts back to the original paths (dry-run default). |
 | `relink` | `[OLD NEW]`, `--find`, `--apply`, `--ask`, `--wait [MIN]`, `--root <path>`, `--dry-run`, `--json` | Rewrites project/MCP paths in coding agents, VS Code/Cursor/Windsurf/Antigravity (`storage.json` & `state.vscdb`), JetBrains (`recentProjects.xml`), Obsidian (`obsidian.json`), Windows `.lnk` shortcuts, Claude Code history, git worktrees, and `.venv`. |
-| `paths` | `--broken`, `--fix`, `--dry-run`, `--wait [MIN]`, `--root <path>`, `--json` | Scans IDE histories, coding agent configs, Obsidian vaults, Windows `.lnk` shortcuts, and `PATH` for broken paths; suggests where moved folders went and repairs sure matches with `--fix`. |
+| `paths` | `--broken`, `--fix`, `--dry-run`, `--root <path>`, `--json` | Scans IDE histories, coding agent configs, Obsidian vaults, Windows `.lnk` shortcuts, and `PATH` for broken paths; suggests where moved folders went and repairs sure matches with `--fix`. |
 | `sentinel` | `--root <path>`, `--auto-heal`, `--no-heal`, `--json` | 1-touch health audit (detected filesystem, git repo status) and shield self-healing (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <path>`, `--all`, `--auth-token <token>`, `--require-auth` | Starts the JSON-RPC 2.0 stdio MCP server (`serve`) or registers configs for AI agents (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Auto-registers SmartDrive MCP Server in AI coding agent config files. |

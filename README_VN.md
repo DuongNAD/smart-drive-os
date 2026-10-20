@@ -181,7 +181,7 @@ Mọi lệnh chạy qua `smart-drive <lệnh>`, `python -m smart_drive <lệnh>`
 | Lệnh | Tham số chính | Mô tả chức năng |
 |---|---|---|
 | `self-path-check` | *(không có)* | Kiểm tra `PATH` hệ thống và in câu lệnh cấu hình 1-chạm. |
-| `checkup` | `--root <đd>`, `--dup`, `--lang {en,vi}`, `--json` | Khám tổng quát 1 màn hình: chấm điểm sức khỏe ổ đĩa (`0–100`, hạng `A–F`), so với lần chạy trước và gợi ý bước tiếp theo. |
+| `checkup` | `--root <đd>`, `--dup`, `--lang {en,vi}`, `--json` | Khám tổng quát 1 màn hình: chấm điểm sức khỏe ổ đĩa (`0–100`), so với lần chạy trước và gợi ý bước tiếp theo. |
 | `init` | `--profile <tên>`, `--root <đd>`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo 6 nhóm thư mục, cài khiên bảo vệ và gieo chỉ mục FTS5. |
 | `status` | `--root <đd>`, `--json` | Kiểm tra điểm gắn ổ đĩa, hệ tệp nhận diện, cấu trúc hình học, khiên bảo vệ và phân vùng. |
 | `audit` | `--root <đd>`, `--html [tệp]`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán dung lượng và cluster slack theo kích thước cụm thật của ổ đĩa (4 KB NTFS, 512 KB exFAT…). `--html` xuất báo cáo treemap tự chứa chạy offline (mặc định `<root>/.smart_drive/reports/audit.html`). Hard link tính một lần; symlink/junction bỏ qua và đếm. |
@@ -190,7 +190,7 @@ Mọi lệnh chạy qua `smart-drive <lệnh>`, `python -m smart_drive <lệnh>`
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Tự phân loại file rời, định tuyến môn FPTU bằng `AcademicClassifier`, bảo vệ mục hệ thống (`protected_by_system`), giảm slack và cập nhật đường dẫn agent/IDE/shortcut; lưu đợt dời vào `.smart_drive/moves.jsonl`. |
 | `undo` | `--apply`, `--dry-run`, `--root <đd>`, `--json` | Hoàn tác đợt dời `organize`/`classify` gần nhất chưa được hoàn tác, bỏ qua mục (không ghi đè) khi chỗ cũ đã bị chiếm và relink agent/IDE/shortcut về đường dẫn gốc (mặc định dry-run). |
 | `relink` | `[OLD NEW]`, `--find`, `--apply`, `--ask`, `--wait [PHÚT]`, `--root <đd>`, `--dry-run`, `--json` | Cập nhật đường dẫn dự án và MCP trong coding agent, VS Code/Cursor/Windsurf/Antigravity (`storage.json` & `state.vscdb`), JetBrains (`recentProjects.xml`), Obsidian (`obsidian.json`), shortcut `.lnk`, lịch sử Claude Code, git worktree và `.venv`. |
-| `paths` | `--broken`, `--fix`, `--dry-run`, `--wait [PHÚT]`, `--root <đd>`, `--json` | Quét lịch sử IDE, cấu hình coding agent, vault Obsidian, shortcut `.lnk` và `PATH` tìm đường dẫn đứt; đoán nơi thư mục đã tới và sửa các khớp chắc chắn với `--fix`. |
+| `paths` | `--broken`, `--fix`, `--dry-run`, `--root <đd>`, `--json` | Quét lịch sử IDE, cấu hình coding agent, vault Obsidian, shortcut `.lnk` và `PATH` tìm đường dẫn đứt; đoán nơi thư mục đã tới và sửa các khớp chắc chắn với `--fix`. |
 | `sentinel` | `--root <đd>`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng (hệ tệp nhận diện, trạng thái git), phục hồi khiên bảo vệ thiếu (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <đd>`, `--all`, `--auth-token <token>`, `--require-auth` | Khởi chạy máy chủ MCP stdio (`serve`) hoặc đăng ký cấu hình cho AI agent (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Tự đăng ký máy chủ MCP vào tệp cấu hình của IDE và AI Agent. |
