@@ -34,7 +34,7 @@ from smart_drive.core.exfat_compat import detect_drive_root
 from smart_drive.core.git_locks import release_git_locks
 from smart_drive.core.junction import is_directory_junction
 from smart_drive.core.learning_units import find_unit_root, unit_kind
-from smart_drive.core.move_hint import explain_refused_move
+from smart_drive.core.move_hint import inspect_refused_move
 from smart_drive.core.root import same_file
 from smart_drive.core.system_refs import (
     SystemRefIndex,
@@ -203,6 +203,7 @@ class RelocationAction:
     status: str                   # "PLANNED", "MOVED", "SKIPPED_ALREADY_IN_PLACE", "ERROR"
     collision_resolved: bool
     error_message: Optional[str] = None
+    in_use: List[str] = field(default_factory=list)  # a refused move: what is open below the folder (Windows)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -212,6 +213,7 @@ class RelocationAction:
             "status": self.status,
             "collision_resolved": self.collision_resolved,
             "error_message": self.error_message,
+            "in_use": list(self.in_use),
         }
 
 
@@ -1272,13 +1274,15 @@ class ClassifierEngine:
                         collision_resolved=collision,
                     ))
                 except Exception as exc:
+                    refused = inspect_refused_move(exc, str(item.source_path), "smart-drive classify --apply")
                     actions.append(RelocationAction(
                         source_path=item.source_path,
                         destination_path=dest_path,
                         relative_target=rel_target,
                         status="ERROR",
                         collision_resolved=collision,
-                        error_message=explain_refused_move(exc, str(item.source_path), "smart-drive classify --apply"),
+                        error_message=refused.explained(),
+                        in_use=refused.in_use,
                     ))
 
         return actions

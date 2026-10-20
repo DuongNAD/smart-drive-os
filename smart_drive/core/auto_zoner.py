@@ -32,7 +32,7 @@ from smart_drive.core.exfat_compat import ExFatEngine
 from smart_drive.core.fsinfo import detect_filesystem
 from smart_drive.core.git_locks import release_git_locks
 from smart_drive.core.learning_units import find_unit_root
-from smart_drive.core.move_hint import move_failure_hint
+from smart_drive.core.move_hint import inspect_refused_move
 from smart_drive.core.scanner import measure_tree
 from smart_drive.core.system_refs import (
     SystemRefIndex,
@@ -472,7 +472,7 @@ class AutoZoner:
         """Applies a ZoningPlan safely: creates destination folders, avoids overwrites, moves items."""
         self.ensure_taxonomies_exist()
         moved: List[Dict[str, Any]] = []
-        errors: List[Dict[str, str]] = []
+        errors: List[Dict[str, Any]] = []
         fsmonitor_stopped: List[str] = []
         total_nominal_moved = 0
         total_slack_rebalanced = 0
@@ -527,9 +527,11 @@ class AutoZoner:
                 total_nominal_moved += action.nominal_size
                 total_slack_rebalanced += action.slack_bytes
             except Exception as err:
+                refused = inspect_refused_move(err, action.src_path, "organize")
                 errors.append({
                     "src": action.src_path,
-                    "error": f"{err} ({move_failure_hint(err, action.src_path, 'organize')})",
+                    "error": refused.explained(always=True),
+                    "in_use": refused.in_use,  # what is open below the folder (Windows), [] when unknown
                 })
 
         return {
