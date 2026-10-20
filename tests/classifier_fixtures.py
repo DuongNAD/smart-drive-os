@@ -7,7 +7,8 @@ The three cases come from a real drive on which a recursive `classify --dry-run`
 - a nested ``SEB/SEB`` folder whose ``windows.bat`` and ``macos.command`` were separated from their ``cert`` folder,
   with a second copy of the folder next to it, so the moved files got ``_1`` names.
 
-Plus one plain folder of documents, which is the kind of thing a recursive scan is for.
+Plus one plain folder of documents, which is the kind of thing a recursive scan is for. ``add_sonarqube_like`` and
+``add_docs_with_installer`` add the two kinds of folder that only the folder around a program folder gives away.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import struct
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 from unittest.mock import patch
 
 from smart_drive.cli.main import main
@@ -28,13 +29,21 @@ from smart_drive.core.system_refs import SystemRefIndex
 
 LOOSE_AT_ROOT = ("loose_model.gguf", "loose_notes.md")
 APP_FOLDER = "EOS_Client_FA24_Version1"
+APP_SUBFOLDER = APP_FOLDER + "/Data"
 SCRIPT_FOLDER = "APP"
+# Where the launcher scripts are, and the folders around them: a scan stops at the wrapper, which holds a program folder
 SEB_FOLDERS = (
     "LuuTru_Desktop/New folder/SEB/SEB",
     "LuuTru_Desktop/New folder/SETUP0126/SEB",
 )
+SEB_WRAPPERS = (
+    "LuuTru_Desktop/New folder/SEB",
+    "LuuTru_Desktop/New folder/SETUP0126",
+)
 DOCS_FOLDER = "Course_Notes"
-BUNDLE_FOLDERS = (APP_FOLDER, SCRIPT_FOLDER, *SEB_FOLDERS)
+BUNDLE_FOLDERS = (APP_FOLDER, SCRIPT_FOLDER, *SEB_WRAPPERS)  # what a recursive scan of the drive reports
+SONAR_FOLDER = "apps_dist/sonarqube-1.0"
+INSTALLER_DOCS = "Course_With_Installer"
 
 
 def write(path: Path, data: bytes) -> Path:
@@ -56,6 +65,7 @@ def build_real_world_drive(root: Path) -> Path:
     write(app / "QuestionLib.dll", b"MZ\x90\x00 questions")
     write(app / "EOSClient.exe.config", b"<configuration><startup/></configuration>\n")
     write(app / "EOS_Server_Info.dat", b"\x01\x02\x03 server")
+    write(root / APP_SUBFOLDER / "exam_notes.md", b"# Exam notes kept inside the app folder\n")
 
     scripts = root / SCRIPT_FOLDER
     write(scripts / "composer.bat", b"@echo off\r\nphp \"%~dp0composer.phar\" %*\r\n")
@@ -72,6 +82,30 @@ def build_real_world_drive(root: Path) -> Path:
     write(docs / "week1" / "reading.pdf", b"%PDF-1.7\n%%EOF\n")
     write(docs / "slides" / "deck.md", b"# Slides\n")
     return root
+
+
+def add_sonarqube_like(root: Path) -> Path:
+    """An app whose own folder shows no program: lib holds the jars, the rest (conf, data, logs) is just data.
+
+    It sits in a plain container that has a loose note of its own.
+    """
+    app = root / SONAR_FOLDER
+    write(app / "lib" / "sonar-application.jar", b"PK\x03\x04 jar")
+    write(app / "bin" / "windows" / "StartSonar.bat", b"@echo off\r\njava -jar ..\\..\\lib\\sonar-application.jar\r\n")
+    write(app / "conf" / "sonar.properties", b"sonar.web.port=9000\n")
+    write(app / "data" / "es8" / "_state" / "state-1.st", b"\x00\x01 index state")
+    write(app / "logs" / "sonar.log", b"started\n")
+    write(root / "apps_dist" / "tools_overview.md", b"# Tools lying next to the app\n")
+    return app
+
+
+def add_docs_with_installer(root: Path) -> Path:
+    """A tree of documents with one subfolder holding an installer."""
+    docs = root / INSTALLER_DOCS
+    write(docs / "notes.md", b"# Course notes\n")
+    write(docs / "week1" / "lecture2.md", b"# Lecture 2\n")
+    write(docs / "installer" / "setup.exe", b"MZ\x90\x00 setup")
+    return docs
 
 
 def snapshot(folder: Path) -> Dict[str, bytes]:
@@ -113,3 +147,15 @@ class DriveCase(unittest.TestCase):
         code, out, err = self.classify(*argv, "--dry-run", "--json")
         self.assertEqual(code, 0, err)
         return json.loads(out)
+
+    def relative(self, path: str) -> str:
+        """``path`` below the drive, with '/' separators."""
+        return Path(path).relative_to(self.drive).as_posix()
+
+    def bundles(self, data: Dict[str, Any]) -> Dict[str, str]:
+        """The skipped bundles of a report as {path below the drive: reason}."""
+        return {self.relative(item["path"]): item["reason"] for item in data["skipped_bundles"]}
+
+    def planned(self, data: Dict[str, Any]) -> List[str]:
+        """The sources of the planned moves of a report, below the drive."""
+        return [self.relative(action["source_path"]) for action in data["actions"]]

@@ -1039,8 +1039,11 @@ class TestClassifierEdgeCases(_IsolatedClassifierTestCase):
             engine = ClassifierEngine(root_path=tmp, system_refs=refs)
 
             def planned(sub: str) -> list:
-                results = engine.scan_and_classify(tmp / sub)
+                # The result a scan started above these folders would hand over: a scan aimed at them is refused
+                # outright (checked below), so this keeps testing the second line of defence, execute_relocation.
+                results = [engine.inspect_path(p) for p in (tmp / sub).iterdir() if p.is_file()]
                 self.assertEqual(len(results), 1, sub)
+                self.assertIsNotNone(results[0], sub)
                 return [a.status for a in engine.execute_relocation(results, dry_run=True)]
 
             # Next to an app a shortcut points to: the file stays, whichever top-level folder holds the app
@@ -1052,6 +1055,11 @@ class TestClassifierEdgeCases(_IsolatedClassifierTestCase):
             self.assertEqual(planned("Games/Launcher/saves"), [])
             # Another app in the same taxonomy folder is not affected
             self.assertEqual(planned("05_Dev_Toolbox/Other/docs"), ["PLANNED"])
+
+            # A scan aimed at a folder in or around such an app finds nothing to sort in the first place
+            for sub in ("Stuff/MyApp2/docs", "05_Dev_Toolbox/MyApp/docs", "Games/Launcher/saves"):
+                self.assertEqual(engine.scan_and_classify(tmp / sub), [], sub)
+                self.assertEqual(len(engine.skipped_bundles), 1, sub)
 
     def test_drive_root_is_passed_as_a_shortcut_root_when_references_are_collected(self) -> None:
         with TempWorkspace(prefix="test_cls_shortcut_root_") as tmp:

@@ -445,7 +445,15 @@ def build_parser() -> argparse.ArgumentParser:
         "classify",
         help="Deep file format recognition, taxonomy auto-tagging, and safe relocation of the loose files in a folder",
     )
-    p_cls.add_argument("path", nargs="?", default=None, help="Target file or directory to inspect/classify")
+    p_cls.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help=(
+            "Target file or directory to inspect/classify. Nothing is sorted in or around an app, library or project "
+            "folder (or one the system uses), however it is named here; only the drive root itself is exempt"
+        ),
+    )
     p_cls.add_argument("--root", help="Root directory of the SSD / workspace")
     p_cls.add_argument("--suggest", action="store_true", help="Display classification recommendations (default)")
     p_cls.add_argument("--dry-run", action="store_true", help="Simulate relocation and collision handling without moving files")
@@ -457,8 +465,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Also look inside subfolders (default: only the files directly in the scanned folder). "
-            "App, library and project folders (programs, launcher scripts, manifests, .git) are kept whole "
-            "and listed as skipped_bundles"
+            "App, library and project folders (programs, launcher scripts, manifests, .git) and the folders "
+            "holding a program folder are kept whole and listed as skipped_bundles, so a document tree "
+            "with an installer subfolder is skipped"
         ),
     )
     p_cls_scope.add_argument(
