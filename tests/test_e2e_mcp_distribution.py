@@ -389,7 +389,7 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
             "xml", "zipfile", "zlib",
         }
         # Standard library since Python 3.11 (tomllib) and stdlib modules needed by the Python 3.9 fallback set
-        stdlib_modules.update({"tomllib", "calendar", "locale", "winreg"})
+        stdlib_modules.update({"tomllib", "calendar", "locale", "winreg", "ntpath"})
 
         smart_drive_dir = PROJECT_ROOT / "smart_drive"
         self.assertTrue(smart_drive_dir.is_dir(), "smart_drive directory must exist")
