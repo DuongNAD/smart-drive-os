@@ -484,6 +484,50 @@ class TestSystemRefIndexAndBoundaries(unittest.TestCase):
         # The programs themselves (outside E:) are still recorded; the folders next door are not
         self.assertEqual(idx.refs_under(r"E:\unrelated"), [])
 
+    def test_environment_variables_holding_absolute_paths_are_references(self) -> None:
+        mock_tree = {
+            r"HKCU\Environment": {
+                "Path": r"E:\Git\cmd",
+                "JAVA_HOME": r"E:\Java\jdk-21",
+                "PyCharm": r"E:\PyCharm 2025.3.1\bin;",
+                "TOOLS_ROOT": r"%DEV_DRIVE%\Tools",
+                "TEMP": r"%USERPROFILE%\AppData\Local\Temp",
+                "PATHEXT": ".COM;.EXE;.BAT",
+                "Retries": 3,
+                "Unresolved": r"%NOT_DEFINED%\x",
+            },
+            r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment": {
+                "Path": r"E:\Sys\bin",
+                "PT8HOME": r"E:\Packet Tracer",
+            },
+        }
+        reader = RegistryReader(tree=mock_tree, env={"DEV_DRIVE": "E:", "USERPROFILE": r"C:\Users\X"})
+        with TempWorkspace(prefix="test_env_vars_") as tmp:
+            idx = SystemRefIndex.collect(home=tmp, reader=reader)
+
+        expected = {
+            r"E:\Java": ("env", "JAVA_HOME (User)"),
+            r"E:\PyCharm 2025.3.1": ("env", "PyCharm (User)"),
+            r"E:\Tools": ("env", "TOOLS_ROOT (User)"),
+            r"E:\Packet Tracer": ("env", "PT8HOME (System)"),
+            r"C:\Users\X\AppData": ("env", "TEMP (User)"),
+            # Path stays a "path" reference, which also covers loose executables sitting in the folder
+            r"E:\Git": ("path", "PATH (User)"),
+            r"E:\Sys": ("path", "PATH (System)"),
+        }
+        for folder, (kind, source) in expected.items():
+            with self.subTest(folder=folder):
+                refs = idx.refs_under(folder)
+                self.assertEqual([(r.kind, r.source) for r in refs], [(kind, source)])
+        self.assertEqual(
+            {r.source for r in idx.refs if r.kind == "env"},
+            {"JAVA_HOME (User)", "PyCharm (User)", "TOOLS_ROOT (User)", "PT8HOME (System)", "TEMP (User)"},
+        )
+        self.assertIn(
+            "environment variable JAVA_HOME (User)",
+            summarize_system_refs(idx.refs_under(r"E:\Java")),
+        )
+
     def test_shortcut_without_link_info_and_its_start_in_folder_and_arguments_are_references(self) -> None:
         with TempWorkspace(prefix="test_lnk_no_link_info_") as tmp:
             desktop = tmp / "Desktop"
