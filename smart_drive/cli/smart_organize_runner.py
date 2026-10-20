@@ -2,7 +2,8 @@
 
 Implements the interactive end-user flow for `Smart_Organize.{bat,ps1,command,sh}`:
 1. Dry-run preview (`organize --dry-run --json`) showing planned moves and protected items.
-2. Wait for `busy_apps` (open IDEs / coding agents) to close before moving.
+2. Wait for `busy_apps` (open IDEs / coding agents) to close before moving; when the list of running programs cannot
+   be read (`busy_apps_unknown`), ask for the coding agents and IDEs to be closed all the same.
 3. Explicit `YES` confirmation prompt.
 4. Execute `organize --apply --json` and clearly report items that could NOT be moved with reasons.
 5. Post-move verification (`relink --dry-run` has nothing left to fix, git/worktree integrity, venv paths).
@@ -51,6 +52,8 @@ I18N_STRINGS: Dict[str, Dict[str, str]] = {
         "cannot_move_none": "No blocked or failed items.",
         "step2_busy_title": "[2/5] Open coding agents / IDEs detected: {apps}",
         "step2_busy_hint": "Please close these apps so SmartDrive can safely update their project paths.",
+        "step2_unknown_title": "[2/5] Could not check which coding agents / IDEs are open: the list of running programs could not be read.",
+        "step2_unknown_hint": "Please close your coding agents and IDEs so SmartDrive can safely update their project paths.",
         "step2_busy_prompt": "Press Enter to re-check, [C] to continue anyway, or [Q] to cancel: ",
         "step2_clear": "[2/5] No conflicting open apps detected.",
         "step3_confirm_prompt": "[3/5] Type YES to move {count} item(s) safely (or anything else to cancel): ",
@@ -89,6 +92,8 @@ I18N_STRINGS: Dict[str, Dict[str, str]] = {
         "cannot_move_none": "Không có mục nào bị chặn hoặc lỗi.",
         "step2_busy_title": "[2/5] Phát hiện ứng dụng / IDE đang mở: {apps}",
         "step2_busy_hint": "Vui lòng đóng các ứng dụng này để SmartDrive cập nhật đường dẫn dự án an toàn.",
+        "step2_unknown_title": "[2/5] Không kiểm tra được agent / IDE nào đang mở: không đọc được danh sách chương trình đang chạy.",
+        "step2_unknown_hint": "Vui lòng đóng các agent và IDE đang mở để SmartDrive cập nhật đường dẫn dự án an toàn.",
         "step2_busy_prompt": "Nhấn Enter để kiểm tra lại, [C] để tiếp tục, hoặc [Q] để hủy: ",
         "step2_clear": "[2/5] Không có ứng dụng xung đột nào đang mở.",
         "step3_confirm_prompt": "[3/5] Gõ YES để xác nhận dời {count} mục an toàn (hoặc nhập khác để hủy): ",
@@ -203,15 +208,20 @@ def append_organize_log(root: str, event: str, details: str = "") -> str:
 # ==============================================================================
 
 def _extract_relink_dict(rep: Any) -> Dict[str, Any]:
+    """Returns a relink report as a dict; a report object adds `busy_apps_unknown` (relink could not read the process list)."""
     if rep is None:
         return {"busy_apps": [], "changed": []}
     if isinstance(rep, dict):
         return rep
+    unreadable = bool(getattr(rep, "_unreadable_processes", False))
     if hasattr(rep, "to_dict"):
-        return rep.to_dict()
+        data = rep.to_dict()
+        data["busy_apps_unknown"] = unreadable
+        return data
     return {
         "busy_apps": list(getattr(rep, "busy_apps", []) or []),
         "changed": list(getattr(rep, "changed", []) or []),
+        "busy_apps_unknown": unreadable,
     }
 
 
@@ -447,12 +457,18 @@ def run_smart_organize(
         append_organize_log(root_abs, "END", "nothing_to_move")
         return 0
 
-    # Step 2: Check and wait for busy_apps to close
+    # Step 2: Check and wait for busy_apps to close (or be closed, when the list of running programs cannot be read)
     busy_apps = list(relink_preview.get("busy_apps") or [])
-    while busy_apps:
-        apps_str = ", ".join(busy_apps)
-        emit(t("step2_busy_title", resolved_lang, apps=apps_str))
-        emit(t("step2_busy_hint", resolved_lang))
+    busy_unknown = bool(relink_preview.get("busy_apps_unknown"))
+    while busy_apps or busy_unknown:
+        if busy_apps:
+            apps_str = ", ".join(busy_apps)
+            emit(t("step2_busy_title", resolved_lang, apps=apps_str))
+            emit(t("step2_busy_hint", resolved_lang))
+        else:
+            apps_str = "unknown"
+            emit(t("step2_unknown_title", resolved_lang))
+            emit(t("step2_unknown_hint", resolved_lang))
         append_organize_log(root_abs, "BUSY_APPS", apps_str)
         try:
             ans = input_fn(t("step2_busy_prompt", resolved_lang)).strip().lower()
@@ -471,10 +487,12 @@ def run_smart_organize(
                 raw_prev = run_relink(planned_pairs, root=root_abs, dry_run=True)
             relink_preview = _extract_relink_dict(raw_prev)
             busy_apps = list(relink_preview.get("busy_apps") or [])
+            busy_unknown = bool(relink_preview.get("busy_apps_unknown"))
         except Exception:
             busy_apps = []
+            busy_unknown = False
 
-    if not busy_apps:
+    if not busy_apps and not busy_unknown:
         emit(t("step2_clear", resolved_lang))
     emit("")
 
