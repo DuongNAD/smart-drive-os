@@ -886,6 +886,39 @@ class TestLauncherMasterMenuMapping(unittest.TestCase):
                 finally:
                     shutil.rmtree(repo_dir, ignore_errors=True)
 
+    def test_batch_menu_escapes_ampersands_in_echo_lines(self):
+        """An unescaped & ends an echo and runs the rest of the line as a command ('Presets' is not recognized)."""
+        text = (LAUNCHERS_DIR / "SmartDrive.bat").read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if line.lstrip().lower().startswith("echo"):
+                self.assertIsNone(re.search(r"(?<!\^)&", line), f"unescaped & in: {line}")
+
+    @unittest.skipUnless(sys.platform == "win32", "cmd.exe batch execution")
+    def test_empirical_batch_menu_draws_whole_lines_and_nothing_on_stderr(self):
+        """Drawing the menu of SmartDrive.bat must not run pieces of its own text as commands."""
+        repo_dir = _make_fake_repo("test_menu_bat_draw_")
+        try:
+            launcher = repo_dir / "SmartDrive.bat"
+            shutil.copy2(LAUNCHERS_DIR / "SmartDrive.bat", launcher)
+            returncode, stdout, stderr = _drive_prompts(
+                ["cmd.exe", "/c", str(launcher)],
+                _fake_repo_env(repo_dir / "calls.log"),
+                str(repo_dir),
+                [("Select an option [0-11]: ", "0\r\n")],
+            )
+            self.assertEqual(returncode, 0, f"{stdout}\n{stderr}")
+            self.assertEqual(stderr.strip(), "", "the menu text must not be run as commands")
+            for line in (
+                "[1] Initialize Drive & Presets (smart-drive init)",
+                "[2] Sentinel & Integrity Health Check (smart-drive sentinel)",
+                "[4] Storage & Cluster Slack Audit (smart-drive audit)",
+                "[6] Auto-Zoning & Anti-Slack Rebalancer (smart-drive organize)",
+                "[9] Drive Health Checkup & Score (smart-drive checkup)",
+            ):
+                self.assertIn(line, stdout)
+        finally:
+            shutil.rmtree(repo_dir, ignore_errors=True)
+
 
 class TestExfatClusterGeometryInvariants(unittest.TestCase):
     """Stress tests on core exFAT 512KB cluster constants and mathematical invariants."""
