@@ -143,6 +143,37 @@ class TestDependencyTreesAreNotScanned(_Tree):
         self.assertEqual(self.reported(plan), ["proj/src/module.py", "proj/venv/Lib/some/module.py"])
         self.assertEqual(plan["skipped_dependency_dirs"], 0)
 
+    def test_a_cache_directory_tagged_with_cachedir_tag_is_skipped(self) -> None:
+        tag = duplicates.CACHE_TAG_SIGNATURE + b"\n# This file is a cache directory tag created by cargo.\n"
+        for crate in ("one", "two"):
+            self.write(f"{crate}/target/CACHEDIR.TAG", tag)  # what Cargo writes into a target/ folder
+            self.write(f"{crate}/target/debug/deps/lib.rlib")
+        self.write("docs/original.bin")
+        self.write("backup/copy.bin")
+
+        plan = self.detector().generate_reclamation_plan()
+
+        self.assertEqual(self.reported(plan), ["backup/copy.bin", "docs/original.bin"])
+        self.assertEqual(plan["skipped_dependency_dirs"], 2)
+
+    def test_a_cachedir_tag_without_the_signature_is_only_a_file(self) -> None:
+        self.write("one/target/CACHEDIR.TAG", b"just a note")
+        self.write("one/target/lib.rlib")
+        self.write("two/target/CACHEDIR.TAG", b"")
+        self.write("two/target/lib.rlib")
+        plan = self.detector().generate_reclamation_plan()
+        self.assertEqual(self.reported(plan), ["one/target/lib.rlib", "two/target/lib.rlib"])
+        self.assertEqual(plan["skipped_dependency_dirs"], 0)
+
+    def test_the_folder_asked_for_is_scanned_even_when_it_is_a_tagged_cache(self) -> None:
+        self.write("target/CACHEDIR.TAG", duplicates.CACHE_TAG_SIGNATURE)
+        self.write("target/a/lib.rlib")
+        self.write("target/b/lib.rlib")
+        plan = self.detector(self.root / "target").generate_reclamation_plan()
+        self.assertEqual(plan["duplicate_group_count"], 1)
+        plan = self.detector(skip_dependency_dirs=False).generate_reclamation_plan()
+        self.assertEqual(plan["duplicate_group_count"], 1)  # (and a switch that turns the rule off)
+
     def test_git_internals_are_not_scanned(self) -> None:
         self.write("repo/.git/objects/aa/blob")
         self.write("other/.git/objects/aa/blob")
