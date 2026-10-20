@@ -64,10 +64,12 @@ python -m smart_drive init --profile ai-developer
 ```
 
 ### 3. Cài đặt hệ sinh thái MCP (một lệnh)
-Tải Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius và Mira vào `~/.smart-drive/mcp` (ngoài ổ exFAT), đăng ký cùng SmartDrive vào các coding agent đã cài (Claude Code, Antigravity, Cursor, Codex) và kiểm tra sức khỏe. Không hỏi tương tác, chạy lại an toàn:
+Tải Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius và Mira vào `~/.smart-drive/mcp` (ngoài ổ exFAT), đăng ký cùng SmartDrive vào các coding agent đã cài (Claude Code, Antigravity, Cursor, Codex) và kiểm tra sức khỏe. Lệnh liệt kê các máy chủ và hỏi bạn muốn cài những máy nào trước khi tải hay đăng ký bất cứ thứ gì, chạy lại an toàn:
 ```bash
 python3 -m smart_drive setup  # macOS / Linux (Windows: python -m smart_drive setup hoặc py -m smart_drive setup)
 ```
+Trả lời `a` (tất cả), `n` (không cài, mặc định) hoặc số/tên như `1,3` hay `polaris,vega`; Constellation (mặt phẳng điều khiển) luôn được cài kèm. `--yes` bỏ qua câu hỏi (`--only polaris,vega --yes` chỉ cài những máy đó). Coding agent không có terminal để trả lời: lần chạy của agent không cài gì, thoát với mã `4` kèm danh sách, rồi agent hỏi bạn ngay trong khung chat của nó trước khi chạy `setup --only <lựa chọn của bạn> --yes`.
+
 Cần Node.js >= 22.4 và git. `--dry-run` xem trước; `--check --json` báo trạng thái (mã thoát `3` = cần cài đặt); `--no-clone` ngoại tuyến; `--agents claude,cursor` giới hạn agent. Máy chủ đã đăng ký được dùng lại, không clone lần hai (`mcp-agy` tách riêng: venv riêng, Python >= 3.10, API key).
 
 ### 4. Đăng ký riêng máy chủ MCP của SmartDrive
@@ -192,7 +194,7 @@ Mọi lệnh chạy qua `smart-drive <lệnh>`, `python -m smart_drive <lệnh>`
 | `sentinel` | `--root <đd>`, `--auto-heal`, `--no-heal`, `--json` | Kiểm tra sức khỏe ổ cứng (hệ tệp nhận diện, trạng thái git), phục hồi khiên bảo vệ thiếu (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <đd>`, `--all`, `--auth-token <token>`, `--require-auth` | Khởi chạy máy chủ MCP stdio (`serve`) hoặc đăng ký cấu hình cho AI agent (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Tự đăng ký máy chủ MCP vào tệp cấu hình của IDE và AI Agent. |
-| `setup` | `--check`, `--dry-run`, `--json`, `--agents <ds>`, `--only <ds>`, `--dest <đd>`, `--no-clone`, `--no-health`, `--repair` | Tải hệ sinh thái MCP (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira), đăng ký vào coding agent đã cài (Claude Code, Antigravity, Cursor, Codex) và kiểm tra sức khỏe. `--check` thoát mã `3` = cần cài đặt. |
+| `setup` | `--check`, `--dry-run`, `--json`, `--agents <ds>`, `--only <ds>`, `--dest <đd>`, `--no-clone`, `--no-health`, `--repair`, `--yes` | Hỏi cài máy chủ MCP nào (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira), rồi tải, đăng ký vào coding agent đã cài (Claude Code, Antigravity, Cursor, Codex) và kiểm tra sức khỏe. `--yes` bỏ qua câu hỏi. `--check` thoát mã `3` = cần cài đặt; `4` = khi không có terminal và không có `--yes` cần người dùng đồng ý (chưa cài gì). |
 | `snapshot create` | `[tên]`, `--partitions <ds>`, `--include-hidden`, `--root <đd>`, `--json` | Tạo bản ghi trạng thái kèm băm SHA-256 dạng dòng (khối 64KB) cho phân vùng chỉ định. |
 | `snapshot list` | `--root <đd>`, `--json` | Liệt kê các bản snapshot đã lưu kèm dung lượng và số lượng tệp. |
 | `snapshot verify` | `<tên>`, `--no-untracked`, `--root <đd>`, `--json` | Kiểm toán toàn vẹn dữ liệu so với snapshot để phát hiện tệp bị sửa hoặc bit rot. |

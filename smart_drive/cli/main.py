@@ -527,6 +527,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_setup = subparsers.add_parser(
         "setup",
         help="One command: fetch the MCP ecosystem (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira) and register it with your coding agents",
+        epilog="Asks which servers to install before it downloads or registers anything. Exit codes: 0 done, "
+        "1 something failed, 2 a prerequisite (Node, git) is missing, 3 --check found setup still needed, "
+        "4 the user must approve the servers first (nothing was installed).",
     )
     p_setup.add_argument("--check", action="store_true", help="Read-only; exit code 3 means setup is still needed")
     p_setup.add_argument("--dry-run", action="store_true", help="Show what would be cloned and registered; change nothing")
@@ -536,7 +539,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_setup.add_argument("--no-clone", action="store_true", help="Never run git clone (offline or air-gapped machines)")
     p_setup.add_argument("--no-health", action="store_true", help="Skip the final stdio health check")
     p_setup.add_argument("--repair", action="store_true", help="Replace manifest entries whose files no longer exist")
-    p_setup.add_argument("--yes", "-y", action="store_true", help="Accepted for convenience; setup never prompts")
+    p_setup.add_argument("--yes", "-y", action="store_true", help="Install without asking. Coding agents: pass it only after the user approved the servers.")
     p_setup.add_argument("--json", action="store_true", help="Output the report in JSON format")
 
     # 21. relink

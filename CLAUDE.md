@@ -9,4 +9,4 @@
 - Clean junk safely with `smart-drive clean` (`--apply` quarantines by default; `--list-quarantine` and `--restore latest` inspect/restore).
 - Run `smart-drive gitignore audit` before committing.
 - Commit in small, atomic steps: one logical fix or feature per commit (`fix(scope): ...`, `feat(scope): ...`), paired with a regression test in the same commit, and run the test suite before committing.
-- First time on a machine: run `python3 -m smart_drive setup` (Windows: `python -m smart_drive setup` or `py -m smart_drive setup` when `python` is not on `PATH`) to fetch and register the MCP ecosystem; add `--dry-run` to preview.
+- First time on a machine: run `python3 -m smart_drive setup --json` (Windows: `python -m smart_drive setup --json` or `py -m smart_drive setup --json` when `python` is not on `PATH`). It installs nothing until the user agrees: it exits 4 and lists the MCP servers (name + what each does). Show that list to the user with your own question/confirmation prompt, ask which to install, then run `python -m smart_drive setup --only <approved,names> --yes`. Never pass `--yes` without the user's answer. `--dry-run` previews.
