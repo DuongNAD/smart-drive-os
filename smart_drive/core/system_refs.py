@@ -10,13 +10,14 @@ Zero external dependencies (Python 3.9+ standard library only).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import ntpath
 import os
 from pathlib import Path
 import re
 import struct
 import sys
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 try:
     import winreg  # type: ignore[import-not-found]
@@ -42,6 +43,12 @@ _MY_COMPUTER_CLSID = bytes.fromhex("e04fd020ea3a6910a2d808002b30309d")
 _SHELL_EXT_SIGNATURE = b"\x04\x00\xef\xbe"  # extension block 0xBEEF0004 of a file/folder shell item
 # Where the Unicode long name starts inside that block, by block version (as written by Windows 8 and 10/11)
 _SHELL_EXT_NAME_OFFSETS = {8: 42, 9: 46}
+
+# Windows' default PATHEXT, plus .ps1 and .dll (DLLs are searched for through PATH as well); the machine's own
+# PATHEXT is added on top of these
+_DEFAULT_PATH_EXECUTABLE_EXTS = (
+    ".com", ".exe", ".bat", ".cmd", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".msc", ".cpl", ".ps1", ".dll",
+)
 
 _UNINSTALLER_EXACT_NAMES = frozenset({
     "unins000.exe",
@@ -753,6 +760,26 @@ def looks_like_installed_app(folder: Union[str, Path]) -> Optional[str]:
 # 4. Path Boundary Matching & SystemRefIndex
 # ==============================================================================
 
+@lru_cache(maxsize=8)
+def _executable_extensions(pathext: str) -> FrozenSet[str]:
+    exts = set(_DEFAULT_PATH_EXECUTABLE_EXTS)
+    for ext in pathext.split(";"):
+        ext = ext.strip().lower()
+        if len(ext) > 1 and ext.startswith("."):
+            exts.add(ext)
+    return frozenset(exts)
+
+
+def is_path_executable(filename: str) -> bool:
+    """Whether a file sitting in a PATH folder can be run or loaded by name from there.
+
+    Windows only starts a bare name from PATH when its extension is in PATHEXT, and DLLs are found through
+    PATH too. A PDF, archive or model file in a PATH folder (such as the drive root) depends on nothing.
+    """
+    ext = os.path.splitext(filename)[1].lower()
+    return bool(ext) and ext in _executable_extensions(os.environ.get("PATHEXT", ""))
+
+
 def _normalize_for_match(path: str) -> Tuple[str, ...]:
     """Splits a path into casefolded segments for exact folder boundary matching."""
     cleaned = path.strip().strip('"').replace("/", "\\")
@@ -1061,7 +1088,7 @@ class SystemRefIndex:
                 matched.append(ref)
 
         effective_is_file = os.path.isfile(p_str) if is_file is None else is_file
-        if effective_is_file and n >= 2:
+        if effective_is_file and n >= 2 and is_path_executable(folder_parts[-1]):
             parent_parts = folder_parts[:-1]
             for target_parts, ref in self._normalized_targets:
                 if ref.kind == "path" and target_parts == parent_parts and ref not in matched:
@@ -1154,6 +1181,7 @@ __all__ = [
     "extract_argument_paths",
     "extract_executable_path",
     "format_protected_by_system_entry",
+    "is_path_executable",
     "looks_like_installed_app",
     "parse_lnk_bytes",
     "parse_lnk_details",

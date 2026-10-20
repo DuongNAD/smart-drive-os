@@ -11,10 +11,12 @@ Tests:
 
 from __future__ import annotations
 
+import os
 import struct
 import unittest
 from pathlib import Path
 from typing import Optional
+from unittest.mock import patch
 
 from smart_drive.core.system_refs import (
     RegistryReader,
@@ -22,6 +24,7 @@ from smart_drive.core.system_refs import (
     SystemRefIndex,
     extract_argument_paths,
     extract_executable_path,
+    is_path_executable,
     looks_like_installed_app,
     parse_lnk_bytes,
     parse_lnk_details,
@@ -393,6 +396,24 @@ class TestSystemRefIndexAndBoundaries(unittest.TestCase):
         ])
         self.assertEqual(idx_github.refs_under(r"E:\Git"), [])
         self.assertEqual(len(idx_github.refs_under(r"E:\GitHub")), 1)
+
+    def test_only_executable_files_directly_in_a_path_folder_are_references(self) -> None:
+        # The drive root on PATH must not pin every loose PDF, archive or model file on the drive
+        idx = SystemRefIndex([SystemRef(kind="path", source="PATH (User)", target="E:\\")])
+        with patch.dict(os.environ, {"PATHEXT": ".COM;.EXE;.RB"}):
+            for name in ("tool.exe", "run.CMD", "setup.ps1", "hook.bat", "lib.dll", "gem.rb", "bin.COM"):
+                with self.subTest(runnable=name):
+                    self.assertEqual(len(idx.refs_under("E:\\" + name, is_file=True)), 1)
+            for name in ("manual.pdf", "backup.zip", "model.gguf", "notes.txt", "README", "archive.tar.gz"):
+                with self.subTest(inert=name):
+                    self.assertEqual(idx.refs_under("E:\\" + name, is_file=True), [])
+        self.assertTrue(is_path_executable("Setup.EXE"))
+        self.assertFalse(is_path_executable("model.gguf"))
+        self.assertFalse(is_path_executable(".bashrc"))
+
+        # A file that a service, shortcut or startup entry points at is still a reference whatever its extension
+        idx_target = SystemRefIndex([SystemRef(kind="startup", source="startup X", target=r"E:\data.pdf")])
+        self.assertEqual(len(idx_target.refs_under(r"E:\data.pdf", is_file=True)), 1)
 
     def test_collect_with_mock_registry_shortcuts_and_broken_key_resilience(self) -> None:
         def broken_key() -> None:
