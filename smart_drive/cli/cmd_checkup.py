@@ -201,7 +201,7 @@ def run_checkup(
     dup_reclaimable_bytes = 0
     dup_group_count = 0
     if include_dup:
-        dup_plan = DuplicateDetector(root_abs).generate_reclamation_plan()
+        dup_plan = DuplicateDetector(root_abs, cluster_size=real_cluster).generate_reclamation_plan()
         dup_group_count = int(dup_plan.get("duplicate_group_count", 0) or 0)
         dup_reclaimable_bytes = int(dup_plan.get("total_reclaimable_bytes", 0) or 0)
         dup_summary = {

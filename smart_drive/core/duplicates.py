@@ -592,6 +592,7 @@ class DuplicateDetector:
 
         return {
             "root": self.root,
+            "cluster_size": self.cluster_size,  # the allocation unit the slack figures are worked out at
             "total_reclaimable_bytes": total_reclaimable_bytes,
             "total_reclaimable_slack": total_reclaimable_slack,
             "total_reclaimable_physical": total_reclaimable_bytes + total_reclaimable_slack,

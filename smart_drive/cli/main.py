@@ -65,7 +65,9 @@ from smart_drive.cli.cmd_setup import cmd_setup
 from smart_drive.cli.cmd_snapshot import cmd_snapshot
 from smart_drive.cli.cmd_status import cmd_status
 from smart_drive.cli.cmd_undo import cmd_undo
+from smart_drive.core.config import CLUSTER_SIZE_BYTES
 from smart_drive.core.duplicates import DuplicateDetector
+from smart_drive.core.fsinfo import detect_filesystem
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
@@ -107,7 +109,12 @@ def cmd_dup(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{e}\n")
         return 2
 
-    detector = DuplicateDetector(root, min_size=getattr(args, "min_size", 0) or 0, progress=_print_dup_progress)
+    # Slack is modelled at the volume's real allocation unit (as `audit` does), 512 KB exFAT when it cannot be read
+    fs_info = detect_filesystem(root)
+    real_cluster = fs_info.block_size if fs_info.block_size > 0 else CLUSTER_SIZE_BYTES
+    detector = DuplicateDetector(
+        root, cluster_size=real_cluster, min_size=getattr(args, "min_size", 0) or 0, progress=_print_dup_progress
+    )
     plan = detector.generate_reclamation_plan()
 
     if getattr(args, "json", False):
@@ -118,7 +125,10 @@ def cmd_dup(args: argparse.Namespace) -> int:
     print(f"\nDuplicate File Analysis for: {root}")
     print(f"Found {plan.get('duplicate_group_count', 0)} duplicate groups ({plan.get('duplicate_file_count', 0)} files)")
     print(f"Reclaimable Logical Space: {plan.get('total_reclaimable_bytes', 0) / (1024*1024):.2f} MB")
-    print(f"Reclaimable Cluster Slack: {plan.get('total_reclaimable_slack', 0) / (1024*1024):.2f} MB")
+    cluster = plan.get("cluster_size", real_cluster)
+    cluster_text = f"{cluster // 1024} KB" if cluster >= 1024 and cluster % 1024 == 0 else f"{cluster} B"
+    slack_mb = plan.get("total_reclaimable_slack", 0) / (1024 * 1024)
+    print(f"Reclaimable Cluster Slack: {slack_mb:.2f} MB (at {cluster_text} clusters)")
     print(
         f"Scanned {plan.get('files_scanned', 0):,} files in {plan.get('folders_scanned', 0):,} folders "
         f"in {plan.get('elapsed_seconds', 0):.1f} s; not entered: {plan.get('skipped_dependency_dirs', 0):,} "

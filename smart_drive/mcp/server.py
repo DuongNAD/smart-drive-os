@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from smart_drive.core.auditor import StorageAuditor, format_bytes
 from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.config import (
+    CLUSTER_SIZE_BYTES,
     SCAN_SKIPPED_PROTECTED_BY_SYSTEM,
     JunkTier,
     ensure_anti_indexing_markers,
@@ -36,6 +37,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.duplicates import DuplicateDetector
 from smart_drive.core.exfat_compat import ExFatEngine
+from smart_drive.core.fsinfo import detect_filesystem
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine, SecurityGuard
 from smart_drive.core.relink import after_moves, relink
@@ -988,8 +990,12 @@ class SmartDriveMCPServer:
         offset = self._parse_int(args.get("offset"), default=0, min_val=0)
 
         # drive_root: a sub-folder is judged by the folders above it, as the scan of the whole drive judges them.
-        # min_size is the detector's, so that small files are dropped before anything is hashed.
-        detector = DuplicateDetector(target_root, drive_root=self._resolve_safe_path(None), min_size=min_size)
+        # min_size is the detector's, so that small files are dropped before anything is hashed. Slack is modelled at
+        # the volume's real allocation unit (as `audit` does), 512 KB exFAT when it cannot be read.
+        storage_root = self._resolve_safe_path(None)
+        fs_info = detect_filesystem(storage_root)
+        cluster_size = fs_info.block_size if fs_info.block_size > 0 else CLUSTER_SIZE_BYTES
+        detector = DuplicateDetector(target_root, cluster_size=cluster_size, drive_root=storage_root, min_size=min_size)
         plan = detector.generate_reclamation_plan()
         all_groups = plan.get("duplicate_groups", [])
 
@@ -1022,6 +1028,7 @@ class SmartDriveMCPServer:
             "duplicate_group_count": total_groups,
             "returned_group_count": len(capped_groups),
             "duplicate_file_count": total_dup_files,
+            "cluster_size": cluster_size,
             "total_reclaimable_bytes": total_reclaimable_bytes,
             "total_reclaimable_slack": total_reclaimable_slack,
             "total_reclaimable_physical": total_reclaimable_physical,
