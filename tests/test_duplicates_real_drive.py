@@ -196,7 +196,8 @@ class TestFoldersUsedBySystemAreNotScanned(_Tree):
 
         plan = self.detector(system_refs=index).generate_reclamation_plan()
 
-        self.assertEqual(self.reported(plan), ["backup/copy.bin", "docs/original.bin"])  # the copies inside are no group
+        # the copies inside the protected folders do not make a group
+        self.assertEqual(self.reported(plan), ["backup/copy.bin", "docs/original.bin"])
         self.assertEqual(plan["skipped_protected_dirs"], 4)
         why = {Path(e["path"]).name: e["refs"][0]["kind"] for e in plan["protected_by_system"]}
         self.assertEqual(why, {"App": "installed_app", "Svc": "service", "tool": "uninstaller", "Tools": "path"})
@@ -206,7 +207,8 @@ class TestFoldersUsedBySystemAreNotScanned(_Tree):
             self.write(f"App/lib{i}/data.bin")
         self.write("docs/original.bin")
         self.write("backup/copy.bin")
-        index = SystemRefIndex([SystemRef(kind="shortcut", source="Demo.lnk", target=str(self.root / "App" / "demo.exe"))])
+        shortcut = SystemRef(kind="shortcut", source="Demo.lnk", target=str(self.root / "App" / "demo.exe"))
+        index = SystemRefIndex([shortcut])
 
         opened = self.opened_by(lambda: self.detector(system_refs=index).generate_reclamation_plan())
 
@@ -359,13 +361,16 @@ class TestHashingRunsInParallel(_Tree):
         by_digest: Dict[str, List[str]] = {}
         for path in sorted(self.root.rglob("*")):
             if path.is_file():
-                by_digest.setdefault(hashlib.sha256(path.read_bytes()).hexdigest(), []).append(path.relative_to(self.root).as_posix())
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                by_digest.setdefault(digest, []).append(path.relative_to(self.root).as_posix())
         return sorted(sorted(files) for files in by_digest.values() if len(files) > 1)
 
     def test_the_groups_are_the_same_whatever_the_number_of_workers(self) -> None:
         self.seed_mixed_tree()
         sequential = self.detector(workers=1).generate_reclamation_plan()
         parallel = self.detector(workers=8).generate_reclamation_plan()
+        self.assertGreaterEqual(sequential.pop("elapsed_seconds"), 0)
+        self.assertGreaterEqual(parallel.pop("elapsed_seconds"), 0)
         self.assertEqual(sequential, parallel)  # same groups, same order, same counts
         found = sorted(sorted(self.rel(f) for f in g["files"]) for g in parallel["duplicate_groups"])
         self.assertEqual(found, self.expected_groups())
@@ -419,6 +424,138 @@ class TestHashingRunsInParallel(_Tree):
         self.assertEqual(self.detector(workers=0).workers, 1)
         self.assertEqual(self.detector(workers=-4).workers, 1)
         self.assertEqual(self.detector(workers=3).workers, 3)
+
+
+class _FakeClock:
+    """A clock that moves one second per reading, so a run's "time" depends on the work done, not on the machine."""
+
+    def __init__(self, step: float = 1.0) -> None:
+        self.now = 0.0
+        self.step = step
+
+    def monotonic(self) -> float:
+        self.now += self.step
+        return self.now
+
+
+class TestProgressIsReported(_Tree):
+    """A long scan says how far it got (stderr, every ~2 s), and the report on stdout stays clean."""
+
+    def seed(self, groups: int = 6) -> None:
+        for i in range(groups):
+            payload = f"group {i} ".encode() * (30 + 10 * i)
+            for copy in range(3):
+                self.write(f"copy{copy}/file{i}.bin", payload)
+        self.write("copy0/unique.bin", b"nobody else has my size")
+
+    def test_progress_is_reported_through_the_callback_with_the_phases_in_order(self) -> None:
+        self.seed()
+        seen: List[Dict[str, Any]] = []
+        self.detector(progress=seen.append, progress_interval=0).generate_reclamation_plan()
+
+        phases = [info["phase"] for info in seen]
+        self.assertEqual(sorted(set(phases), key=phases.index), ["scan", "partial", "full"])
+        self.assertEqual(phases, sorted(phases, key=["scan", "partial", "full"].index))  # never back to an earlier one
+        self.assertTrue(all(isinstance(info[key], int) for info in seen for key in (
+            "folders_scanned", "files_scanned", "size_candidate_files", "files_partially_hashed", "files_fully_hashed",
+            "hash_total", "skipped_dependency_dirs", "skipped_protected_dirs",
+        )))
+        partial = [info for info in seen if info["phase"] == "partial"]
+        self.assertEqual({info["hash_total"] for info in partial}, {18})  # the files that share a size
+        done = [info["files_partially_hashed"] for info in partial]
+        self.assertEqual(done, sorted(done))
+
+    def test_reports_come_at_most_once_per_interval(self) -> None:
+        self.seed(groups=10)
+        clock = _FakeClock()
+        reported_at: List[float] = []
+        det = self.detector(progress=lambda info: reported_at.append(clock.now), progress_interval=2.0)
+        with patch.object(duplicates, "time", clock):
+            det.generate_reclamation_plan()
+
+        self.assertGreater(len(reported_at), 3)
+        gaps = [later - earlier for earlier, later in zip(reported_at, reported_at[1:])]
+        self.assertTrue(all(gap >= 2.0 for gap in gaps), gaps)
+        self.assertGreaterEqual(reported_at[0], 2.0)  # the first report comes one interval after the start
+
+    def test_a_quick_run_reports_nothing(self) -> None:
+        self.seed()
+        seen: List[Dict[str, Any]] = []
+        with patch.object(duplicates, "time", _FakeClock(step=0.0)):  # no time passes
+            self.detector(progress=seen.append).generate_reclamation_plan()
+        self.assertEqual(seen, [])
+
+    def test_the_detector_prints_nothing_by_itself(self) -> None:
+        self.seed()
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            self.detector(progress_interval=0).generate_reclamation_plan()
+        self.assertEqual((out.getvalue(), err.getvalue()), ("", ""))
+
+    def test_the_default_interval_is_about_two_seconds(self) -> None:
+        self.assertEqual(duplicates.PROGRESS_INTERVAL_SECONDS, 2.0)
+        self.assertEqual(self.detector().progress_interval, 2.0)
+
+    def test_the_progress_clock_starts_over_with_each_run(self) -> None:
+        self.seed()
+        clock = _FakeClock()
+        reported: List[float] = []
+        det = self.detector(progress=lambda info: reported.append(clock.now), progress_interval=2.0)
+        with patch.object(duplicates, "time", clock):
+            det.generate_reclamation_plan()
+            first_run = len(reported)
+            clock.now += 1000.0  # a long pause, then the same detector runs again
+            second_start = clock.now
+            det.generate_reclamation_plan()
+        second_run = reported[first_run:]
+        self.assertTrue(second_run)
+        # a report one interval into the run, not an instant one because the old schedule was long overdue
+        self.assertGreaterEqual(second_run[0] - second_start, 3.0)
+
+    def test_json_mode_keeps_stdout_clean_and_sends_progress_to_stderr(self) -> None:
+        self.seed()
+        with patch.object(duplicates, "PROGRESS_INTERVAL_SECONDS", 0):
+            code, out, err = self.run_dup("--json")
+        self.assertEqual(code, 0)
+        plan = json.loads(out)  # nothing but the plan on stdout
+        self.assertEqual(plan["duplicate_group_count"], 6)
+        lines = err.strip().splitlines()
+        self.assertTrue(lines)
+        self.assertTrue(all(line.startswith("dup: ") for line in lines), lines)
+        self.assertTrue(any("scanning:" in line for line in lines))
+        self.assertTrue(any("comparing the start and end" in line for line in lines))
+        self.assertTrue(any("hashing the files that still match" in line for line in lines))
+
+    def test_text_mode_sends_progress_to_stderr_too(self) -> None:
+        self.seed()
+        with patch.object(duplicates, "PROGRESS_INTERVAL_SECONDS", 0):
+            code, out, err = self.run_dup()
+        self.assertEqual(code, 0)
+        self.assertIn("Found 6 duplicate groups (18 files)", out)
+        self.assertNotIn("dup: ", out)
+        self.assertIn("dup: scanning:", err)
+
+    def test_a_quick_command_prints_nothing_on_stderr(self) -> None:
+        self.seed()
+        with patch.object(duplicates, "time", _FakeClock(step=0.0)):  # no time passes
+            _, _, err = self.run_dup("--json")
+        self.assertEqual(err, "")
+
+    def test_text_mode_says_what_was_scanned_and_what_was_not(self) -> None:
+        self.seed()
+        self.write("app/node_modules/pkg/data.bin")
+        self.write("other/node_modules/pkg/data.bin")
+        code, out, _ = self.run_dup()
+        self.assertEqual(code, 0)
+        summary = next(line for line in out.splitlines() if line.startswith("Scanned "))
+        self.assertIn("2 dependency/cache folders", summary)
+        self.assertIn("0 folders used by Windows or installed apps", summary)
+
+    def test_the_plan_says_how_long_the_run_took(self) -> None:
+        self.seed()
+        with patch.object(duplicates, "time", _FakeClock(step=0.5)):
+            plan = self.detector().generate_reclamation_plan()
+        self.assertGreater(plan["elapsed_seconds"], 0)
 
 
 class TestExistingScanOptionsKeepWorking(_Tree):
