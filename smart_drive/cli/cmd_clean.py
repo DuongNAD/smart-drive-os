@@ -9,7 +9,14 @@ import sys
 from typing import Any, Dict, List, Optional, Tuple
 
 from smart_drive.core.config import JunkTier
-from smart_drive.core.junk_detector import JunkDetector
+from smart_drive.core.junk_detector import (
+    KEPT_DEPENDENCY_TREE,
+    KEPT_GIT_TRACKED,
+    KEPT_GIT_UNVERIFIED,
+    KEPT_NOT_PROJECT_ROOT,
+    KEPT_SYSTEM_REFERENCED,
+    JunkDetector,
+)
 from smart_drive.core.purge_engine import (
     PurgeEngine,
     list_quarantine_batches,
@@ -85,6 +92,34 @@ def _tally_space(results: List[Dict[str, Any]]) -> Tuple[int, int, int, int]:
             deleted_count += 1
             freed_bytes += sz
     return deleted_count, freed_bytes, quarantined_count, quarantined_bytes
+
+
+# What the entries that look like junk but were kept are called in the text report, by JunkDetector.kept reason
+KEPT_LABELS: Dict[str, str] = {
+    KEPT_DEPENDENCY_TREE: "inside dependency folders (node_modules, site-packages...): installed packages, not leftovers",
+    KEPT_SYSTEM_REFERENCED: "inside folders that Windows or an installed app depends on",
+    KEPT_NOT_PROJECT_ROOT: "build/dist/.cache folders with no project file (package.json, pyproject.toml...) beside them",
+    KEPT_GIT_TRACKED: "tracked by git",
+    KEPT_GIT_UNVERIFIED: "inside a git repository that git could not be asked about",
+}
+
+
+def _kept_report_lines(detector: JunkDetector) -> List[str]:
+    """The lines saying what was left alone although it looks like junk, and why (none when nothing was)."""
+    kept = detector.get_kept_summary()
+    if not kept["total"]:
+        return []
+    lines = [f"Kept {kept['total']} look-alike item(s) that are not junk:"]
+    for reason, label in KEPT_LABELS.items():
+        count = kept["by_reason"].get(reason, 0)
+        if not count:
+            continue
+        line = f"  {count:>6}  {label}"
+        if reason == KEPT_SYSTEM_REFERENCED and detector.protected_by_system:
+            names = [os.path.basename(str(e["path"]).rstrip("/\\")) or str(e["path"]) for e in detector.protected_by_system]
+            line += ": " + ", ".join(names[:5]) + (", ..." if len(names) > 5 else "")
+        lines.append(line)
+    return lines
 
 
 def _unpack_purge_result(
@@ -166,6 +201,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
 
     detector = JunkDetector(root, max_tier=max_tier)
     junk_items = detector.find_junk()
+    kept = detector.get_kept_summary()
 
     is_dry_run = not getattr(args, "apply", False)
     quarantine = not getattr(args, "no_quarantine", False)
@@ -180,6 +216,9 @@ def cmd_clean(args: argparse.Namespace) -> int:
             "junk_count": len(junk_items),
             "junk_items": junk_dicts,
             "total_reclaimable_bytes": sum(j["size"] for j in junk_items),
+            # Entries named like junk that were left alone, by reason, and the folders the system depends on
+            "kept": kept,
+            "protected_by_system": detector.protected_by_system,
         }
         if not is_dry_run:
             # `--apply --json` used to print dry_run=false and return without deleting anything.
@@ -209,6 +248,8 @@ def cmd_clean(args: argparse.Namespace) -> int:
 
     if not junk_items:
         print("✓ No system junk files detected. Drive is clean.")
+        for line in _kept_report_lines(detector):
+            print(line)
         return 0
 
     total_bytes = sum(j["size"] for j in junk_items)  # every item, not just the 30 listed below
@@ -223,9 +264,15 @@ def cmd_clean(args: argparse.Namespace) -> int:
 
     print("-" * 70)
     print(f"Found {len(junk_items)} junk items. Reclaimable space: {total_bytes / (1024*1024):.2f} MB")
+    for line in _kept_report_lines(detector):
+        print(line)
 
     if is_dry_run:
         print("\n[DRY RUN] No files were deleted. Run with --apply to execute purge.")
+        if quarantine:
+            print("Tier 1-2 items are deleted permanently (no quarantine); only Tier 3 items can be restored (--restore).")
+        else:
+            print("--no-quarantine: every item is deleted permanently.")
         return 0
 
     _, results, batch_id = _unpack_purge_result(

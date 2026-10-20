@@ -652,6 +652,10 @@ class JunkDetector:
                 item.size, item.allocated_size = measure_tree(item.path, self.cluster_size)
         return junk_items
 
+    def get_kept_summary(self) -> Dict[str, Any]:
+        """What the last scan kept although its name looks like junk: the total and the count for each reason."""
+        return {"total": sum(self.kept.values()), "by_reason": dict(self.kept)}
+
     def get_summary(self, items: Sequence[JunkItem]) -> Dict[str, Any]:
         """Calculates aggregated metrics across a collection of junk items."""
         total_nominal = sum(item.size for item in items)
