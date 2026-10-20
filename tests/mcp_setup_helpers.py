@@ -88,7 +88,7 @@ class FakeRun:
                 if self.git_ok:
                     return 0, "git version 2.43.0\n", ""
                 return 1, "", "xcode-select: note: no developer tools were found"
-            if command[1] == "clone":
+            if "clone" in command[1:4]:  # git [-c core.fsmonitor=false] clone ...
                 repo_name = command[-2].rsplit("/", 1)[-1]
                 if repo_name in self.clone_fails:
                     return 128, "", "fatal: repository not found"

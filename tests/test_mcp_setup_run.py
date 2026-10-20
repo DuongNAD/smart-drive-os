@@ -51,10 +51,11 @@ class TestRunSetup(TempRootCase):
         self.assertTrue(report["ok"], report["errors"])
         self.assertEqual(bootstrap.exit_code(report), 0)
 
-        clones = [(argv, env) for argv, env in run.calls if len(argv) > 1 and argv[1] == "clone"]
+        clones = [(argv, env) for argv, env in run.calls if "clone" in argv[1:4]]
         self.assertEqual(len(clones), len(MEMBERS))
         for argv, env in clones:
-            self.assertEqual(argv[1:5], ["clone", "--depth", "1", "--quiet"])
+            self.assertEqual(argv[1:3], ["-c", "core.fsmonitor=false"])  # never starts a git fsmonitor daemon
+            self.assertEqual(argv[3:7], ["clone", "--depth", "1", "--quiet"])
             self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
 
         servers = self.manifest()["servers"]

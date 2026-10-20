@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from smart_drive.core.git_locks import NO_FSMONITOR
 from smart_drive.mcp import registrar
 from smart_drive.mcp.ecosystem import (
     CONTROL_PLANE,
@@ -283,7 +284,7 @@ def probe_git(host: Host) -> Tool:
     git = host.which("git")
     if not git:
         return Tool("git", False, detail="git not found on PATH (install it from https://git-scm.com)")
-    code, out, _err = host.run([git, "--version"], PROBE_TIMEOUT, host.env)
+    code, out, _err = host.run([git, "--version"], PROBE_TIMEOUT, host.env)  # no repository: no daemon to avoid
     if code != 0:
         hint = " On macOS run `xcode-select --install`." if host.system == "macos" else ""
         return Tool("git", False, git, detail=f"git is installed but cannot run.{hint}")
@@ -524,7 +525,7 @@ def install_member(host: Host, member: Member, dest: Path, git: str) -> Tuple[bo
     env = dict(host.env)
     env["GIT_TERMINAL_PROMPT"] = "0"
     code, out, err = host.run(
-        [git, "clone", "--depth", "1", "--quiet", member.repo, str(target)], CLONE_TIMEOUT, env
+        [git, *NO_FSMONITOR, "clone", "--depth", "1", "--quiet", member.repo, str(target)], CLONE_TIMEOUT, env
     )
     if code != 0:
         return False, f"git clone failed: {_last_line(err or out)}"
