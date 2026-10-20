@@ -74,6 +74,30 @@ _BUNDLE_MANIFEST_EXTS = frozenset({".csproj", ".sln"})
 _VERSIONED_SO = re.compile(r"\.so(?:\.\d+)+$")  # libz.so.1.2.11 (a plain .so is in the extension set above)
 
 
+def _entry_kind(name: str, is_dir: bool) -> Optional[str]:
+    """What one entry of a folder says about it: "program", "launcher", "manifest", "git", "vault" or None.
+
+    The ._* sidecar files macOS leaves in zip archives are not scripts and say nothing.
+    """
+    lowered = name.lower()
+    if is_dir:
+        if lowered.endswith(".app"):
+            return "program"
+        return {".git": "git", ".obsidian": "vault"}.get(lowered)
+    if lowered.startswith("._"):
+        return None
+    ext = os.path.splitext(lowered)[1]
+    if ext in _BUNDLE_PROGRAM_EXTS or _VERSIONED_SO.search(lowered):
+        return "program"
+    if ext in _BUNDLE_LAUNCHER_EXTS:
+        return "launcher"
+    if lowered in _BUNDLE_MANIFEST_NAMES or ext in _BUNDLE_MANIFEST_EXTS:
+        return "manifest"
+    if lowered == ".git":
+        return "git"  # a worktree or a submodule keeps .git as a file
+    return None
+
+
 def bundle_marker(dir_names: Iterable[str], file_names: Iterable[str]) -> Optional[str]:
     """Why a folder holding exactly these entries is a bundle, or None for a plain folder.
 
@@ -86,42 +110,41 @@ def bundle_marker(dir_names: Iterable[str], file_names: Iterable[str]) -> Option
 
     The answer names the entry that decided it: the first of the strongest kind in name order, so it does not depend
     on the order in which the filesystem lists the folder. Names compare case-insensitively; the ._* sidecar files
-    macOS leaves in zip archives are not scripts and do not count.
+    macOS leaves in zip archives are not scripts and do not count. A folder that merely holds a program folder is
+    judged by the engine (see holds_programs), because that takes a look into its subfolders.
     """
 
     def first(names: List[str]) -> str:
         return min(names, key=lambda name: (name.lower(), name))
 
-    folders = list(dir_names)
-    lowered_folders = {name.lower() for name in folders}
-    programs = [name for name in folders if name.lower().endswith(".app")]
-    launchers: List[str] = []
-    manifests: List[str] = []
-    has_git = ".git" in lowered_folders
-    for name in file_names:
-        lowered = name.lower()
-        if lowered.startswith("._"):
-            continue
-        ext = os.path.splitext(lowered)[1]
-        if ext in _BUNDLE_PROGRAM_EXTS or _VERSIONED_SO.search(lowered):
-            programs.append(name)
-        elif ext in _BUNDLE_LAUNCHER_EXTS:
-            launchers.append(name)
-        elif lowered in _BUNDLE_MANIFEST_NAMES or ext in _BUNDLE_MANIFEST_EXTS:
-            manifests.append(name)
-        elif lowered == ".git":
-            has_git = True  # a worktree or a submodule keeps .git as a file
-    if programs:
-        return f"program or library {first(programs)}"
-    if launchers:
-        return f"launcher script {first(launchers)}"
-    if manifests:
-        return f"project manifest {first(manifests)}"
-    if has_git:
+    found: Dict[str, List[str]] = {}
+    for names, is_dir in ((dir_names, True), (file_names, False)):
+        for name in names:
+            kind = _entry_kind(name, is_dir)
+            if kind:
+                found.setdefault(kind, []).append(name)
+    if "program" in found:
+        return f"program or library {first(found['program'])}"
+    if "launcher" in found:
+        return f"launcher script {first(found['launcher'])}"
+    if "manifest" in found:
+        return f"project manifest {first(found['manifest'])}"
+    if "git" in found:
         return "repository folder .git"
-    if ".obsidian" in lowered_folders:
+    if "vault" in found:
         return "Obsidian vault folder .obsidian"
     return None
+
+
+def holds_programs(dir_names: Iterable[str], file_names: Iterable[str]) -> bool:
+    """Whether a folder directly holds programs, libraries or launcher scripts: the part of an app that runs.
+
+    Manifests, .git and vault markers do not count. Such a folder (lib, bin...) gives away the folder that holds
+    it: that one also contains the app's configuration, data and logs, which nothing in them would reveal.
+    """
+    return any(_entry_kind(name, True) == "program" for name in dir_names) or any(
+        _entry_kind(name, False) in ("program", "launcher") for name in file_names
+    )
 
 
 @dataclass
@@ -859,6 +882,109 @@ class ClassifierEngine:
     # Directory Scanning
     # --------------------------------------------------------------------------
 
+    @staticmethod
+    def _is_pruned_dir_name(name: str) -> bool:
+        """Folders no scan ever enters, whatever they hold: hidden, system, cache and protected-by-name ones."""
+        return (
+            name.startswith(".")
+            or name in ("$RECYCLE.BIN", "System Volume Information", "__pycache__")
+            or name in DEFAULT_EXCLUDE_DIRS
+            or is_protected_root_dir(name)
+        )
+
+    @staticmethod
+    def _list_entries(folder: Path) -> Optional[Tuple[List[str], List[str]]]:
+        """The (subfolder names, other names) a folder directly holds, split the way os.walk splits them.
+
+        None when the folder cannot be read.
+        """
+        dir_names: List[str] = []
+        file_names: List[str] = []
+        try:
+            with os.scandir(folder) as entries:
+                for entry in entries:
+                    try:
+                        is_dir = entry.is_dir()
+                    except OSError:
+                        is_dir = False
+                    (dir_names if is_dir else file_names).append(entry.name)
+        except OSError:
+            return None
+        return dir_names, file_names
+
+    def _program_folder_reason(self, folder: Path, dir_names: Iterable[str]) -> Optional[str]:
+        """Why ``folder`` counts as holding an app: a subfolder of it directly holds programs or launcher scripts.
+
+        That subfolder (lib, bin...) is the part of an app that runs, and its siblings (conf, data, logs...) belong
+        to the app although nothing in them gives it away. ``dir_names`` are the subfolders a scan would enter; the
+        first qualifying one in name order is named ("holds program folder lib"). Skipping a whole document tree
+        because one subfolder holds an installer is accepted: splitting an app is the worse mistake.
+        """
+        for name in sorted(dir_names, key=lambda n: (n.lower(), n)):
+            listing = self._list_entries(folder / name)
+            if listing is not None and holds_programs(*listing):
+                return f"holds program folder {name}"
+        return None
+
+    def _bundle_reason(
+        self,
+        folder: Path,
+        dir_names: List[str],
+        file_names: List[str],
+        walkable_dirs: Iterable[str],
+    ) -> Optional[str]:
+        """Why ``folder`` is a bundle that must be kept whole, or None.
+
+        An app (a *.app folder, programs, launcher scripts), a project (manifest, .git, vault) or the folder around
+        an app (it holds a program folder).
+        """
+        if folder.name.lower().endswith(".app"):
+            return "macOS app folder"
+        return bundle_marker(dir_names, file_names) or self._program_folder_reason(folder, walkable_dirs)
+
+    def _is_drive_root(self, folder: Path) -> bool:
+        return folder == self.root or self._same_file(folder, self.root)
+
+    def _folders_on_the_way(self, folder: Path) -> List[Path]:
+        """``folder`` and every folder above it below the drive root, outermost first; none for the drive root itself.
+
+        A folder outside the drive stands alone: what lies above it is none of the drive's business.
+        """
+        way: List[Path] = []
+        for current in (folder, *folder.parents):
+            if self._is_drive_root(current):
+                return way[::-1]
+            way.append(current)
+        return [folder]
+
+    def _why_kept_whole(self, folder: Path, is_target: bool) -> Optional[str]:
+        """Why nothing may be sorted inside ``folder`` (a bundle, or used by the system), or None."""
+        # A top-level folder such as 05_Dev_Toolbox, Games or Downloads holds many apps side by side. When it is only
+        # on the way to the target, what the system references inside it concerns the app folder below it, as in
+        # execute_relocation; the target itself is always asked.
+        protected_name = is_protected_root_dir(folder.name)
+        if (is_target or not protected_name) and self._is_protected_by_system(folder, is_file=False):
+            return f"used by the system: {self.describe_protected_by_system(folder)}"
+        listing = self._list_entries(folder)
+        if listing is None:
+            return None
+        dir_names, file_names = listing
+        walkable = [d for d in dir_names if not self._is_pruned_dir_name(d) and not _is_link(folder / d)]
+        return self._bundle_reason(folder, dir_names, file_names, walkable)
+
+    def _kept_whole_on_the_way(self, folder: Path) -> bool:
+        """Whether ``folder`` (where the scan starts) or a folder above it, below the drive root, must be kept whole.
+
+        The outermost one is reported in ``skipped_bundles``, like the folder a recursive walk stops at. The drive
+        root is never judged: its loose files are what classify is for, and its launchers are protected files.
+        """
+        for candidate in self._folders_on_the_way(folder):
+            reason = self._why_kept_whole(candidate, is_target=candidate == folder)
+            if reason:
+                self.skipped_bundles.append({"path": str(candidate), "reason": reason})
+                return True
+        return False
+
     def scan_and_classify(
         self,
         target_dir: Optional[Union[str, Path]] = None,
@@ -905,12 +1031,14 @@ class ClassifierEngine:
         if not _exists(scan_root):
             return results
 
+        # Nothing is sorted inside an app, library or project folder, or one the system depends on, however the scan
+        # is aimed at it: the folder of a target file, the target folder or any folder above it (below the drive root).
+        if self._kept_whole_on_the_way(scan_root.parent if scan_root.is_file() else scan_root):
+            return results
+
         if scan_root.is_file():
             res = self.inspect_path(scan_root)
             return [res] if res else []
-
-        if scan_root != self.root and self._is_protected_by_system(scan_root):
-            return results
 
         # Directory traversal
         for root, dirs, files in os.walk(scan_root):
@@ -920,15 +1048,7 @@ class ClassifierEngine:
             entry_dirs = list(dirs)  # as listed: the pruning below drops a hidden .git, which still marks a bundle
 
             # Prune hidden, system, cache, and protected directories
-            dirs[:] = [
-                d for d in dirs
-                if not d.startswith(".")
-                and d != "$RECYCLE.BIN"
-                and d != "System Volume Information"
-                and d != "__pycache__"
-                and d not in DEFAULT_EXCLUDE_DIRS
-                and not is_protected_root_dir(d)
-            ]
+            dirs[:] = [d for d in dirs if not self._is_pruned_dir_name(d)]
             # Never descend into (or classify) symlinked / junctioned directories
             linked_dirs = [d for d in dirs if _is_link(curr_dir / d)]
             if linked_dirs:
@@ -989,9 +1109,9 @@ class ClassifierEngine:
                     dirs.clear()  # Do not recurse into already classified project repo
                     continue
 
-                # An app, a tool or a project that is not a repo of its own: its files only work together, so none
-                # of them is sorted by itself and nothing below it is looked at.
-                bundle = "macOS app folder" if curr_dir.name.lower().endswith(".app") else bundle_marker(entry_dirs, files)
+                # An app, a tool or a project that is not a repo of its own, or the folder around an app: its files
+                # only work together, so none of them is sorted by itself and nothing below it is looked at.
+                bundle = self._bundle_reason(curr_dir, entry_dirs, files, dirs)
                 if bundle:
                     self.skipped_bundles.append({"path": str(curr_dir), "reason": bundle})
                     dirs.clear()

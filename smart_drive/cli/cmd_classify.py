@@ -33,7 +33,7 @@ def _format_size(size_bytes: int) -> str:
 def _scope_note(recursive: bool) -> str:
     """One line saying how far the scan reached, so an empty result is not mistaken for 'nothing to sort'."""
     if recursive:
-        return "Scope: the scanned folder and its subfolders; app, library and project folders are kept whole."
+        return "Scope: the scanned folder and its subfolders; app, library and project folders, and the folders holding one, are kept whole."
     return "Scope: only the files directly in the scanned folder. Add '--recursive' to look inside subfolders too."
 
 
