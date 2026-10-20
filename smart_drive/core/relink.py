@@ -45,6 +45,7 @@ try:
 except ImportError:  # Python < 3.11: only the line-level duplicate guard protects TOML files
     tomllib = None  # type: ignore[assignment]
 
+from smart_drive.core.git_locks import NO_FSMONITOR
 from smart_drive.core.processes import normalize_process_name, probe_running_processes
 from smart_drive.core.root import same_file
 from smart_drive.core.system_refs import RegistryReader, SystemRefIndex, parse_lnk_file
@@ -1528,7 +1529,7 @@ def _run_git_repair(git_bin: str, repo_dir: Path, extra_args: Sequence[str], rep
     """Executes `git -C <repo_dir> worktree repair ...` and updates report."""
     try:
         done = subprocess.run(
-            [git_bin, "-C", str(repo_dir), "worktree", "repair", *extra_args],
+            [git_bin, *NO_FSMONITOR, "-C", str(repo_dir), "worktree", "repair", *extra_args],
             capture_output=True,
             text=True,
             encoding="utf-8",

@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional
 from smart_drive.core.config import CLUSTER_SIZE_BYTES
 from smart_drive.core.exfat_compat import ExFatEngine
 from smart_drive.core.fsinfo import detect_filesystem, slack_model_note
+from smart_drive.core.git_locks import NO_FSMONITOR
 from smart_drive.core.learning_units import get_learning_summary
 
 
@@ -220,7 +221,7 @@ def check_git_repositories(root: str, max_depth: int = 4) -> Dict[str, Any]:
         rel_repo = os.path.relpath(repo_dir, root).replace("\\", "/")
         try:
             res = subprocess.run(
-                ["git", "status", "--porcelain", "-b"],
+                ["git", *NO_FSMONITOR, "status", "--porcelain", "-b"],
                 cwd=repo_dir,
                 capture_output=True,
                 text=True,

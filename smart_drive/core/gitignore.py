@@ -22,6 +22,8 @@ import shutil
 import subprocess
 from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
 
+from smart_drive.core.git_locks import NO_FSMONITOR
+
 GIT_TIMEOUT = 30
 GH_TIMEOUT = 5
 
@@ -214,11 +216,11 @@ def _write_text_in_place(path: str, content: str) -> None:
 # -----------------------------------------------------------------------------
 
 def _git(path: str, *args: str) -> Tuple[int, str, str]:
-    """Runs a git command in path without locks or interactive prompts."""
+    """Runs a git command in path without locks, interactive prompts or the fsmonitor daemon."""
     env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0")
     try:
         res = subprocess.run(
-            ["git", "-C", path, *args],
+            ["git", *NO_FSMONITOR, "-C", path, *args],
             capture_output=True,
             text=True,
             encoding="utf-8",

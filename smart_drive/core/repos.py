@@ -7,7 +7,8 @@ report picks one to keep and says how to fold each other clone in, either by rem
 the same branch or by recreating another branch as a `git worktree` of the kept clone. Linked worktrees of
 one clone share its object store and are never duplicates.
 
-Read-only: nothing is fetched, written or deleted. Git runs with optional locks and prompts disabled.
+Read-only: nothing is fetched, written or deleted. Git runs with optional locks, prompts and the fsmonitor daemon
+disabled (a daemon would keep the repository's folder from being moved).
 """
 
 from __future__ import annotations
@@ -19,6 +20,8 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+from smart_drive.core.git_locks import NO_FSMONITOR
 
 PORTABLE = "portable"
 MACHINE = "machine"
@@ -224,7 +227,7 @@ def _git(path: str, *args: str) -> Tuple[int, str, str]:
     env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0")
     try:
         res = subprocess.run(
-            ["git", "-C", path, *args],
+            ["git", *NO_FSMONITOR, "-C", path, *args],
             capture_output=True,
             text=True,
             encoding="utf-8",

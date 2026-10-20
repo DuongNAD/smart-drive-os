@@ -36,6 +36,7 @@ from smart_drive.core.config import (
     is_protected_root_file,
     match_junk_rule,
 )
+from smart_drive.core.git_locks import NO_FSMONITOR
 from smart_drive.core.learning_units import find_unit_root
 from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOptions, measure_tree
 from smart_drive.core.system_refs import (
@@ -97,7 +98,8 @@ def _git_tracks(folder: str, name: Optional[str] = None) -> Optional[bool]:
         return None
     env = {key: value for key, value in os.environ.items() if key not in _GIT_ENV_UNSET}
     env.update(GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0")
-    command = [git, "--literal-pathspecs", "-C", folder, "ls-files", "-z"]
+    # `ls-files` refreshes the index, which would start the fsmonitor daemon of a repository that enables it
+    command = [git, *NO_FSMONITOR, "--literal-pathspecs", "-C", folder, "ls-files", "-z"]
     if name is not None:
         command += ["--", name]
     try:
