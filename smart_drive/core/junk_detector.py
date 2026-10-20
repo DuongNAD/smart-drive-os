@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -132,6 +133,44 @@ class JunkDetector:
         self.drive_root = os.path.realpath(os.path.abspath(drive_root))
         self.max_tier = max_tier
         self.cluster_size = cluster_size
+        self._name_matchers, self._always_check = self._compile_name_matchers(max_tier)
+
+    @staticmethod
+    def _compile_name_matchers(max_tier: JunkTier) -> Tuple[Dict[bool, Optional["re.Pattern[str]"]], Dict[bool, bool]]:
+        """Per entry kind, one regex that every name a junk rule could match must satisfy.
+
+        This is only a filter in front of `match_junk_rule`, which still decides: it lets the rest of
+        `inspect_file` (several path walks and a learning-unit lookup, i.e. filesystem calls) be skipped for the
+        ~99% of entries whose name no rule can match. A path rule (`polaris/.cache`) can only match an entry named
+        like its last component; a path rule whose last component is a wildcard cannot be filtered that way, so
+        for that kind of entry every name is let through.
+        """
+        patterns: Dict[bool, List[str]] = {False: [], True: []}
+        always_check = {False: False, True: False}
+        for rule in JUNK_RULES:
+            if rule.tier > max_tier:
+                continue
+            pattern = rule.pattern.lower()
+            if "/" in pattern:
+                tail = pattern.rsplit("/", 1)[1]
+                if any(ch in tail for ch in "*?["):
+                    always_check[rule.is_directory] = True
+                else:
+                    patterns[rule.is_directory].append(re.escape(tail))
+            else:
+                patterns[rule.is_directory].append(fnmatch.translate(pattern))
+        compiled = {kind: (re.compile("|".join(found)) if found else None) for kind, found in patterns.items()}
+        return compiled, always_check
+
+    def _may_be_junk(self, name: str, is_dir: bool, norm_rel: str) -> bool:
+        """False only when no junk rule and no Polaris-cache exception can apply to this name and path."""
+        if self._always_check[is_dir]:
+            return True
+        matcher = self._name_matchers[is_dir]
+        if matcher is not None and matcher.match(name.lower()):
+            return True
+        # Inside a learning unit, everything under polaris/.cache is junk whatever its name.
+        return "polaris/.cache" in norm_rel.lower()
 
     def _normalize_rel_path(self, target_path: str) -> str:
         """Computes clean relative path from drive root using forward slashes."""
@@ -165,6 +204,8 @@ class JunkDetector:
         """
         clean_name = name.strip()
         norm_rel = rel_path if rel_path is not None else self._normalize_rel_path(path)
+        if not self._may_be_junk(clean_name, is_dir, norm_rel):
+            return None
         parts = norm_rel.split("/") if norm_rel else []
 
         # ----------------------------------------------------------------------
@@ -288,6 +329,9 @@ class JunkDetector:
                 item = self.inspect_entry(entry)
                 if item:
                     junk_items.append(item)
+                    if item.is_dir:
+                        # Purged as a whole and sized below: its files need not be listed one by one first.
+                        scanner.skip_descent()
         else:
             stack = [scan_root]
             while stack:
