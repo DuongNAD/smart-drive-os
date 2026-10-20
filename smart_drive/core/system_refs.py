@@ -10,6 +10,7 @@ Zero external dependencies (Python 3.9+ standard library only).
 from __future__ import annotations
 
 from dataclasses import dataclass
+import ntpath
 import os
 from pathlib import Path
 import re
@@ -36,6 +37,12 @@ _ARG_TOKEN_RE = re.compile(r'[^\s"]+')
 _ICON_INDEX_RE = re.compile(r",\s*-?\d+\s*$")
 _ENV_VAR_RE = re.compile(r"%([^%]+)%")
 
+_LNK_HEADER_SIZE = 0x4C
+_MY_COMPUTER_CLSID = bytes.fromhex("e04fd020ea3a6910a2d808002b30309d")
+_SHELL_EXT_SIGNATURE = b"\x04\x00\xef\xbe"  # extension block 0xBEEF0004 of a file/folder shell item
+# Where the Unicode long name starts inside that block, by block version (as written by Windows 8 and 10/11)
+_SHELL_EXT_NAME_OFFSETS = {8: 42, 9: 46}
+
 _UNINSTALLER_EXACT_NAMES = frozenset({
     "unins000.exe",
     "uninstall.exe",
@@ -47,7 +54,9 @@ _UNINSTALLER_EXACT_NAMES = frozenset({
 class SystemRef:
     """A reference from the operating system or an application to a path on disk."""
 
-    kind: str    # "path" | "service" | "installed_app" | "startup" | "shortcut" | "uninstaller"
+    # "path" | "service" | "installed_app" | "startup" | "shortcut" | "shortcut_dep" | "uninstaller"
+    # ("shortcut_dep": a folder or file a shortcut starts in or passes to its program, not the shortcut's target)
+    kind: str
     source: str  # e.g. "PATH (User)", "HKLM\\...\\Services\\MSSQLSERVER", "C:\\Users\\X\\Desktop\\Git Bash.lnk"
     target: str  # filesystem path pointed to by the reference
 
@@ -255,6 +264,16 @@ def _split_unquoted_program(s: str) -> Optional[str]:
     return first
 
 
+def _expand_env_text(s: str, reader: Optional[RegistryReader]) -> str:
+    """Expands %VAR% placeholders through `reader`, or through the process environment without one."""
+    if reader is not None:
+        return reader.expand_env(s)
+    if "%" in s:
+        env_lower = {k.lower(): v for k, v in os.environ.items()}
+        return _ENV_VAR_RE.sub(lambda m: env_lower.get(m.group(1).lower(), m.group(0)), s)
+    return s
+
+
 def _prepare_command_line(raw: str, reader: Optional[RegistryReader]) -> Optional[str]:
     """Expands %VAR%, unwraps escaped quotes and drops a trailing icon index from a registry command line."""
     if not raw or not isinstance(raw, str):
@@ -264,12 +283,7 @@ def _prepare_command_line(raw: str, reader: Optional[RegistryReader]) -> Optiona
     if not s:
         return None
 
-    if reader is not None:
-        s = reader.expand_env(s)
-    elif "%" in s:
-        env_lower = {k.lower(): v for k, v in os.environ.items()}
-        s = _ENV_VAR_RE.sub(lambda m: env_lower.get(m.group(1).lower(), m.group(0)), s)
-
+    s = _expand_env_text(s, reader)
     s = _unescape_quoted_command(s)
 
     # Strip icon index suffix like `,0` or `,-1`
@@ -367,6 +381,7 @@ def _clean_argument_path(candidate: str) -> Optional[str]:
     c = c.rstrip(" ,;").replace("/", "\\")
     if c.startswith("\\\\?\\"):
         c = c[4:]
+    c = re.sub(r"(?<=.)\\{2,}", r"\\", c)  # `E:\\Folder` -> `E:\Folder`; a leading UNC `\\` stays
     if "%" in c or not re.match(r"^(?:[A-Za-z]:\\|\\\\)", c):
         return None
     if len([part for part in c.split("\\") if part]) < 2:
@@ -442,80 +457,232 @@ def split_and_expand_path(
     return entries
 
 
-def parse_lnk_bytes(data: bytes) -> Optional[str]:
-    """Parses a Windows Shell Link (.lnk) binary buffer (MS-SHLLINK) and extracts LocalBasePath."""
-    if not data or len(data) < 0x4C:
+@dataclass(frozen=True)
+class LnkDetails:
+    """What a Windows shortcut says about the files it uses."""
+
+    target: Optional[str] = None       # LinkInfo LocalBasePath, else the path in the ID list, else the relative path
+    working_dir: Optional[str] = None  # the "Start in" folder
+    arguments: Optional[str] = None    # command-line arguments passed to the target
+
+
+def parse_lnk_details(data: bytes, lnk_dir: Optional[str] = None) -> Optional[LnkDetails]:
+    """Parses a Windows Shell Link (.lnk) binary buffer (MS-SHLLINK); None when it holds nothing usable.
+
+    The target is the LinkInfo LocalBasePath when there is one. Many shortcuts are written without a LinkInfo
+    block and name their target only in the ID list, or in the relative path (resolved against `lnk_dir`, the
+    folder holding the .lnk, when given); both are used as fallbacks.
+    """
+    if not data or len(data) < _LNK_HEADER_SIZE:
         return None
 
     try:
-        header_size = struct.unpack_from("<I", data, 0x00)[0]
-        if header_size != 0x0000004C:
+        if struct.unpack_from("<I", data, 0x00)[0] != _LNK_HEADER_SIZE:
             return None
-
         link_flags = struct.unpack_from("<I", data, 0x14)[0]
-        has_id_list = bool(link_flags & 0x00000001)
-        has_link_info = bool(link_flags & 0x00000002)
 
-        pos = 0x4C
-        if has_id_list:
+        pos = _LNK_HEADER_SIZE
+        id_items: List[bytes] = []
+        if link_flags & 0x00000001:  # HasLinkTargetIDList
             if pos + 2 > len(data):
                 return None
             id_list_size = struct.unpack_from("<H", data, pos)[0]
+            id_items = _read_id_list_items(data, pos + 2, min(pos + 2 + id_list_size, len(data)))
             pos += 2 + id_list_size
 
-        if not has_link_info or pos + 28 > len(data):
-            return None
+        link_info_target: Optional[str] = None
+        strings_reachable = True
+        if link_flags & 0x00000002:  # HasLinkInfo
+            link_info_size = struct.unpack_from("<I", data, pos)[0] if pos + 4 <= len(data) else 0
+            if link_info_size < 28 or pos + link_info_size > len(data):
+                strings_reachable = False
+            else:
+                link_info_target = _link_info_local_path(data, pos, link_info_size)
+                pos += link_info_size
 
-        link_info_size, link_info_header_size, link_info_flags = struct.unpack_from("<III", data, pos)
-        if link_info_size < 28 or pos + link_info_size > len(data):
-            return None
-
-        # VolumeIDAndLocalBasePath bit (0x1)
-        if not (link_info_flags & 0x00000001):
-            return None
-
-        local_base_offset = struct.unpack_from("<I", data, pos + 16)[0]
-        common_path_offset = struct.unpack_from("<I", data, pos + 24)[0]
-
-        # Prefer Unicode LocalBasePath when LinkInfoHeaderSize >= 0x24
-        if link_info_header_size >= 0x24 and pos + 36 <= len(data):
-            local_base_offset_uni, common_path_offset_uni = struct.unpack_from("<II", data, pos + 28)
-            if local_base_offset_uni > 0 and pos + local_base_offset_uni < len(data):
-                base_uni = _read_utf16le_z(data, pos + local_base_offset_uni, pos + link_info_size)
-                suffix_uni = (
-                    _read_utf16le_z(data, pos + common_path_offset_uni, pos + link_info_size)
-                    if common_path_offset_uni > 0 and pos + common_path_offset_uni < len(data)
-                    else ""
-                )
-                combined = _join_base_and_suffix(base_uni, suffix_uni)
-                if combined:
-                    return combined
-
-        if local_base_offset > 0 and pos + local_base_offset < len(data):
-            base_ansi = _read_ansi_z(data, pos + local_base_offset, pos + link_info_size)
-            suffix_ansi = (
-                _read_ansi_z(data, pos + common_path_offset, pos + link_info_size)
-                if common_path_offset > 0 and pos + common_path_offset < len(data)
-                else ""
-            )
-            combined = _join_base_and_suffix(base_ansi, suffix_ansi)
-            if combined:
-                return combined
+        strings = _read_lnk_string_data(data, pos, link_flags) if strings_reachable else {}
     except (struct.error, ValueError, IndexError):
         return None
 
+    target = link_info_target or _id_list_path(id_items)
+    relative = strings.get("relative_path")
+    if not target and relative and lnk_dir:
+        target = _resolve_relative_target(relative, lnk_dir)
+
+    details = LnkDetails(
+        target=target or None,
+        working_dir=strings.get("working_dir") or None,
+        arguments=strings.get("arguments") or None,
+    )
+    return details if (details.target or details.working_dir or details.arguments) else None
+
+
+def parse_lnk_bytes(data: bytes) -> Optional[str]:
+    """Parses a Windows Shell Link (.lnk) binary buffer and returns the target path it points to."""
+    details = parse_lnk_details(data)
+    return details.target if details else None
+
+
+def _link_info_local_path(data: bytes, pos: int, link_info_size: int) -> Optional[str]:
+    """The LocalBasePath (+ CommonPathSuffix) of the LinkInfo block that starts at `pos`, or None."""
+    link_info_header_size, link_info_flags = struct.unpack_from("<II", data, pos + 4)
+
+    # VolumeIDAndLocalBasePath bit (0x1)
+    if not (link_info_flags & 0x00000001):
+        return None
+
+    local_base_offset = struct.unpack_from("<I", data, pos + 16)[0]
+    common_path_offset = struct.unpack_from("<I", data, pos + 24)[0]
+
+    # Prefer Unicode LocalBasePath when LinkInfoHeaderSize >= 0x24
+    if link_info_header_size >= 0x24 and pos + 36 <= len(data):
+        local_base_offset_uni, common_path_offset_uni = struct.unpack_from("<II", data, pos + 28)
+        if local_base_offset_uni > 0 and pos + local_base_offset_uni < len(data):
+            base_uni = _read_utf16le_z(data, pos + local_base_offset_uni, pos + link_info_size)
+            suffix_uni = (
+                _read_utf16le_z(data, pos + common_path_offset_uni, pos + link_info_size)
+                if common_path_offset_uni > 0 and pos + common_path_offset_uni < len(data)
+                else ""
+            )
+            combined = _join_base_and_suffix(base_uni, suffix_uni)
+            if combined:
+                return combined
+
+    if local_base_offset > 0 and pos + local_base_offset < len(data):
+        base_ansi = _read_ansi_z(data, pos + local_base_offset, pos + link_info_size)
+        suffix_ansi = (
+            _read_ansi_z(data, pos + common_path_offset, pos + link_info_size)
+            if common_path_offset > 0 and pos + common_path_offset < len(data)
+            else ""
+        )
+        combined = _join_base_and_suffix(base_ansi, suffix_ansi)
+        if combined:
+            return combined
     return None
 
 
-def _read_ansi_z(buf: bytes, start: int, limit: int) -> str:
-    end = buf.find(b"\x00", start, min(limit, len(buf)))
-    raw = buf[start:end] if end != -1 else buf[start:min(limit, len(buf))]
+def _shortcut_dependency_paths(details: LnkDetails, reader: Optional[RegistryReader]) -> List[str]:
+    """Absolute paths a shortcut depends on besides its target: its "Start in" folder and paths in its arguments."""
+    paths: List[str] = []
+    if details.working_dir:
+        working_dir = _clean_argument_path(_expand_env_text(details.working_dir, reader))
+        if working_dir:
+            paths.append(working_dir)
+    if details.arguments:
+        for arg_path in _absolute_paths_in_text(_expand_env_text(details.arguments, reader)):
+            if arg_path not in paths:
+                paths.append(arg_path)
+    return paths
+
+
+def _read_lnk_string_data(data: bytes, pos: int, link_flags: int) -> Dict[str, str]:
+    """Reads the StringData section: name, relative path, working dir, arguments, icon location (those present)."""
+    is_unicode = bool(link_flags & 0x00000080)
+    width = 2 if is_unicode else 1
+    out: Dict[str, str] = {}
+    for bit, key in (
+        (0x00000004, "name"),
+        (0x00000008, "relative_path"),
+        (0x00000010, "working_dir"),
+        (0x00000020, "arguments"),
+        (0x00000040, "icon_location"),
+    ):
+        if not link_flags & bit:
+            continue
+        if pos + 2 > len(data):
+            break
+        count = struct.unpack_from("<H", data, pos)[0]
+        pos += 2
+        end = pos + count * width
+        if end > len(data):
+            break
+        raw = data[pos:end]
+        out[key] = raw.decode("utf-16-le", errors="ignore") if is_unicode else _decode_ansi(raw)
+        pos = end
+    return out
+
+
+def _read_id_list_items(data: bytes, start: int, end: int) -> List[bytes]:
+    """Splits an ID list into its shell items (each keeps its 2-byte size prefix); stops at the terminator."""
+    items: List[bytes] = []
+    pos = start
+    while pos + 2 <= end:
+        size = struct.unpack_from("<H", data, pos)[0]
+        if size < 2 or pos + size > end:
+            break
+        items.append(data[pos:pos + size])
+        pos += size
+    return items
+
+
+def _id_list_path(items: Sequence[bytes]) -> Optional[str]:
+    """The path `X:\\folder\\file` an ID list rooted at My Computer leads to, or None for anything else."""
+    if len(items) < 2:
+        return None
+    root, volume = items[0], items[1]
+    if len(root) < 20 or root[2] & 0x7F != 0x1F or root[4:20] != _MY_COMPUTER_CLSID:
+        return None
+    if len(volume) < 6 or volume[2] & 0x70 != 0x20:
+        return None
+    drive = volume[3:].split(b"\x00", 1)[0].decode("cp1252", errors="ignore")
+    if not re.fullmatch(r"[A-Za-z]:\\?", drive):
+        return None
+
+    names: List[str] = []
+    for item in items[2:]:
+        name = _shell_item_name(item)
+        if name is None:
+            return None
+        names.append(name)
+    return drive[:2] + "\\" + "\\".join(names)
+
+
+def _shell_item_name(item: bytes) -> Optional[str]:
+    """The file or folder name of a file-system shell item (class 0x30-0x3F), or None."""
+    if len(item) < 16 or item[2] & 0x70 != 0x30:
+        return None
+
+    # The item ends with the offset of its 0xBEEF0004 extension block, which carries the Unicode long name
+    ext_off = struct.unpack_from("<H", item, len(item) - 2)[0]
+    if 14 <= ext_off <= len(item) - 12 and item[ext_off + 4:ext_off + 8] == _SHELL_EXT_SIGNATURE:
+        version = struct.unpack_from("<H", item, ext_off + 2)[0]
+        name_off = _SHELL_EXT_NAME_OFFSETS.get(version)
+        if name_off is not None and ext_off + name_off < len(item) - 2:
+            long_name = _read_utf16le_z(item, ext_off + name_off, len(item) - 2)
+            if _is_valid_file_name(long_name):
+                return long_name
+
+    # Otherwise the primary name (ANSI, or UTF-16 when the class has bit 0x04); a `NAME~1` alias is not the real name
+    if item[2] & 0x04:
+        primary = _read_utf16le_z(item, 14, len(item))
+    else:
+        end = item.find(b"\x00", 14)
+        primary = _decode_ansi(item[14:end]) if end > 14 else ""
+    return primary if _is_valid_file_name(primary) and "~" not in primary else None
+
+
+def _is_valid_file_name(name: str) -> bool:
+    return bool(name) and all(ord(ch) >= 32 and ch not in '\\/:*?"<>|' for ch in name)
+
+
+def _resolve_relative_target(relative: str, lnk_dir: str) -> Optional[str]:
+    """Resolves the shortcut's relative path against the folder that holds the .lnk file."""
+    joined = ntpath.normpath(ntpath.join(lnk_dir, relative.strip()))
+    return joined if re.match(r"^[A-Za-z]:\\", joined) else None
+
+
+def _decode_ansi(raw: bytes) -> str:
     for enc in ("utf-8", "cp1252", "latin-1"):
         try:
             return raw.decode(enc)
         except UnicodeDecodeError:
             continue
     return raw.decode("latin-1", errors="ignore")
+
+
+def _read_ansi_z(buf: bytes, start: int, limit: int) -> str:
+    end = buf.find(b"\x00", start, min(limit, len(buf)))
+    return _decode_ansi(buf[start:end] if end != -1 else buf[start:min(limit, len(buf))])
 
 
 def _read_utf16le_z(buf: bytes, start: int, limit: int) -> str:
@@ -538,14 +705,20 @@ def _join_base_and_suffix(base: str, suffix: str) -> str:
     return b.rstrip("\\/") + "\\" + s.lstrip("\\/")
 
 
-def parse_lnk_file(path: Union[str, Path]) -> Optional[str]:
-    """Reads a `.lnk` file on disk and returns its target path, or None on error."""
+def read_lnk_details(path: Union[str, Path]) -> Optional[LnkDetails]:
+    """Reads a `.lnk` file on disk and returns what it points to and starts in, or None on error."""
     try:
         with open(path, "rb") as f:
             data = f.read(65536)
-        return parse_lnk_bytes(data)
     except OSError:
         return None
+    return parse_lnk_details(data, lnk_dir=os.path.dirname(os.path.abspath(path)))
+
+
+def parse_lnk_file(path: Union[str, Path]) -> Optional[str]:
+    """Reads a `.lnk` file on disk and returns its target path, or None on error."""
+    details = read_lnk_details(path)
+    return details.target if details else None
 
 
 # ==============================================================================
@@ -854,9 +1027,13 @@ class SystemRefIndex:
                             stop_current_dir = True
                             break
                         lnk_path = os.path.join(dirpath, fname)
-                        target = parse_lnk_file(lnk_path)
-                        if target:
-                            out.append(SystemRef(kind="shortcut", source=lnk_path, target=target))
+                        details = read_lnk_details(lnk_path)
+                        if details is None:
+                            continue
+                        if details.target:
+                            out.append(SystemRef(kind="shortcut", source=lnk_path, target=details.target))
+                        for dep in _shortcut_dependency_paths(details, reader):
+                            out.append(SystemRef(kind="shortcut_dep", source=lnk_path, target=dep))
                     if stop_current_dir:
                         break
             except OSError:
@@ -941,7 +1118,7 @@ def summarize_system_refs(refs: Sequence[SystemRef]) -> str:
     for st in dict.fromkeys(startups):
         parts.append(st)
 
-    shortcut_count = sum(1 for r in refs if r.kind == "shortcut")
+    shortcut_count = len({r.source for r in refs if r.kind in ("shortcut", "shortcut_dep")})
     if shortcut_count == 1:
         parts.append("1 shortcut")
     elif shortcut_count > 1:
@@ -957,6 +1134,7 @@ def summarize_system_refs(refs: Sequence[SystemRef]) -> str:
 __all__ = [
     "MAX_DESKTOP_WALK_DEPTH",
     "MAX_SHORTCUT_FILES",
+    "LnkDetails",
     "RegistryReader",
     "SystemRef",
     "SystemRefIndex",
@@ -965,7 +1143,9 @@ __all__ = [
     "format_protected_by_system_entry",
     "looks_like_installed_app",
     "parse_lnk_bytes",
+    "parse_lnk_details",
     "parse_lnk_file",
+    "read_lnk_details",
     "split_and_expand_path",
     "summarize_system_refs",
 ]
