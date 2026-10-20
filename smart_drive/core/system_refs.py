@@ -640,6 +640,8 @@ class SystemRefIndex:
                     if k.lower() == val_lower and isinstance(v, str) and v.strip():
                         expanded = reader.expand_env(v.strip().strip('"'))
                         if expanded and "%" not in expanded:
+                            if os.sep == "/" and expanded.startswith("/"):
+                                expanded = expanded.replace("\\", "/")
                             return Path(expanded)
             except Exception:
                 continue
