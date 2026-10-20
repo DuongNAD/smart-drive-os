@@ -886,6 +886,39 @@ class TestLauncherMasterMenuMapping(unittest.TestCase):
                 finally:
                     shutil.rmtree(repo_dir, ignore_errors=True)
 
+    def test_powershell_menu_option_0_leaves_the_menu_loop(self):
+        """In PowerShell a bare `break` inside `switch` only leaves the switch, so option 0 needs the loop's label."""
+        text = (LAUNCHERS_DIR / "SmartDrive.ps1").read_text(encoding="utf-8")
+        self.assertIn(":menu while ($true) {", text)
+        start = text.index('        "0" {\n')
+        block = text[start : text.index("        }\n", start)]
+        self.assertIn("break menu", block)
+
+    @unittest.skipUnless(sys.platform == "win32" and shutil.which("powershell"), "needs Windows PowerShell")
+    def test_empirical_powershell_menu_option_0_exits(self):
+        """Selecting 0 in SmartDrive.ps1 ends the script instead of drawing the menu again."""
+        repo_dir = _make_fake_repo("test_menu_ps1_exit_")
+        try:
+            launcher = repo_dir / "SmartDrive.ps1"
+            shutil.copy2(LAUNCHERS_DIR / "SmartDrive.ps1", launcher)
+            try:
+                proc = subprocess.run(
+                    ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(launcher)],
+                    input="0\n",
+                    text=True,
+                    capture_output=True,
+                    env=_fake_repo_env(repo_dir / "calls.log"),
+                    cwd=str(repo_dir),
+                    timeout=60,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                self.fail("option 0 did not end SmartDrive.ps1: it kept drawing the menu")
+            self.assertEqual(proc.returncode, 0, f"{proc.stdout}\n{proc.stderr}")
+            self.assertEqual(proc.stdout.count("Exiting SmartDrive-OS. Goodbye!"), 1)
+        finally:
+            shutil.rmtree(repo_dir, ignore_errors=True)
+
     def test_batch_menu_escapes_ampersands_in_echo_lines(self):
         """An unescaped & ends an echo and runs the rest of the line as a command ('Presets' is not recognized)."""
         text = (LAUNCHERS_DIR / "SmartDrive.bat").read_text(encoding="utf-8")

@@ -69,7 +69,8 @@ function Run-SmartDrive {
 }
 
 # Tier 4: Execution (Master 1-Touch Menu Loop)
-while ($true) {
+# The label lets option 0 leave the loop: a bare break inside switch only leaves the switch.
+:menu while ($true) {
     Clear-Host
     Write-Host "========================================================" -ForegroundColor Cyan
     Write-Host "  SmartDrive-OS: Master 1-Touch Control Center" -ForegroundColor Cyan
@@ -221,7 +222,7 @@ while ($true) {
         "0" {
             Write-Host ""
             Write-Host "Exiting SmartDrive-OS. Goodbye!" -ForegroundColor Cyan
-            break
+            break menu
         }
     }
 }
