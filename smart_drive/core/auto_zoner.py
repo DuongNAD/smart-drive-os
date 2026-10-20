@@ -32,6 +32,7 @@ from smart_drive.core.exfat_compat import ExFatEngine
 from smart_drive.core.fsinfo import detect_filesystem
 from smart_drive.core.git_locks import release_git_locks
 from smart_drive.core.learning_units import find_unit_root
+from smart_drive.core.move_hint import move_failure_hint
 from smart_drive.core.scanner import measure_tree
 from smart_drive.core.system_refs import (
     SystemRefIndex,
@@ -528,7 +529,7 @@ class AutoZoner:
             except Exception as err:
                 errors.append({
                     "src": action.src_path,
-                    "error": f"{err} (close the editor, terminal or coding agent using it, then run organize again)",
+                    "error": f"{err} ({move_failure_hint(err, action.src_path, 'organize')})",
                 })
 
         return {
