@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.DuongNAD/smart-drive-os",
+  "title": "SmartDrive-OS",
+  "description": "Organize a drive without breaking coding agents: relink moved folders, clean junk, search files.",
+  "repository": {
+    "url": "https://github.com/DuongNAD/smart-drive-os",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/DuongNAD/smart-drive-os#readme",
+  "version": "1.4.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "smart-drive-os",
+      "version": "1.4.1",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "SMART_DRIVE_ROOT",
+          "description": "Drive or folder to manage. Optional: without it the server looks for a SmartDrive root above its working directory, then on attached drives.",
+          "isRequired": false,
+          "format": "filepath"
+        }
+      ]
+    }
+  ]
+}
