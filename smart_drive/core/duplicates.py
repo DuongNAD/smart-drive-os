@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from collections import defaultdict, deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -58,6 +59,9 @@ VENV_MARKER_FILE = "pyvenv.cfg"
 # scanning each file as it is opened that was ~16 files a second one after another, and overlapping the opens is an
 # order of magnitude faster. `workers=1` hashes one file at a time, for a disk that dislikes parallel reads.
 HASH_WORKERS = 8
+
+# A long scan tells its caller how far it got, at most this often (seconds).
+PROGRESS_INTERVAL_SECONDS = 2.0
 
 
 def compute_partial_hash(filepath: str, chunk_size: int = 8192) -> str:
@@ -114,6 +118,8 @@ class DuplicateDetector:
         system_refs: Optional[SystemRefIndex] = None,
         min_size: int = 0,
         workers: Optional[int] = None,
+        progress: Optional[Callable[[Dict[str, Any]], None]] = None,
+        progress_interval: Optional[float] = None,
     ) -> None:
         self.root = os.path.abspath(root)
         self.cluster_size = cluster_size
@@ -131,6 +137,13 @@ class DuplicateDetector:
         # keeps empty files: they are grouped by size alone (never opened) and are worth 0 bytes to reclaim.
         self.min_size = max(0, int(min_size))
         self.workers = HASH_WORKERS if workers is None else max(1, int(workers))
+        # `progress(info)` is called at most every `progress_interval` seconds while a run is under way (see
+        # progress_info); it is the caller's to show, the detector itself prints nothing
+        self._progress = progress
+        self.progress_interval = PROGRESS_INTERVAL_SECONDS if progress_interval is None else max(0.0, progress_interval)
+        self._next_progress: Optional[float] = None
+        self._phase = "scan"
+        self._hash_total = 0
         # Extra paths of hard-linked data met during the last walk. They are the same storage as a path already
         # yielded, so they are neither hashed again nor reported as redundant copies.
         self.hardlinked_paths_ignored = 0
@@ -176,6 +189,31 @@ class DuplicateDetector:
         if not is_file:
             self.skipped_protected_dirs += 1
         return True
+
+    def progress_info(self) -> Dict[str, Any]:
+        """Where the run is now: its phase ("scan", "partial" or "full") and the counters so far."""
+        return {
+            "phase": self._phase,
+            "folders_scanned": self.folders_scanned,
+            "files_scanned": self.files_scanned,
+            "size_candidate_files": self.size_candidate_files,
+            "files_partially_hashed": self.files_partially_hashed,
+            "files_fully_hashed": self.files_fully_hashed,
+            "hash_total": self._hash_total,  # files the current hashing phase has to go through
+            "skipped_dependency_dirs": self.skipped_dependency_dirs,
+            "skipped_protected_dirs": self.skipped_protected_dirs,
+        }
+
+    def _report_progress(self) -> None:
+        """Calls the progress callback, if there is one, unless it was called less than `progress_interval` ago."""
+        if self._progress is None:
+            return
+        now = time.monotonic()
+        if self._next_progress is None:  # the first report comes one interval after the run started
+            self._next_progress = now + self.progress_interval
+        elif now >= self._next_progress:
+            self._next_progress = now + self.progress_interval
+            self._progress(self.progress_info())
 
     def _walk_files(self) -> Iterator[Tuple[str, int]]:
         """Fast non-recursive directory scan yielding (abs_path, size).
@@ -283,7 +321,10 @@ class DuplicateDetector:
             Only sizes containing >= 2 files are returned.
         """
         size_map: Dict[int, List[str]] = defaultdict(list)
-        self.size_candidate_files = 0
+        # (the start of a run: the hashing counters and the progress clock start over)
+        self.size_candidate_files = self.files_partially_hashed = self.files_fully_hashed = self._hash_total = 0
+        self._phase = "scan"
+        self._next_progress = None
         for filepath, size in self._walk_files():
             bucket = size_map[size]
             bucket.append(filepath)
@@ -291,6 +332,7 @@ class DuplicateDetector:
                 self.size_candidate_files += 2
             elif len(bucket) > 2:
                 self.size_candidate_files += 1
+            self._report_progress()
 
         return {s: paths for s, paths in size_map.items() if len(paths) >= 2}
 
@@ -301,7 +343,6 @@ class DuplicateDetector:
         """
         size_candidates = self.filter_by_size()
         partial_map: Dict[Tuple[int, str], List[str]] = defaultdict(list)
-        self.files_partially_hashed = 0
 
         size_of: Dict[str, int] = {}
         for size, files in size_candidates.items():
@@ -309,9 +350,11 @@ class DuplicateDetector:
                 partial_map[(0, EMPTY_FILE_SHA256)].extend(files)
             else:
                 size_of.update((filepath, size) for filepath in files)
+        self._phase, self._hash_total = "partial", len(size_of)
 
         for filepath, p_hash in self._hash_each(lambda path: compute_partial_hash(path, chunk_size), list(size_of)):
             self.files_partially_hashed += 1
+            self._report_progress()
             if p_hash:
                 partial_map[(size_of[filepath], p_hash)].append(filepath)
 
@@ -333,7 +376,6 @@ class DuplicateDetector:
         """Phase 3: Computes streaming full SHA-256 for surviving candidate groups."""
         partial_candidates = self._group_by_partial_hash()
         full_hash_map: Dict[Tuple[int, str], List[str]] = defaultdict(list)
-        self.files_fully_hashed = 0
 
         size_of: Dict[str, int] = {}
         for (size, _), files in partial_candidates.items():
@@ -341,9 +383,11 @@ class DuplicateDetector:
                 full_hash_map[(0, EMPTY_FILE_SHA256)].extend(files)
             else:
                 size_of.update((filepath, size) for filepath in files)
+        self._phase, self._hash_total = "full", len(size_of)
 
         for filepath, full_hash in self._hash_each(lambda path: compute_full_sha256(path), list(size_of)):
             self.files_fully_hashed += 1
+            self._report_progress()
             if full_hash:
                 full_hash_map[(size_of[filepath], full_hash)].append(filepath)
 
@@ -385,7 +429,9 @@ class DuplicateDetector:
 
     def generate_reclamation_plan(self) -> Dict[str, Any]:
         """Generates a complete summary of duplicates and space reclamation savings."""
+        started = time.monotonic()
         groups = self.find_duplicates()
+        elapsed = time.monotonic() - started
         total_reclaimable_bytes = sum(g["reclaimable_bytes"] for g in groups)
         total_reclaimable_slack = sum(g["reclaimable_slack"] for g in groups)
         total_dup_files = sum(len(g["files"]) for g in groups)
@@ -399,6 +445,7 @@ class DuplicateDetector:
             "duplicate_file_count": total_dup_files,
             "duplicate_groups": groups,
             "hardlinked_paths_ignored": self.hardlinked_paths_ignored,
+            "elapsed_seconds": round(elapsed, 2),
             "min_size": self.min_size,
             "folders_scanned": self.folders_scanned,
             "files_scanned": self.files_scanned,
@@ -418,6 +465,7 @@ __all__ = [
     "compute_full_sha256",
     "DEPENDENCY_DIR_NAMES",
     "HASH_WORKERS",
+    "PROGRESS_INTERVAL_SECONDS",
     "VENV_MARKER_FILE",
     "EMPTY_FILE_SHA256",
 ]

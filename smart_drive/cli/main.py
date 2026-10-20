@@ -28,7 +28,7 @@ import dataclasses
 import json
 import os
 import sys
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 # Configure UTF-8 encoding on Windows consoles
 if sys.platform == "win32":
@@ -83,6 +83,21 @@ def get_default_db_path(root: str) -> str:
     return new_path
 
 
+def _print_dup_progress(info: Dict[str, Any]) -> None:
+    """One progress line on stderr (the detector sends one every ~2 s); stdout stays the report, JSON with --json."""
+    if info["phase"] == "scan":
+        text = (
+            f"scanning: {info['files_scanned']:,} files in {info['folders_scanned']:,} folders, "
+            f"{info['size_candidate_files']:,} share their size with another file"
+        )
+    elif info["phase"] == "partial":
+        done = info["files_partially_hashed"]
+        text = f"comparing the start and end of same-size files: {done:,} of {info['hash_total']:,}"
+    else:
+        text = f"hashing the files that still match: {info['files_fully_hashed']:,} of {info['hash_total']:,}"
+    print(f"dup: {text}", file=sys.stderr, flush=True)
+
+
 def cmd_dup(args: argparse.Namespace) -> int:
     """Handles the `dup` subcommand."""
     try:
@@ -92,7 +107,7 @@ def cmd_dup(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{e}\n")
         return 2
 
-    detector = DuplicateDetector(root, min_size=getattr(args, "min_size", 0) or 0)
+    detector = DuplicateDetector(root, min_size=getattr(args, "min_size", 0) or 0, progress=_print_dup_progress)
     plan = detector.generate_reclamation_plan()
 
     if getattr(args, "json", False):
@@ -104,6 +119,11 @@ def cmd_dup(args: argparse.Namespace) -> int:
     print(f"Found {plan.get('duplicate_group_count', 0)} duplicate groups ({plan.get('duplicate_file_count', 0)} files)")
     print(f"Reclaimable Logical Space: {plan.get('total_reclaimable_bytes', 0) / (1024*1024):.2f} MB")
     print(f"Reclaimable Cluster Slack: {plan.get('total_reclaimable_slack', 0) / (1024*1024):.2f} MB")
+    print(
+        f"Scanned {plan.get('files_scanned', 0):,} files in {plan.get('folders_scanned', 0):,} folders "
+        f"in {plan.get('elapsed_seconds', 0):.1f} s; not entered: {plan.get('skipped_dependency_dirs', 0):,} "
+        f"dependency/cache folders, {plan.get('skipped_protected_dirs', 0):,} folders used by Windows or installed apps"
+    )
     print("-" * 70)
 
     for i, g in enumerate(groups[:15], 1):
