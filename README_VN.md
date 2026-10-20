@@ -68,7 +68,7 @@ Tải Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius và Mira vào `
 ```bash
 python3 -m smart_drive setup  # macOS / Linux (Windows: python -m smart_drive setup hoặc py -m smart_drive setup)
 ```
-Trả lời `a` (tất cả), `n` (không cài, mặc định) hoặc số/tên như `1,3` hay `polaris,vega`; Constellation (mặt phẳng điều khiển) luôn được cài kèm. `--yes` bỏ qua câu hỏi (`--only polaris,vega --yes` chỉ cài những máy đó). Coding agent không có terminal để trả lời: lần chạy của agent không cài gì, thoát với mã `4` kèm danh sách, rồi agent hỏi bạn ngay trong khung chat của nó trước khi chạy `setup --only <lựa chọn của bạn> --yes`.
+Trả lời `a` (tất cả), `n` (không cài, mặc định) hoặc số/tên như `1,3` hay `polaris,vega`; Constellation (mặt phẳng điều khiển) luôn được cài kèm khi chưa có. Máy chủ đã tải về cũng được liệt kê, kèm tên các agent, nếu nó sắp được thêm vào cấu hình của một agent. `--yes` bỏ qua câu hỏi (`--only polaris,vega --yes` chỉ cài những máy đó). Coding agent không có terminal để trả lời: lần chạy của agent không cài gì, thoát với mã `4` kèm danh sách, rồi agent hỏi bạn ngay trong khung chat của nó trước khi chạy `setup --only <lựa chọn của bạn> --yes`.
 
 Cần Node.js >= 22.4 và git. `--dry-run` xem trước; `--check --json` báo trạng thái (mã thoát `3` = cần cài đặt); `--no-clone` ngoại tuyến; `--agents claude,cursor` giới hạn agent. Máy chủ đã đăng ký được dùng lại, không clone lần hai (`mcp-agy` tách riêng: venv riêng, Python >= 3.10, API key).
 

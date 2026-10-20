@@ -15,7 +15,9 @@
 Safe to re-run: what is already set up is left alone, and nothing is written when nothing changed.
 Nothing is downloaded or registered without the user's approval: the CLI (``smart_drive.cli.cmd_setup``)
 plans first with ``dry_run``, lists the servers with ``consent_items`` and asks; a coding agent that
-cannot ask gets the list back with exit code 4 instead of an installation.
+cannot ask gets the list back with exit code 4 instead of an installation. A server that is already
+downloaded still needs approval while a registration would add it to a coding agent's config (changes to
+entries an agent already has need none).
 The only network access is ``git clone`` (skipped by ``--no-clone``). Every server runs from a
 ``dist/*.mjs`` bundle that is committed in its repository, so no npm install or build is needed.
 
@@ -72,16 +74,20 @@ _AGENT_BINARIES = {"claude": "claude", "cursor": "cursor", "codex": "codex"}
 POSIX_NODE_PATHS: Tuple[str, ...] = ("/opt/homebrew/bin/node", "/usr/local/bin/node")
 
 _VERSION_RE = re.compile(r"(\d+)\.(\d+)(?:\.(\d+))?")
+#: How Constellation words a diff that creates a server entry: ``+ Add server 'polaris': {...}``.
+_ADDED_SERVER_RE = re.compile(r"^\+ Add server '([^']+)'")
 #: Server states in which the bundle is on disk and the server can be registered.
 _RESOLVED = ("ok", "adopted", "found", "installed")
 #: Server states in which setup would download or register something, so the user must approve it.
+#: A server that is ``ok`` needs approval only while a registration would add it to an agent's config.
 _CONSENT_STATUSES = ("missing", "found", "adopted")
 
 #: Last step of every plan; the CLI drops it where the plan is not meant to be re-run unchanged.
 APPLY_HINT = "Run `smart-drive setup` without --check/--dry-run to apply."
 #: First step of a plan that is waiting for the user (exit code 4).
 CONSENT_STEP = (
-    "Ask the user which of these MCP servers to install (show each name and what it does), "
+    "Ask the user which of these MCP servers to install or add to their coding agents "
+    "(show each name, what it does and the agents it would be added to), "
     "then run `smart-drive setup --only <names> --yes`. Never pass --yes without the user's answer."
 )
 
@@ -548,10 +554,27 @@ def _constellation(host: Host, node: str, script: Path, argv: List[str]) -> Tupl
     return code, _first_json(out), (err.strip() or out.strip())
 
 
-def _summarise_diffs(payload: Any) -> Dict[str, Any]:
-    """Condenses `constellation register --json` into per-action counts and per-file totals."""
+def _added_servers(diff: Mapping[str, Any]) -> List[str]:
+    """Names of the servers a ``create`` diff adds, read from Constellation's ``+ Add server '<name>'`` lines."""
+    changes = diff.get("changes")
+    names: List[str] = []
+    for line in changes if isinstance(changes, list) else []:
+        match = _ADDED_SERVER_RE.match(str(line))
+        if match and match.group(1) not in names:
+            names.append(match.group(1))
+    return names
+
+
+def _summarise_diffs(payload: Any, candidates: Sequence[str] = ()) -> Dict[str, Any]:
+    """Condenses `constellation register --json` into per-action counts, per-file totals and ``added``.
+
+    ``added`` maps each server that would get a new entry to the agents it is added to. A ``create`` diff
+    whose server Constellation did not name (its wording changed) counts for every one of ``candidates``,
+    so an unreadable diff asks for consent instead of slipping through.
+    """
     counts: Dict[str, int] = {"create": 0, "update": 0, "noop": 0, "delete": 0}
     files: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    added: Dict[str, List[str]] = {}
     diffs = payload.get("diffs") if isinstance(payload, dict) else None
     for diff in diffs if isinstance(diffs, list) else []:
         if not isinstance(diff, dict):
@@ -565,7 +588,12 @@ def _summarise_diffs(payload: Any) -> Dict[str, Any]:
             (agent, path), {"agent": agent, "file": path, "create": 0, "update": 0, "delete": 0}
         )
         slot[action] = slot.get(action, 0) + 1
-    return {"counts": counts, "files": list(files.values())}
+        if action == "create":
+            for name in _added_servers(diff) or candidates:
+                agents = added.setdefault(name, [])
+                if agent not in agents:
+                    agents.append(agent)
+    return {"counts": counts, "files": list(files.values()), "added": added}
 
 
 def _summarise_health(payload: Any) -> List[Dict[str, Any]]:
@@ -721,7 +749,14 @@ def run_setup(
     if SELF_NAME in in_manifest:
         register_names.append(SELF_NAME)
 
-    registration: Dict[str, Any] = {"ran": False, "dry_run": not write, "counts": {}, "files": [], "skipped": ""}
+    registration: Dict[str, Any] = {
+        "ran": False,
+        "dry_run": not write,
+        "counts": {},
+        "files": [],
+        "added": {},
+        "skipped": "",
+    }
     if not node.ok:
         registration["skipped"] = "Node.js is not available"
     elif script is None:
@@ -741,7 +776,7 @@ def run_setup(
         if code != 0 or payload is None:
             errors.append(f"register: Constellation failed: {_last_line(text)}")
         else:
-            registration.update(_summarise_diffs(payload))
+            registration.update(_summarise_diffs(payload, ready))
             registration["ran"] = True
 
     # -- health ----------------------------------------------------------------------------
@@ -811,25 +846,38 @@ def run_setup(
 def consent_items(report: Mapping[str, Any], repair: bool = False, no_clone: bool = False) -> List[Dict[str, Any]]:
     """The servers a ``dry_run`` report would download or register: what the user has to approve first.
 
-    Servers that are already ``ok`` need nothing and are left out; so is a missing one when ``no_clone``
-    is set, because nothing would be downloaded for it. Each item has ``name``, ``repo``, ``description``,
-    ``action`` ("download and register" or "register") and ``control_plane`` (Constellation, which every
-    other server is registered through).
+    A server that is ``ok`` (downloaded and in the manifest) is left out unless the registration would
+    create an entry for it in a coding agent's config; changes to entries an agent already has stay
+    automatic. A missing server is left out when ``no_clone`` is set, because nothing would be downloaded
+    for it. Each item has ``name``, ``repo``, ``description``, ``status`` (the server's state in the plan),
+    ``action`` ("download and register" or "register"), ``agents`` (the coding agents it would be added to;
+    for a server that is not registered yet, every agent setup targets) and ``control_plane`` (Constellation,
+    which every other server is registered through).
     """
     wanted = set(_CONSENT_STATUSES) | ({"stale"} if repair else set())
     members = {m.name: m for m in MEMBERS}
+    added: Mapping[str, Sequence[str]] = (report.get("registration") or {}).get("added") or {}
+    targets = [_AGENT_LABELS.get(agent, agent) for agent in report.get("target_agents") or []]
     items: List[Dict[str, Any]] = []
     for state in report["members"]:
         member = members.get(state["name"])
         status = state["status"]
-        if member is None or status not in wanted or (status == "missing" and no_clone):
+        if member is None:
+            continue
+        if status in wanted and not (status == "missing" and no_clone):
+            action = "download and register" if status == "missing" else "register"
+        elif status == "ok" and added.get(member.name):
+            action = "register"
+        else:
             continue
         items.append(
             {
                 "name": member.name,
                 "repo": member.repo,
                 "description": member.description,
-                "action": "download and register" if status == "missing" else "register",
+                "status": status,
+                "action": action,
+                "agents": list(added.get(member.name) or targets),
                 "control_plane": member.name == CONTROL_PLANE,
             }
         )
@@ -859,12 +907,16 @@ def exit_code(report: Mapping[str, Any]) -> int:
 
 
 def format_consent(items: Sequence[Mapping[str, Any]]) -> List[str]:
-    """The numbered list the user picks from: name, what it does, what setup would do, and from where."""
+    """The numbered list the user picks from: name, what it does, what setup would do (and from where),
+    and the coding agents it would be added to."""
     lines: List[str] = []
     for number, item in enumerate(items, 1):
         note = "  (required by the other servers)" if item["control_plane"] else ""
         lines.append(f"  {number}. {item['name']} - {item['description']}{note}")
-        lines.append(f"       {item['action']}: {item['repo']}")
+        what = "already downloaded" if item.get("status") == "ok" else item["action"]
+        lines.append(f"       {what}: {item['repo']}")
+        if item.get("agents"):
+            lines.append(f"       add to: {', '.join(item['agents'])}")
     return lines
 
 

@@ -18,7 +18,7 @@ from smart_drive.mcp.ecosystem import CONTROL_PLANE, member_names
 
 #: How often an unclear answer is asked again before it counts as "none".
 MAX_ANSWER_TRIES = 3
-PROMPT = "Install them? [a]ll / [n]one / numbers or names, e.g. 1,3 or polaris,vega [n]: "
+PROMPT = "Set them up? [a]ll / [n]one / numbers or names, e.g. 1,3 or polaris,vega [n]: "
 NOTHING_INSTALLED = "Nothing was installed. Run `smart-drive setup` again any time."
 
 
@@ -82,7 +82,10 @@ def _ask_consent(items: Sequence[Mapping[str, Any]]) -> List[str]:
             break
         chosen = []
         print(error)
-    if chosen and CONTROL_PLANE in names and CONTROL_PLANE not in chosen:
+    # Constellation comes along while it still has to be set up; one that is already installed is
+    # registered only when the user picked it.
+    control = next((item for item in items if item["name"] == CONTROL_PLANE), None)
+    if chosen and control is not None and CONTROL_PLANE not in chosen and control.get("status") != "ok":
         chosen = [name for name in names if name in chosen or name == CONTROL_PLANE]
         print(f"{CONTROL_PLANE} is added too: every other server is registered through it.")
     return chosen

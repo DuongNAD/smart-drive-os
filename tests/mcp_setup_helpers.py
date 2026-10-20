@@ -17,6 +17,14 @@ from smart_drive.mcp.ecosystem import MEMBERS
 
 MEMBER_NAMES = [m.name for m in MEMBERS]
 
+#: How Constellation names the agents in its diffs.
+AGENT_DISPLAY = {
+    "claude": "Claude Code",
+    "antigravity": "Google Antigravity",
+    "cursor": "Cursor IDE",
+    "codex": "OpenAI Codex",
+}
+
 
 class FakeRun:
     """Scripted stand-in for subprocess: answers like node, git and Constellation's CLI."""
@@ -29,6 +37,7 @@ class FakeRun:
         clone_fails: Iterable[str] = (),
         health_fails: Iterable[str] = (),
         register_diffs: Optional[List[Dict[str, Any]]] = None,
+        agent_servers: Optional[Dict[str, Iterable[str]]] = None,
     ) -> None:
         self.calls: List[Tuple[List[str], Dict[str, str]]] = []
         self.node_version = node_version
@@ -37,10 +46,36 @@ class FakeRun:
         self.clone_fails = set(clone_fails)
         self.health_fails = set(health_fails)
         self.register_diffs = register_diffs if register_diffs is not None else []
+        # When set, Constellation behaves like the real one: ``register`` creates an entry for every
+        # (agent, server) that the agent's config does not hold yet, and keeps it after a real run.
+        self.agent_servers = None if agent_servers is None else {a: set(n) for a, n in agent_servers.items()}
 
     def matching(self, *needles: str) -> List[List[str]]:
         """Recorded argv lists that contain every needle as an element."""
         return [argv for argv, _env in self.calls if all(n in argv for n in needles)]
+
+    def _register_diffs(self, command: List[str]) -> List[Dict[str, Any]]:
+        """The diffs for ``constellation register <names> --agents=<ids> [--dry-run]``."""
+        if self.agent_servers is None:
+            return self.register_diffs
+        names = [a for a in command[3:] if not a.startswith("--")]
+        agents = next(a[len("--agents="):] for a in command if a.startswith("--agents=")).split(",")
+        diffs: List[Dict[str, Any]] = []
+        for agent in agents:
+            held = self.agent_servers.setdefault(agent, set())
+            for name in names:
+                create = name not in held
+                diffs.append(
+                    {
+                        "agent": AGENT_DISPLAY[agent],
+                        "file": f"{agent}.json",
+                        "action": "create" if create else "noop",
+                        "changes": [f"+ Add server '{name}': {{}}" if create else f"No change for server '{name}'"],
+                    }
+                )
+                if create and "--dry-run" not in command:
+                    held.add(name)
+        return diffs
 
     def __call__(self, argv: Sequence[str], timeout: float, env: Dict[str, str]) -> Tuple[int, str, str]:
         command = list(argv)
@@ -64,7 +99,7 @@ class FakeRun:
                 return 0, "", ""
         if len(command) > 2 and command[1].replace("\\", "/").endswith("constellation.mjs"):
             if command[2] == "register":
-                return 0, json.dumps({"diffs": self.register_diffs, "summary": "ok"}), ""
+                return 0, json.dumps({"diffs": self._register_diffs(command), "summary": "ok"}), ""
             if command[2] == "health":
                 names = [a for a in command[3:] if not a.startswith("--")]
                 rows = [
