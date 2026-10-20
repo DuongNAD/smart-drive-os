@@ -438,6 +438,31 @@ class TestRelinkUpToDate(SmartDriveTestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(report.worktrees, [])
 
+    def test_16_a_dry_run_with_nothing_to_apply_does_not_ask_to_close_apps(self) -> None:
+        drive = self.test_dir / "drive"
+        old_proj = drive / "my_pkg"
+        new_proj = drive / "03_Development_Projects" / "my_pkg"
+        self._make_venv(new_proj / ".venv", [str(old_proj / "src")])
+        move = ["relink", str(old_proj), str(new_proj), "--root", str(drive)]
+
+        with patch("smart_drive.core.relink._running_processes", return_value={"Code.exe"}):
+            rc, pending = self._cli(move + ["--dry-run"])
+            self.assertEqual(rc, 0, pending)
+            self.assertIn("Close these before --apply: VS Code", pending)  # there is something to apply
+
+            rc, applied = self._cli(move)
+            self.assertEqual(rc, 0, applied)
+            rc, idle_dry = self._cli(["relink", "--root", str(drive), "--dry-run"])
+            self.assertEqual(rc, 0, idle_dry)
+            rc, idle_real = self._cli(["relink", "--root", str(drive)])
+            self.assertEqual(rc, 0, idle_real)
+
+        # Nothing to apply: the dry run says what the real run says, and asks for nothing
+        done = "  ✓ Nothing left to change: all coding agent paths are up to date.\n"
+        self.assertTrue(idle_dry.endswith(done), idle_dry)
+        self.assertNotIn("Close these", idle_dry)
+        self.assertEqual(idle_dry.split("\n", 1)[1], idle_real.split("\n", 1)[1])
+
 
 if __name__ == "__main__":
     unittest.main()

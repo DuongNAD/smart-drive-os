@@ -24,8 +24,12 @@ from smart_drive.core.relink import (
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 
 
-def print_relink(report: Optional[RelinkReport]) -> None:
-    """Prints a human-readable summary of a RelinkReport."""
+def print_relink(report: Optional[RelinkReport], busy_hint_when_idle: bool = True) -> None:
+    """Prints a human-readable summary of a RelinkReport.
+
+    A dry run lists the running coding agents under "Close these before --apply". When it has nothing to apply,
+    busy_hint_when_idle=False leaves that out, so that it ends like the real run: "Nothing left to change".
+    """
     if report is None:
         return
 
@@ -48,13 +52,14 @@ def print_relink(report: Optional[RelinkReport]) -> None:
     for venv in report.venvs:
         print(f"  ✓ Python venv {venv_verb}: {venv}")
 
-    if not report.changed and not report.warnings and not report.errors:
+    idle = not report.changed and not report.warnings and not report.errors
+    if idle:
         print("  ✓ Nothing left to change: all coding agent paths are up to date.")
 
     for warning in report.warnings:
         print(f"  ! {warning}")
 
-    if report.dry_run and report.busy_apps:
+    if report.dry_run and report.busy_apps and (busy_hint_when_idle or not idle):
         print(f"  ! Close these before --apply: {', '.join(report.busy_apps)}")
 
     for err in report.errors:
@@ -254,7 +259,7 @@ def cmd_relink(args: argparse.Namespace) -> int:
             reason = "no folder is marked ✓ or confirmed" if asked else "no folder is marked ✓"
             print(f"  Nothing to relink: {reason}.")
         elif report is not None:
-            print_relink(report)
+            print_relink(report, busy_hint_when_idle=False)
 
         return 1 if (report is not None and report.errors) else 0
 
@@ -314,7 +319,7 @@ def cmd_relink(args: argparse.Namespace) -> int:
     else:
         header = "Coding agents (dry-run preview):" if dry_run else "Coding agents relinked:"
         print(header)
-        print_relink(report)
+        print_relink(report, busy_hint_when_idle=False)
 
     return 1 if report.errors else 0
 
