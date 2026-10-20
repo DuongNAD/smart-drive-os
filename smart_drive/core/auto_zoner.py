@@ -30,6 +30,7 @@ from smart_drive.core.config import (
 from smart_drive.core.academic_classifier import AcademicClassifier
 from smart_drive.core.exfat_compat import ExFatEngine
 from smart_drive.core.fsinfo import detect_filesystem
+from smart_drive.core.git_locks import release_git_locks
 from smart_drive.core.learning_units import find_unit_root
 from smart_drive.core.scanner import measure_tree
 from smart_drive.core.system_refs import (
@@ -54,8 +55,13 @@ def _is_relative_to(path: Path, base: Path) -> bool:
         return False
 
 
-def _move(src: str, dest: str) -> None:
-    """Moves src to dest with a single atomic os.rename when on the same device."""
+def _move(src: str, dest: str) -> List[str]:
+    """Moves src to dest with a single atomic os.rename when on the same device.
+
+    A folder first loses the git fsmonitor daemons running inside it, because Windows refuses to rename a folder
+    one of them watches. Returns the repositories whose daemon was stopped.
+    """
+    stopped = release_git_locks(src)
     same_dev = True
     try:
         same_dev = os.stat(src).st_dev == os.stat(os.path.dirname(dest)).st_dev
@@ -65,6 +71,7 @@ def _move(src: str, dest: str) -> None:
         os.rename(src, dest)
     else:
         shutil.move(src, dest)
+    return stopped
 
 
 @dataclasses.dataclass(frozen=True)
@@ -465,6 +472,7 @@ class AutoZoner:
         self.ensure_taxonomies_exist()
         moved: List[Dict[str, Any]] = []
         errors: List[Dict[str, str]] = []
+        fsmonitor_stopped: List[str] = []
         total_nominal_moved = 0
         total_slack_rebalanced = 0
 
@@ -507,7 +515,7 @@ class AutoZoner:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
 
             try:
-                _move(action.src_path, dest)
+                fsmonitor_stopped.extend(_move(action.src_path, dest) or [])
                 moved.append({
                     "src": action.src_path,
                     "dest": dest,
@@ -531,6 +539,7 @@ class AutoZoner:
             "total_slack_rebalanced": total_slack_rebalanced,
             "moved": moved,
             "errors": errors,
+            "fsmonitor_stopped": fsmonitor_stopped,
             "protected_by_system": list(self.protected_by_system),
         }
 

@@ -111,6 +111,8 @@ def cmd_organize(args: argparse.Namespace) -> int:
         print(f"  - Moved items: {apply_res['moved_count']}")
         print(f"  - Total bytes relocated: {apply_res['total_bytes_moved']:,} bytes")
         print(f"  - Slack rebalanced: {apply_res['total_slack_rebalanced']:,} bytes")
+        for repo in apply_res.get("fsmonitor_stopped", []):
+            print(f"  - Stopped the git fsmonitor daemon in {repo} (it would have kept its folder from being moved)")
         if clean_summary:
             print(f"  - Safe Tier 1 cleaned: {clean_summary['purged_count']} files")
         if inc_res:

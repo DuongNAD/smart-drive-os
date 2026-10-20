@@ -112,6 +112,7 @@ def cmd_undo(args: argparse.Namespace) -> int:
 
     executed_moves: List[Tuple[str, str]] = []
     errors: List[Dict[str, str]] = []
+    fsmonitor_stopped: List[str] = []
     for src, dest in valid_pairs:
         if not os.path.lexists(src):
             conflicts.append({
@@ -131,7 +132,7 @@ def cmd_undo(args: argparse.Namespace) -> int:
             parent_dir = os.path.dirname(dest)
             if parent_dir:
                 os.makedirs(parent_dir, exist_ok=True)
-            _move(src, dest)
+            fsmonitor_stopped.extend(_move(src, dest) or [])
             executed_moves.append((src, dest))
         except OSError as err:
             errors.append({
@@ -180,6 +181,7 @@ def cmd_undo(args: argparse.Namespace) -> int:
             "conflict_count": len(conflicts),
             "errors": errors,
             "failed_count": len(errors),
+            "fsmonitor_stopped": fsmonitor_stopped,
             "relink": relinked.to_dict() if relinked else None,
             "index_update": inc_res,
         }, indent=2, ensure_ascii=False))
@@ -196,6 +198,8 @@ def cmd_undo(args: argparse.Namespace) -> int:
     print(f"  - Restored items: {len(executed_moves)}")
     for src, dest in executed_moves:
         print(f"    {src} -> {dest}")
+    for repo in fsmonitor_stopped:
+        print(f"  - Stopped the git fsmonitor daemon in {repo} (it would have kept its folder from being moved)")
     for c in conflicts:
         print(f"  ! Conflict skipped: {c['src']} -> {c['dest']} ({c['reason']})")
     for e in errors:
