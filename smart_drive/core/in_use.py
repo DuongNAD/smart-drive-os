@@ -97,6 +97,16 @@ def _win32_opener() -> Opener:
     return open_exclusively
 
 
+def _thread_wait(seconds: float) -> float:
+    """``seconds`` as a time to wait for a thread: at most ``threading.TIMEOUT_MAX``.
+
+    Python 3.9 on Windows raises OverflowError for a longer wait (the limit is 4_294_967 seconds there, about 49 days),
+    which ``find_in_use`` would take for a failure and report nothing. Newer versions allow far longer waits but have a
+    limit too, and a budget of ``float("inf")`` is over it.
+    """
+    return min(seconds, threading.TIMEOUT_MAX)
+
+
 def _path_kind(path: str) -> Optional[str]:
     """'dir' or 'file' for a real folder or file, 'link' for a symlink or junction, None when there is nothing."""
     try:
@@ -226,8 +236,9 @@ def find_in_use(
     Every folder and file is tried with ``opener`` (by default an exclusive open through the Win32 API), and an
     entry counts when the answer is ERROR_SHARING_VIOLATION. The walk stops after ``max_depth`` levels,
     ``max_entries`` entries or ``budget`` seconds; it runs in a thread that is given up on a second after the
-    budget, so a single open that hangs (a virus scan, a dying disk) cannot hold the caller up either. Returns
-    nothing on other platforms, when the folder is gone, and on any failure.
+    budget (or after ``threading.TIMEOUT_MAX`` seconds, the longest wait a thread allows, for a budget beyond that),
+    so a single open that hangs (a virus scan, a dying disk) cannot hold the caller up either. Returns nothing on
+    other platforms, when the folder is gone, and on any failure.
     """
     try:
         if opener is None:
@@ -239,7 +250,7 @@ def find_in_use(
             target=walk.run, args=(os.path.abspath(folder),), name="smart-drive-in-use", daemon=True
         )
         worker.start()
-        worker.join(budget + _STUCK_GRACE)
+        worker.join(_thread_wait(budget + _STUCK_GRACE))
         walk.stop.set()  # a walk that is stuck in one open ends as soon as that open returns
         return deepest(list(walk.hits), limit)
     except Exception:
