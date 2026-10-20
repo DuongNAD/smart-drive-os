@@ -289,18 +289,26 @@ def run_checkup(
         })
 
     if junk_count > 0:
+        # Tier 1-2 is deleted at once, not quarantined: the step is to look first, and only then to apply
         if resolved_lang == "vi":
-            title = f"Dọn {junk_count} mục rác an toàn ({_format_bytes(junk_bytes)})"
-            desc = "Thu hồi dung lượng từ file rác hệ thống và bộ nhớ đệm (Tier 1-2)."
+            title = f"Xem trước {junk_count} mục rác có thể dọn ({_format_bytes(junk_bytes)})"
+            desc = (
+                "Mục Tier 1-2 tái tạo được: metadata hệ điều hành, bytecode, cache, thư mục build/dist của dự án. "
+                "--apply xóa vĩnh viễn (không qua khu cách ly), nên hãy xem danh sách dry-run trước."
+            )
         else:
-            title = f"Clean {junk_count} safe junk item(s) ({_format_bytes(junk_bytes)})"
-            desc = "Reclaim space from regenerable Tier 1-2 system and developer caches."
+            title = f"Preview {junk_count} junk item(s) that clean can remove ({_format_bytes(junk_bytes)})"
+            desc = (
+                "Regenerable Tier 1-2 items: OS metadata, bytecode, caches, project build/dist folders. "
+                "--apply deletes them for good (no quarantine), so read the dry-run list first."
+            )
         candidate_steps.append({
             "priority": 90 if junk_bytes >= 50 * (1024 ** 2) else 75,
             "category": "reclaimable_junk",
             "title": title,
             "description": desc,
-            "command": "smart-drive clean --tier 2 --apply",
+            "command": "smart-drive clean --tier 2",
+            "apply_command": "smart-drive clean --tier 2 --apply",
         })
 
     if unorganized_count > 0:
@@ -481,6 +489,9 @@ def run_checkup(
         "junk": {
             "tier_1_2_count": junk_count,
             "reclaimable_bytes": junk_bytes,
+            # Entries named like junk that were left alone (installed packages, folders the system depends on...)
+            "kept_count": detector.get_kept_summary()["total"],
+            "kept_by_reason": dict(detector.kept),
         },
         "quarantine": {
             "batch_count": q_batch_count,
@@ -556,6 +567,8 @@ def _print_checkup(report: Dict[str, Any]) -> None:
             f"(slack: {_format_bytes(storage['slack_bytes'])})"
         )
         print(f"  - Rác Tier 1-2:       {junk['tier_1_2_count']} mục ({_format_bytes(junk['reclaimable_bytes'])})")
+        if junk.get("kept_count"):
+            print(f"  - Giống rác, đã giữ:  {junk['kept_count']} mục (gói đã cài, thư mục hệ thống đang dùng...)")
         print(f"  - Khu cách ly:        {quar['batch_count']} đợt ({_format_bytes(quar['total_bytes'])})")
         print(f"  - Mục lẻ ở gốc ổ:     {unorg['count']} mục")
         print(
@@ -575,6 +588,8 @@ def _print_checkup(report: Dict[str, Any]) -> None:
             f"(slack: {_format_bytes(storage['slack_bytes'])})"
         )
         print(f"  - Tier 1-2 Junk:      {junk['tier_1_2_count']} item(s) ({_format_bytes(junk['reclaimable_bytes'])})")
+        if junk.get("kept_count"):
+            print(f"  - Kept, not junk:     {junk['kept_count']} item(s) (installed packages, folders the system uses...)")
         print(f"  - Quarantine:         {quar['batch_count']} batch(es) ({_format_bytes(quar['total_bytes'])})")
         print(f"  - Loose Root Items:   {unorg['count']} item(s)")
         print(
@@ -588,6 +603,9 @@ def _print_checkup(report: Dict[str, Any]) -> None:
         print(f"  {idx}. {step['title']}")
         print(f"     {step['description']}")
         print(f"     -> {step['command']}")
+        if step.get("apply_command"):
+            follow_up = "rồi, nếu danh sách ổn" if lang == "vi" else "then, once the list looks right"
+            print(f"        {follow_up}: {step['apply_command']}")
 
 
 def cmd_checkup(args: argparse.Namespace) -> int:
