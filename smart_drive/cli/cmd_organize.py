@@ -7,6 +7,7 @@ import dataclasses
 import json
 import os
 import sys
+from typing import List, Optional, Tuple
 
 from smart_drive.cli.cmd_relink import print_relink
 from smart_drive.core.auto_zoner import AutoZoner
@@ -14,10 +15,16 @@ from smart_drive.core.config import JunkTier
 from smart_drive.core.git_locks import watching_repositories
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine, SecurityGuard
-from smart_drive.core.relink import after_moves, relink, running_agents
+from smart_drive.core.relink import RelinkReport, after_moves, relink
+import smart_drive.core.relink as relink_core
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
+
+BUSY_APPS_UNKNOWN_NOTE = (
+    "  ! Could not read the list of running programs, so open coding agents and IDEs cannot be detected: "
+    "quit them before --apply."
+)
 
 
 def get_default_db_path(root: str) -> str:
@@ -33,6 +40,17 @@ def get_default_db_path(root: str) -> str:
 
 def _move_key(src: str, dest: str) -> tuple:
     return (os.path.normcase(os.path.abspath(src)), os.path.normcase(os.path.abspath(dest)))
+
+
+def busy_apps_of(report: Optional[RelinkReport]) -> Tuple[List[str], bool]:
+    """Returns (open coding agents and IDEs, whether the list of running programs could not be read).
+
+    Takes them from a relink `report`, or looks at the running programs itself when there is none.
+    """
+    if report is not None:
+        return list(report.busy_apps), bool(getattr(report, "_unreadable_processes", False))
+    labels = relink_core._running_agent_labels()
+    return sorted(labels or ()), labels is None
 
 
 def cmd_organize(args: argparse.Namespace) -> int:
@@ -93,7 +111,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
             except Exception:
                 pass
 
-        busy_apps = relinked.busy_apps if relinked else sorted(running_agents())
+        busy_apps, busy_apps_unknown = busy_apps_of(relinked)
         if getattr(args, "json", False):
             print(json.dumps({
                 "status": "applied",
@@ -102,6 +120,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
                 "zoning": apply_res,
                 "protected_by_system": zoner.protected_by_system,
                 "busy_apps": busy_apps,
+                "busy_apps_unknown": busy_apps_unknown,
                 "relink": relinked.to_dict() if relinked else None,
                 "index_update": inc_res,
                 "anti_indexing_shields": shields,
@@ -130,7 +149,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
 
     # Dry-run mode
     preview = relink([(a.src_path, a.dest_path) for a in plan], root=root, dry_run=True) if plan else None
-    busy_apps = preview.busy_apps if preview else sorted(running_agents())
+    busy_apps, busy_apps_unknown = busy_apps_of(preview)
     # Only looks (`git fsmonitor--daemon status`); --apply stops these daemons right before it moves their folders
     fsmonitor_to_stop = watching_repositories([a.src_path for a in plan if a.is_dir]) if plan else []
     if getattr(args, "json", False):
@@ -141,6 +160,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
             "planned_actions": [a.to_dict() for a in plan],
             "protected_by_system": zoner.protected_by_system,
             "busy_apps": busy_apps,
+            "busy_apps_unknown": busy_apps_unknown,
             "fsmonitor_to_stop": fsmonitor_to_stop,
             "relink_preview": preview.to_dict() if preview else None,
             "anti_indexing_shields": shields,
@@ -163,6 +183,8 @@ def cmd_organize(args: argparse.Namespace) -> int:
         if preview and (preview.changed or preview.warnings or preview.errors or preview.busy_apps):
             print("Coding agents that will follow these moves:")
             print_relink(preview)
+        if busy_apps_unknown:
+            print(BUSY_APPS_UNKNOWN_NOTE)
         if fsmonitor_to_stop:
             print("Git fsmonitor daemons that will be stopped first (each would keep its folder from being moved):")
             for repo in fsmonitor_to_stop:

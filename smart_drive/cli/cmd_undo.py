@@ -9,12 +9,12 @@ import os
 import sys
 from typing import Any, Dict, List, Tuple
 
-from smart_drive.cli.cmd_organize import get_default_db_path
+from smart_drive.cli.cmd_organize import BUSY_APPS_UNKNOWN_NOTE, busy_apps_of, get_default_db_path
 from smart_drive.cli.cmd_relink import print_relink
 from smart_drive.core.auto_zoner import _move
 from smart_drive.core.git_locks import watching_repositories
 from smart_drive.core.move_hint import inspect_refused_move
-from smart_drive.core.relink import after_moves, last_undoable_moves, record_moves, relink, running_agents
+from smart_drive.core.relink import after_moves, last_undoable_moves, record_moves, relink
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
@@ -35,6 +35,7 @@ def cmd_undo(args: argparse.Namespace) -> int:
     batch = last_undoable_moves(root)
     if batch is None:
         if as_json:
+            busy_apps, busy_apps_unknown = busy_apps_of(None)
             print(json.dumps({
                 "status": "nothing_to_undo",
                 "dry_run": not apply_mode,
@@ -44,7 +45,8 @@ def cmd_undo(args: argparse.Namespace) -> int:
                 "restored_count": 0,
                 "conflicts": [],
                 "conflict_count": 0,
-                "busy_apps": sorted(running_agents()),
+                "busy_apps": busy_apps,
+                "busy_apps_unknown": busy_apps_unknown,
             }, indent=2, ensure_ascii=False))
             return 0
         print("No organize or classify batch left to undo.")
@@ -75,7 +77,7 @@ def cmd_undo(args: argparse.Namespace) -> int:
 
     if not apply_mode:
         preview = relink(valid_pairs, root=root, dry_run=True) if valid_pairs else None
-        busy_apps = preview.busy_apps if preview else sorted(running_agents())
+        busy_apps, busy_apps_unknown = busy_apps_of(preview)
         # Only looks (`git fsmonitor--daemon status`); --apply stops these daemons right before it moves their folders
         fsmonitor_to_stop = watching_repositories([src for src, _dest in valid_pairs]) if valid_pairs else []
         if as_json:
@@ -91,6 +93,7 @@ def cmd_undo(args: argparse.Namespace) -> int:
                 "conflicts": conflicts,
                 "conflict_count": len(conflicts),
                 "busy_apps": busy_apps,
+                "busy_apps_unknown": busy_apps_unknown,
                 "fsmonitor_to_stop": fsmonitor_to_stop,
                 "relink_preview": preview.to_dict() if preview else None,
                 "note": "Use --apply to execute undo.",
@@ -111,6 +114,8 @@ def cmd_undo(args: argparse.Namespace) -> int:
         if preview and (preview.changed or preview.warnings or preview.errors or preview.busy_apps):
             print("Coding agents that will follow these moves:")
             print_relink(preview)
+        if valid_pairs and busy_apps_unknown:
+            print(BUSY_APPS_UNKNOWN_NOTE)
         if fsmonitor_to_stop:
             print("Git fsmonitor daemons that will be stopped first (each would keep its folder from being moved):")
             for repo in fsmonitor_to_stop:
