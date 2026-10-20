@@ -391,12 +391,22 @@ class DuplicateDetector:
             if full_hash:
                 full_hash_map[(size_of[filepath], full_hash)].append(filepath)
 
+        # Whether a file is inside a learning unit depends on its folder alone, and the lookup resolves the path (two
+        # system calls on Windows, about a millisecond): ask once per folder, not once per copy
+        unit_of_folder: Dict[str, bool] = {}
+
+        def in_learning_unit(filepath: str) -> bool:
+            folder = os.path.dirname(filepath)
+            if folder not in unit_of_folder:
+                unit_of_folder[folder] = is_in_learning_unit(filepath, self.root)
+            return unit_of_folder[folder]
+
         duplicate_groups: List[Dict[str, Any]] = []
         for (fsize, full_hash), file_list in full_hash_map.items():
             if len(file_list) < 2:
                 continue
 
-            in_unit = [(f, is_in_learning_unit(f, self.root)) for f in file_list]
+            in_unit = [(f, in_learning_unit(f)) for f in file_list]
             unit_files = [f for f, inside in in_unit if inside]
             other_files = [f for f, inside in in_unit if not inside]
 
