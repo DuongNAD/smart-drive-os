@@ -401,6 +401,30 @@ class TestAutoZonerPlanningAndExecution(_IsolatedAutoZonerTestCase):
         self.assertTrue(shortcut_file.exists())
         self.assertTrue(path_file.exists())
 
+    def test_drive_root_is_passed_as_a_shortcut_root_when_references_are_collected(self) -> None:
+        """AutoZoner reads the .lnk files lying at its drive root, as the README promises."""
+        root = self.test_dir
+        with patch(
+            "smart_drive.core.system_refs.SystemRefIndex.collect",
+            return_value=SystemRefIndex([]),
+        ) as collect:
+            AutoZoner(str(root)).system_refs
+        collect.assert_called_once_with(shortcut_roots=[str(root)])
+
+    def test_hoyoplay_and_genshin_impact_folders_are_protected_game_libraries(self) -> None:
+        root = self.test_dir
+        for name in ("HoYoPlay", "Genshin Impact"):
+            game = root / name
+            game.mkdir()
+            (game / "package.json").write_text('{"name": "launcher"}', encoding="utf-8")
+        (root / "my_project").mkdir()
+        (root / "my_project" / "package.json").write_text('{"name": "my_project"}', encoding="utf-8")
+
+        zoner = AutoZoner(str(root), system_refs=SystemRefIndex([]))
+        self.assertIsNone(zoner.classify_item(str(root / "HoYoPlay")))
+        self.assertIsNone(zoner.classify_item(str(root / "Genshin Impact")))
+        self.assertIsNotNone(zoner.classify_item(str(root / "my_project")))
+
     def test_loose_documents_in_a_path_folder_are_organized_but_executables_stay(self) -> None:
         """With the drive root itself on PATH, only files Windows can run from there are pinned, not every document."""
         from smart_drive.core.system_refs import SystemRef, SystemRefIndex

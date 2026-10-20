@@ -505,6 +505,26 @@ class TestSystemRefIndexAndBoundaries(unittest.TestCase):
         # The programs themselves (outside E:) are still recorded; the folders next door are not
         self.assertEqual(idx.refs_under(r"E:\unrelated"), [])
 
+    def test_shortcuts_lying_directly_in_a_shortcut_root_are_references(self) -> None:
+        with TempWorkspace(prefix="test_root_lnk_") as tmp:
+            drive = tmp / "drive"
+            (drive / "Sub").mkdir(parents=True)
+            home = tmp / "home"
+            home.mkdir()
+            portable = drive / "PortableApp" / "app.exe"
+            (drive / "Portable App.lnk").write_bytes(_build_lnk_bytes(str(portable), use_unicode=True))
+            (drive / "Sub" / "Deeper.lnk").write_bytes(_build_lnk_bytes(r"E:\Deeper\x.exe", use_unicode=True))
+
+            with_root = SystemRefIndex.collect(home=home, reader={}, shortcut_roots=[drive])
+            without_root = SystemRefIndex.collect(home=home, reader={})
+
+        refs = with_root.refs_under(portable.parent)
+        self.assertEqual([r.kind for r in refs], ["shortcut"])
+        self.assertEqual(os.path.basename(refs[0].source), "Portable App.lnk")
+        # Only the root's own .lnk files are read, not those of its subfolders
+        self.assertEqual(with_root.refs_under(r"E:\Deeper"), [])
+        self.assertEqual(without_root.refs_under(portable.parent), [])
+
     def test_environment_variables_holding_absolute_paths_are_references(self) -> None:
         mock_tree = {
             r"HKCU\Environment": {

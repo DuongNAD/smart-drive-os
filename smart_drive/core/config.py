@@ -192,6 +192,8 @@ PROTECTED_ROOT_DIRS: FrozenSet[str] = frozenset({
     "bluestacks",
     "games",
     "riot games",
+    "hoyoplay",
+    "genshin impact",
     "ldplayer",
     "sql2022",
     "downloads",

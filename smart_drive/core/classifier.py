@@ -184,7 +184,7 @@ class ClassifierEngine:
     def system_refs(self) -> SystemRefIndex:
         """Lazily collects OS/application references once per ClassifierEngine instance."""
         if self._system_refs is None:
-            self._system_refs = SystemRefIndex.collect()
+            self._system_refs = SystemRefIndex.collect(shortcut_roots=[self.root])
         return self._system_refs
 
     def _is_protected_by_system(self, dirpath: Union[str, Path], is_file: Optional[bool] = None) -> bool:
