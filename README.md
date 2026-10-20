@@ -247,8 +247,8 @@ SmartDrive-OS exposes a JSON-RPC 2.0 `stdio` MCP server with **9 tools**:
 
 1. `ssd_search`: Instant FTS5 search returning compact tokens (<2,000 tokens/query). *(read-only)*
 2. `ssd_audit`: Storage breakdown and cluster slack waste analytics with compact formatting. *(read-only)*
-3. `ssd_clean`: Whitelist-protected safe junk cleaner with dry-run support. *(destructive)*
-4. `ssd_find_duplicates`: 3-phase SHA-256 duplicate detection with pagination and preview capping. *(read-only)*
+3. `ssd_clean`: Whitelist-protected safe junk cleaner with dry-run support. A `sub_dir` is judged like the whole-drive scan, folders above it included: inside an installed app nothing is scanned and `scan_skipped` names the folder and why; the result also lists what was `kept` and the `protected_by_system` folders. *(destructive)*
+4. `ssd_find_duplicates`: 3-phase SHA-256 duplicate detection with pagination and preview capping. `min_size` drops small files before anything is hashed; a `sub_dir` inside an installed app or a dependency tree is not scanned (`scan_skipped`). *(read-only)*
 5. `ssd_update_index`: Fast incremental index synchronization (<2s). *(idempotent)*
 6. `ssd_check_safety`: exFAT compatibility validator (9 Win32 forbidden chars, 22 DOS stems, symlinks). *(read-only)*
 7. `ssd_status`: SSD mount root status, shield health, and taxonomy status. *(read-only)*

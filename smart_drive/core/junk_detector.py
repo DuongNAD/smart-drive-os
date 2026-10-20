@@ -26,6 +26,7 @@ from smart_drive.core.config import (
     CLUSTER_SIZE_BYTES,
     JUNK_RULES,
     PROJECT_MANIFEST_DIRS,
+    SCAN_SKIPPED_PROTECTED_BY_SYSTEM,
     JunkRule,
     JunkTier,
     calculate_allocated_bytes,
@@ -207,6 +208,10 @@ class JunkDetector:
 
     ``system_refs`` is that index; without one it is collected from this computer the first time an entry needs
     it (a scan that finds nothing that looks like junk never reads the registry).
+
+    ``find_junk(sub_path)`` scans a folder below ``drive_root`` and judges it as the scan of the whole drive does,
+    including the folders above it: when one of them is a folder the system depends on, nothing is scanned and
+    ``scan_skipped`` says which folder and why.
     """
 
     def __init__(
@@ -238,6 +243,10 @@ class JunkDetector:
         # The folders the system depends on that kept entries (reset by find_junk), as organize/classify list them
         self.protected_by_system: List[Dict[str, Any]] = []
         self._protected_entries: Dict[str, Dict[str, Any]] = {}
+        # Set by find_junk when the folder it was asked to scan lies in one the system depends on, so that nothing was
+        # scanned: {"folder": the outermost such folder, "reason": SCAN_SKIPPED_PROTECTED_BY_SYSTEM, "detail": who
+        # uses it}
+        self.scan_skipped: Optional[Dict[str, str]] = None
 
     @property
     def system_refs(self) -> SystemRefIndex:
@@ -417,6 +426,17 @@ class JunkDetector:
             return KEPT_GIT_UNVERIFIED
         return KEPT_GIT_TRACKED if tracked else None
 
+    def _protected_entry(self, folder: str, refs: List[SystemRef]) -> Dict[str, Any]:
+        """The ``protected_by_system`` entry of a folder the system depends on, made the first time it is met."""
+        entry = self._protected_entries.get(os.path.normcase(folder))
+        if entry is None:
+            entry = format_protected_by_system_entry(folder, refs)
+            entry["used_by"] = summarize_system_refs(refs)
+            entry["kept_items"] = 0
+            self._protected_entries[os.path.normcase(folder)] = entry
+            self.protected_by_system.append(entry)
+        return entry
+
     def _keep_reason(self, path: str, tier: JunkTier, is_dir: bool, rule: Optional[JunkRule] = None) -> Optional[str]:
         """Why an entry whose name matches ``rule`` (of ``tier``) is still not junk, or None when it is."""
         if tier >= JunkTier.TIER_2_DEV_CACHE and is_inside_dependency_tree(path):
@@ -424,14 +444,7 @@ class JunkDetector:
         dependency = self._system_dependency(path, is_dir)
         if dependency is not None:
             folder, refs = dependency
-            entry = self._protected_entries.get(os.path.normcase(folder))
-            if entry is None:
-                entry = format_protected_by_system_entry(folder, refs)
-                entry["used_by"] = summarize_system_refs(refs)
-                entry["kept_items"] = 0
-                self._protected_entries[os.path.normcase(folder)] = entry
-                self.protected_by_system.append(entry)
-            entry["kept_items"] += 1
+            self._protected_entry(folder, refs)["kept_items"] += 1
             return KEPT_SYSTEM_REFERENCED
         if rule is not None and rule.project_root_only and not self._has_project_manifest(os.path.dirname(path)):
             return KEPT_NOT_PROJECT_ROOT
@@ -565,7 +578,7 @@ class JunkDetector:
         )
 
     def inspect_entry(self, entry: ScanEntry) -> Optional[JunkItem]:
-        """Inspects a ScanEntry produced by FastDirectoryScanner."""
+        """Inspects a ScanEntry produced by FastDirectoryScanner (its ``rel_path`` relative to the drive root)."""
         return self.inspect_file(
             path=entry.path,
             name=entry.name,
@@ -574,11 +587,23 @@ class JunkDetector:
             rel_path=entry.rel_path,
         )
 
+    def _rel_prefix(self, scan_root: str) -> str:
+        """``scan_root`` relative to the drive root with '/': "" at the drive root itself, or outside it."""
+        key = os.path.normcase(scan_root)
+        if key == self._root_key or not key.startswith(self._below_root_prefix):
+            return ""
+        return self._normalize_rel_path(scan_root)
+
     def find_junk(self, sub_path: Optional[str] = None) -> List[JunkItem]:
         """Scans the drive root or subtree and returns all detected junk items.
 
         Uses FastDirectoryScanner for high throughput, bypassing symlinks and
         handling permission boundaries gracefully.
+
+        A ``sub_path`` is judged as the scan of the whole drive judges that part of it: its items carry paths relative
+        to the drive root, and when it lies inside a folder the system depends on (Windows, an installed app) nothing is
+        scanned, ``[]`` comes back and ``scan_skipped`` names that folder. A drive root on PATH protects nothing: the
+        root and everything above it is never judged.
 
         Args:
             sub_path: Optional subfolder path to restrict the scan.
@@ -595,6 +620,18 @@ class JunkDetector:
         self._manifest_cache = {}
         self._work_tree_cache = {}
         self._git_queries = 0
+        self.scan_skipped = None
+
+        protecting = self._protecting_folder(scan_root)
+        if protecting is not None:
+            folder, refs = protecting
+            self.scan_skipped = {
+                "folder": folder,
+                "reason": SCAN_SKIPPED_PROTECTED_BY_SYSTEM,
+                "detail": self._protected_entry(folder, refs)["used_by"],
+            }
+            return junk_items
+        rel_prefix = self._rel_prefix(scan_root)
 
         # Only exclude version control, agent working directories, and SmartDrive metadata/quarantine during scan;
         # allow scanner to inspect system junk directories like $RECYCLE.BIN, .Trashes
@@ -607,6 +644,10 @@ class JunkDetector:
                 exclude_dirs=scanner_excludes,
             )
             for entry in scanner.scan_iter():
+                if rel_prefix:
+                    # The scanner's paths are relative to its own root; the checks and the report need them from the
+                    # drive root (it makes a fresh record for each entry and does not read this one again)
+                    entry.rel_path = f"{rel_prefix}/{entry.rel_path}"
                 item = self.inspect_entry(entry)
                 if item:
                     junk_items.append(item)
