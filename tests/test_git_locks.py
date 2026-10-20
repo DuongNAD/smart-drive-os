@@ -514,6 +514,72 @@ class TestOrganizeAndUndoSayWhatTheyStopped(DriveCase):
         self.assertNotIn("fsmonitor", text)
 
 
+class TestDryRunListsTheDaemonsItWouldStop(DriveCase):
+    def make_drive(self) -> Tuple[Path, Path]:
+        drive = self.create_mock_drive()
+        parent = drive / "project"
+        watched = fake_repo(parent / "watched")
+        fake_repo(parent / "idle")
+        return drive, watched
+
+    def test_organize_dry_run_names_them_and_stops_and_moves_nothing(self) -> None:
+        drive, watched = self.make_drive()
+        git = FakeGit(watching=[watched])
+        with patch.object(git_locks, "_git_runner", return_value=git):
+            code, text = self.run_cli(["organize", "--root", str(drive), "--dry-run", "--json"])
+            self.assertEqual(code, 0, text)
+            report = json.loads(text)
+            self.assertEqual(report["status"], "dry_run")
+            self.assertTrue(same(report["fsmonitor_to_stop"], [watched]), report["fsmonitor_to_stop"])
+
+            code, text = self.run_cli(["organize", "--root", str(drive)])
+        self.assertEqual(code, 0, text)
+        self.assertIn("Git fsmonitor daemons that will be stopped first", text)
+        self.assertIn(str(watched), text)
+        self.assertEqual(git.asked("stop"), [])  # a dry run only looks
+        self.assertTrue(same(git.watching, [os.path.normcase(str(watched))]))
+        self.assertTrue(watched.is_dir())  # and moves nothing
+
+    def test_organize_dry_run_with_no_daemon_says_nothing_and_a_plan_of_files_asks_git_nothing(self) -> None:
+        drive, _watched = self.make_drive()
+        with patch.object(git_locks, "_git_runner", return_value=FakeGit()):
+            code, text = self.run_cli(["organize", "--root", str(drive), "--dry-run", "--json"])
+            self.assertEqual(json.loads(text)["fsmonitor_to_stop"], [])
+            code, text = self.run_cli(["organize", "--root", str(drive)])
+        self.assertNotIn("fsmonitor", text)
+
+        only_a_file = self.test_dir / "files_drive"
+        only_a_file.mkdir()
+        (only_a_file / "handbook.pdf").write_bytes(b"%PDF-1.7\n%%EOF\n")
+        git = FakeGit()
+        with patch.object(git_locks, "_git_runner", return_value=git):
+            code, text = self.run_cli(["organize", "--root", str(only_a_file), "--dry-run", "--json"])
+        report = json.loads(text)
+        self.assertEqual([a["is_dir"] for a in report["planned_actions"]], [False])
+        self.assertEqual(report["fsmonitor_to_stop"], [])
+        self.assertEqual(git.calls, [])
+
+    def test_undo_dry_run_names_them_too(self) -> None:
+        drive, watched = self.make_drive()
+        moved_watched = drive / "03_Development_Projects" / "project" / "watched"
+        with patch.object(git_locks, "_git_runner", return_value=FakeGit()):
+            code, text = self.run_cli(["organize", "--root", str(drive), "--apply", "--json"])
+        self.assertEqual(code, 0, text)
+        self.assertTrue(moved_watched.is_dir())
+
+        git = FakeGit(watching=[moved_watched])
+        with patch.object(git_locks, "_git_runner", return_value=git):
+            code, text = self.run_cli(["undo", "--root", str(drive), "--json"])
+            report = json.loads(text)
+            self.assertEqual(report["status"], "dry_run")
+            self.assertTrue(same(report["fsmonitor_to_stop"], [moved_watched]), report["fsmonitor_to_stop"])
+            code, text = self.run_cli(["undo", "--root", str(drive)])
+        self.assertIn("Git fsmonitor daemons that will be stopped first", text)
+        self.assertIn(str(moved_watched), text)
+        self.assertEqual(git.asked("stop"), [])
+        self.assertTrue(moved_watched.is_dir())
+
+
 @unittest.skipIf(GIT is None, "git executable not found on PATH")
 class TestOrganizeAndUndoWithARunningDaemon(DriveCase):
     """`organize --apply` and `undo --apply` on a drive whose repository has a daemon (the reported failure)."""
