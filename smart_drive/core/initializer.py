@@ -162,7 +162,7 @@ Coding agents, IDEs, and shortcuts remember projects and MCP servers by absolute
 - Revert the latest move batch and relink back to original paths with `smart-drive undo --apply` (`--dry-run` default).
 - After moving or renaming a folder by hand, run `smart-drive relink "<old path>" "<new path>"` (`--dry-run` previews). With no arguments it re-applies the latest organize/classify batch.
 - Lost track of moved folders or broken shortcuts/IDE entries? `smart-drive relink --find` and `smart-drive paths --broken` list stale paths and where each folder went; `relink --find --apply --wait` or `paths --broken --fix` repairs the sure matches once open apps are closed. A match marked `?` is only a guess (the folder it found may be another project, and the old one deleted): confirm it with the user, then run `smart-drive relink "<old>" "<new>"`. In a terminal, `--find --apply --ask` (menu option `[8]`) asks the user y/N for each `?` match: let the user answer, never answer for them.
-- Run `smart-drive checkup` for a 1-screen health score (`0-100`), `smart-drive audit --html` for an offline HTML treemap, and `smart-drive clean --list-quarantine` / `--restore latest` to inspect or restore quarantined junk.
+- Run `smart-drive checkup` for a 1-screen health score (`0-100`), `smart-drive audit --html` for an offline HTML treemap, and `smart-drive clean --list-quarantine` / `--restore latest` to inspect or restore quarantined Tier 3 junk (`clean --apply` deletes Tier 1-2 junk at once).
 - Close Claude desktop, Claude Code, Codex, and open IDEs before relinking (or relink again after closing them), then restart the agents so they load the new paths.
 """
 
@@ -174,7 +174,7 @@ Allocation Unit: 524,288 bytes (512 KB).
 ## Automated SSD Health Check
 - Run `smart-drive sentinel` or `smart-drive agent-check` to verify mount, shields, and index; run `smart-drive checkup` for a 1-screen `0–100` health score and next steps, or `smart-drive audit --html` for an offline HTML treemap.
 - Search lessons and research with `smart-drive search --kind slide|fact|capture "<query>"` (MCP ssd_search kind/content).
-- Use `smart-drive clean` (Tier 1 safe by default, `--apply` moves junk to reversible `.smart_drive/quarantine/`; restore with `--restore latest`, list with `--list-quarantine`).
+- Use `smart-drive clean` (Tier 1 and dry-run by default; `--apply` deletes regenerable Tier 1-2 junk at once, while Tier 3 junk (`--tier 3`: logs, temp files, dumps) moves to reversible `.smart_drive/quarantine/`; restore with `--restore latest`, list with `--list-quarantine`).
 - Use `smart-drive organize` (or `Smart_Organize.*`) for auto-zoning and anti-slack rebalancing (`protected_by_system` pins folders referenced by Windows `PATH`, Services, Installed Apps, Startup, `.lnk`, and game libraries); revert the latest move batch with `smart-drive undo --apply`.
 - After moving a folder by hand, run `smart-drive relink "<old>" "<new>"` so coding agents, IDEs, Obsidian, and `.lnk` shortcuts follow; `organize --apply` does this itself (`--dry-run` previews). Use `smart-drive paths --broken` (`--fix`) to inspect or repair broken shortcuts and IDE entries.
 - Run `smart-drive gitignore audit` before committing.
@@ -196,7 +196,7 @@ CLAUDE_MD_TEMPLATE = """# CLAUDE.md - AI Coding Instructions for SSD Workspace
 - Search lessons and research with `smart-drive search --kind slide|fact|capture "<query>"` (MCP ssd_search kind/content).
 - Verify SSD health using `smart-drive sentinel` or `smart-drive checkup` (`smart-drive audit --html` exports an offline HTML treemap).
 - Move folders with `smart-drive organize --apply` (or `Smart_Organize.*`, which skips `protected_by_system` folders and relinks agents/IDEs/shortcuts); revert the latest move batch with `smart-drive undo --apply`. After moving a folder by hand, run `smart-drive relink "<old>" "<new>"` (`--dry-run` previews) or `smart-drive paths --broken` (`--fix`).
-- Clean junk safely with `smart-drive clean` (`--apply` quarantines by default; `--list-quarantine` and `--restore latest` inspect/restore).
+- Clean junk with `smart-drive clean` (dry-run by default; `--apply` deletes regenerable Tier 1-2 junk at once, and only `--tier 3` junk such as logs, temp files, and dumps goes to a restorable quarantine: `--list-quarantine` and `--restore latest` inspect/restore).
 - Run `smart-drive gitignore audit` before committing.
 - Commit in small, atomic steps: one logical fix or feature per commit (`fix(scope): ...`, `feat(scope): ...`), paired with a regression test in the same commit, and run the test suite before committing.
 - First time on a machine: run `smart-drive setup --json`. It installs nothing until the user agrees: it exits 4 and lists the MCP servers (name + what each does). Show that list to the user with your own question/confirmation prompt, ask which to install, then run `smart-drive setup --only <approved,names> --yes`. Never pass `--yes` without the user's answer. `--dry-run` previews.

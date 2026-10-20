@@ -108,10 +108,10 @@ smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an" --wait
 smart-drive paths --broken      # quét mục IDE, cấu hình agent và shortcut .lnk bị đứt
 ```
 
-**Dọn rác an toàn (`clean` có cách ly & khôi phục)** — Xem trước và chuyển rác metadata hệ điều hành, cache biên dịch hoặc log vào `.smart_drive/quarantine/` (mặc định `--dry-run`):
+**Dọn rác an toàn (`clean` có cách ly & khôi phục)** — Luôn xem trước rác trước (mặc định `--dry-run`). `--apply` xóa ngay metadata hệ điều hành và cache biên dịch (Tier 1-2) vì tái tạo được; chỉ log, tệp tạm và crash dump (Tier 3) được chuyển vào `.smart_drive/quarantine/` để khôi phục:
 ```bash
-smart-drive clean
-smart-drive clean --apply --tier 1
+smart-drive clean                      # xem trước (mặc định Tier 1)
+smart-drive clean --apply --tier 3     # xóa rác Tier 1-2, cách ly rác Tier 3
 smart-drive clean --list-quarantine
 smart-drive clean --restore latest
 ```
@@ -185,7 +185,7 @@ Mọi lệnh chạy qua `smart-drive <lệnh>`, `python -m smart_drive <lệnh>`
 | `init` | `--profile <tên>`, `--root <đd>`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo 6 nhóm thư mục, cài khiên bảo vệ và gieo chỉ mục FTS5. |
 | `status` | `--root <đd>`, `--json` | Kiểm tra điểm gắn ổ đĩa, hệ tệp nhận diện, cấu trúc hình học, khiên bảo vệ và phân vùng. |
 | `audit` | `--root <đd>`, `--html [tệp]`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán dung lượng và cluster slack theo kích thước cụm thật của ổ đĩa (4 KB NTFS, 512 KB exFAT…). `--html` xuất báo cáo treemap tự chứa chạy offline (mặc định `<root>/.smart_drive/reports/audit.html`). Hard link tính một lần; symlink/junction bỏ qua và đếm. |
-| `clean` | `--dry-run` *(mặc định)*, `--apply`, `--tier {1,2,3}`, `--no-quarantine`, `--list-quarantine`, `--restore <batch\|latest>`, `--purge-quarantine`, `--older-than <ngày>`, `--log`, `--json` | Dọn rác bắt buộc chạy thử kèm whitelist và mặc định cách ly vào `<root>/.smart_drive/quarantine/<batch_id>/` (khôi phục qua `--restore`). |
+| `clean` | `--dry-run` *(mặc định)*, `--apply`, `--tier {1,2,3}`, `--no-quarantine`, `--list-quarantine`, `--restore <batch\|latest>`, `--purge-quarantine`, `--older-than <ngày>`, `--log`, `--json` | Dọn rác bắt buộc chạy thử kèm whitelist. `--apply` xóa ngay rác Tier 1-2 (tái tạo được) và chỉ cách ly rác Tier 3 vào `<root>/.smart_drive/quarantine/<batch_id>/` (khôi phục qua `--restore`; `--no-quarantine` xóa luôn cả Tier 3). |
 | `search` | `<truy_vấn>`, `--ext <đuôi>`, `--size <cỡ>`, `--category <nhóm>`, `--kind <loại>`, `--limit <n>`, `--json` | Tìm kiếm siêu tốc (<10ms) bằng SQLite FTS5 kết hợp xếp hạng BM25. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Tự phân loại file rời, định tuyến môn FPTU bằng `AcademicClassifier`, bảo vệ mục hệ thống (`protected_by_system`), giảm slack và cập nhật đường dẫn agent/IDE/shortcut; lưu đợt dời vào `.smart_drive/moves.jsonl`. |
 | `undo` | `--apply`, `--dry-run`, `--root <đd>`, `--json` | Hoàn tác đợt dời `organize`/`classify` gần nhất chưa được hoàn tác, bỏ qua mục (không ghi đè) khi chỗ cũ đã bị chiếm và relink agent/IDE/shortcut về đường dẫn gốc (mặc định dry-run). |
@@ -355,11 +355,11 @@ Tệp rác chia làm 3 tầng với mặc định chạy thử (`--dry-run`, c�
 2. **Tier 2 (Cache Biên Dịch & Phát Triển)**: Python `__pycache__`, `*.pyc`, `*.pyo`, `.pytest_cache`; Node `node_modules/.cache`; Rust `target/debug/build`; cache cũ `polaris/.cache/**`.
 3. **Tier 3 (Tệp Tạm & Nhật Ký)**: `*.log`, `*.tmp`, `*.bak`, crash dumps.
 
-Mặc định, `smart-drive clean --apply` dời tệp vào thư mục cách ly có thể khôi phục tại `<root>/.smart_drive/quarantine/<batch_id>/` (kèm `manifest.json`) thay vì xóa vĩnh viễn:
+`smart-drive clean --apply` xóa vĩnh viễn ngay các mục Tier 1 và Tier 2 vì chúng tái tạo được (metadata hệ điều hành, cache biên dịch), nên không bao giờ qua cách ly. Chỉ mục Tier 3 (`--tier 3`: log, tệp tạm, bản sao `.bak`, crash dump) được dời vào thư mục cách ly có thể khôi phục tại `<root>/.smart_drive/quarantine/<batch_id>/` (kèm `manifest.json`) thay vì xóa vĩnh viễn:
 - Xem các đợt cách ly: `smart-drive clean --list-quarantine`
 - Khôi phục một đợt về vị trí gốc: `smart-drive clean --restore latest` (hoặc `--restore <batch_id>`)
 - Xóa vĩnh viễn các đợt cách ly cũ: `smart-drive clean --purge-quarantine --older-than 14`
-- Xóa thẳng không qua cách ly (hoặc khi ổ đĩa sắp hết chỗ): `smart-drive clean --apply --no-quarantine`
+- Xóa thẳng mục Tier 3 thay vì cách ly (ví dụ khi ổ đĩa sắp hết chỗ): `smart-drive clean --apply --tier 3 --no-quarantine`
 
 > **Whitelist Bất Khả Xâm Phạm**: Tệp chỉ thị gốc (`AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `README.md`, `PRIVACY.md`), kịch bản khởi chạy (`Setup_*`, `Quick_*`, `Smart_Organize.*`, `SmartDrive.*`), 6 phân vùng gốc, thư mục Windows (`WindowsApps`, `Program Files`, `DumpStack.log.tmp`), thư mục đang được hệ thống dùng (`protected_by_system`: Windows `PATH`, Services, Ứng dụng đã cài, Startup, đích `.lnk`, trình gỡ cài đặt), thư viện game (`SteamLibrary`, `Riot Games`, `Epic Games`, `XboxGames`, `GOG Galaxy`, `Battle.net`, `Ubisoft Game Launcher`, `EA Games`, `HoYoPlay`, `Genshin Impact`, `LDPlayer`), cơ sở dữ liệu đang chạy (`Microsoft SQL Server 2022`) và `smart-drive-os` được bảo vệ vĩnh viễn.
 
@@ -396,7 +396,7 @@ Mặc định, `smart-drive clean --apply` dời tệp vào thư mục cách ly 
 |---|---|---|---|---|---|
 | **Khởi tạo Ổ đĩa** | `Setup_SSD.bat` | `Setup_SSD.ps1` | `Setup_SSD.command` | `Setup_SSD.sh` | Hướng dẫn khởi tạo ổ đĩa và chọn profile |
 | **Tìm kiếm Nhanh** | `Quick_Search.bat` | `Quick_Search.ps1` | `Quick_Search.command` | `Quick_Search.sh` | Nhập từ khóa tìm kiếm tức thì bằng SQLite FTS5 |
-| **Dọn rác Nhanh** | `Quick_Clean.bat` | `Quick_Clean.ps1` | `Quick_Clean.command` | `Quick_Clean.sh` | Xem trước file rác (dry-run) rồi xác nhận cách ly Tier 1 |
+| **Dọn rác Nhanh** | `Quick_Clean.bat` | `Quick_Clean.ps1` | `Quick_Clean.command` | `Quick_Clean.sh` | Xem trước file rác (dry-run) rồi xác nhận xóa Tier 1 |
 | **Kiểm toán Dung lượng** | `Quick_Audit.bat` | `Quick_Audit.ps1` | `Quick_Audit.command` | `Quick_Audit.sh` | Thống kê dung lượng và đo lãng phí cluster slack |
 | **Dời An Toàn Có Dẫn Dắt** | `Smart_Organize.bat` | `Smart_Organize.ps1` | `Smart_Organize.command` | `Smart_Organize.sh` | Xem trước dry-run, chờ đóng ứng dụng bận, xác nhận `YES`, kiểm tra sau dời và hoàn tác 1 phím `U` (EN/VI) |
 | **Menu Tương tác** | `SmartDrive.bat` | `SmartDrive.ps1` | `SmartDrive.command` | `SmartDrive.sh` | Menu TUI đầy đủ (gồm mục `[8]` Relink Agents, `[9]` Checkup, `[10]` Smart_Organize) |
