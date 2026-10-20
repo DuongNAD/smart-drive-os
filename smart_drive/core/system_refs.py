@@ -54,7 +54,8 @@ _UNINSTALLER_EXACT_NAMES = frozenset({
 class SystemRef:
     """A reference from the operating system or an application to a path on disk."""
 
-    # "path" | "service" | "installed_app" | "startup" | "shortcut" | "shortcut_dep" | "uninstaller"
+    # "path" | "env" | "service" | "installed_app" | "startup" | "shortcut" | "shortcut_dep" | "uninstaller"
+    # ("env": an environment variable other than Path, e.g. JAVA_HOME, whose value is an absolute path)
     # ("shortcut_dep": a folder or file a shortcut starts in or passes to its program, not the shortcut's target)
     kind: str
     source: str  # e.g. "PATH (User)", "HKLM\\...\\Services\\MSSQLSERVER", "C:\\Users\\X\\Desktop\\Git Bash.lnk"
@@ -844,16 +845,24 @@ class SystemRefIndex:
     @classmethod
     def _collect_registry_path(cls, reader: RegistryReader, out: List[SystemRef]) -> None:
         path_sources = (
-            (r"HKCU\Environment", "PATH (User)"),
-            (r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment", "PATH (System)"),
+            (r"HKCU\Environment", "User"),
+            (r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment", "System"),
         )
-        for key_path, label in path_sources:
+        for key_path, scope in path_sources:
             try:
                 vals = reader.get_values(key_path)
                 for k, v in vals.items():
-                    if k.lower() == "path" and isinstance(v, str):
+                    if not isinstance(v, str):
+                        continue
+                    if k.lower() == "path":
                         for entry in split_and_expand_path(v, sep=";", reader=reader):
-                            out.append(SystemRef(kind="path", source=label, target=entry))
+                            out.append(SystemRef(kind="path", source=f"PATH ({scope})", target=entry))
+                        continue
+                    # JAVA_HOME, PT8HOME, a PyCharm bin folder...: any variable that holds an absolute path
+                    for entry in split_and_expand_path(v, sep=";", reader=reader):
+                        env_path = _clean_argument_path(entry)
+                        if env_path:
+                            out.append(SystemRef(kind="env", source=f"{k} ({scope})", target=env_path))
             except Exception:
                 continue
 
@@ -1105,6 +1114,10 @@ def summarize_system_refs(refs: Sequence[SystemRef]) -> str:
     has_path = any(r.kind == "path" for r in refs)
     if has_path:
         parts.append("PATH")
+
+    env_vars = [r.source for r in refs if r.kind == "env"]
+    for env_var in dict.fromkeys(env_vars):
+        parts.append(f"environment variable {env_var}")
 
     services = [r.source for r in refs if r.kind == "service"]
     for svc in dict.fromkeys(services):
