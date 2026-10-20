@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 from enum import IntEnum
 from dataclasses import dataclass
 from pathlib import Path
@@ -531,12 +532,19 @@ class JunkTier(IntEnum):
 
 @dataclass(frozen=True)
 class JunkRule:
-    """Definition of a declarative junk detection pattern rule."""
+    """Definition of a declarative junk detection pattern rule.
+
+    ``project_root_only`` is for names that mean "regenerable output" only inside a software project (``build``,
+    ``dist``, ``.cache``) and ordinary folders anywhere else: the rule counts only when the folder holding the match
+    also holds a project manifest (see ``is_project_manifest``). Matching a name cannot tell, as it takes a look at
+    the disk: JunkDetector does that.
+    """
     pattern: str
     is_directory: bool
     tier: JunkTier
     description: str
     os_source: str
+    project_root_only: bool = False
 
 
 JUNK_RULES: Tuple[JunkRule, ...] = (
@@ -572,10 +580,11 @@ JUNK_RULES: Tuple[JunkRule, ...] = (
     JunkRule(".nox", True, JunkTier.TIER_2_DEV_CACHE, "Nox test environment directory", "Dev"),
     JunkRule(".coverage", False, JunkTier.TIER_2_DEV_CACHE, "Coverage measurement data", "Dev"),
     JunkRule("htmlcov", True, JunkTier.TIER_2_DEV_CACHE, "Coverage HTML report directory", "Dev"),
-    JunkRule(".cache", True, JunkTier.TIER_2_DEV_CACHE, "Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)", "Polaris"),
+    # Before the generic `.cache`: a Polaris cache counts wherever it is, a plain `.cache` only at a project root
     JunkRule("polaris/.cache", True, JunkTier.TIER_2_DEV_CACHE, "Polaris regenerable API cache (Polaris 0.3.2+ keeps it on C:)", "Polaris"),
-    JunkRule("build", True, JunkTier.TIER_2_DEV_CACHE, "Build output directory", "Dev"),
-    JunkRule("dist", True, JunkTier.TIER_2_DEV_CACHE, "Distribution packaging directory", "Dev"),
+    JunkRule(".cache", True, JunkTier.TIER_2_DEV_CACHE, "Project cache directory", "Dev", project_root_only=True),
+    JunkRule("build", True, JunkTier.TIER_2_DEV_CACHE, "Build output directory", "Dev", project_root_only=True),
+    JunkRule("dist", True, JunkTier.TIER_2_DEV_CACHE, "Distribution packaging directory", "Dev", project_root_only=True),
     JunkRule("*.egg-info", True, JunkTier.TIER_2_DEV_CACHE, "Python package egg info", "Dev"),
 
     # --------------------------------------------------------------------------
@@ -614,6 +623,32 @@ def is_inside_dependency_tree(path: str, include_last: bool = False) -> bool:
     if not include_last:
         parts = parts[:-1]
     return any(part in DEPENDENCY_TREE_DIR_NAMES for part in parts)
+
+
+# What makes a folder a software project's root: it directly holds one of these. `build`, `dist` and `.cache` mean
+# "regenerable output" only there; anywhere else they are ordinary folder names (the compiled files of an
+# installed program, a user's own `dist/` of deliverables, a tool's data folder). Names are lowercase.
+PROJECT_MANIFEST_FILES: FrozenSet[str] = frozenset({
+    "package.json", "angular.json",                                  # JavaScript / TypeScript
+    "pyproject.toml", "setup.py", "setup.cfg",                       # Python
+    "cargo.toml", "go.mod", "composer.json", "gemfile",              # Rust, Go, PHP, Ruby
+    "pom.xml", "build.gradle", "build.gradle.kts", "build.xml",      # Java / Kotlin (Maven, Gradle, Ant)
+    "cmakelists.txt", "makefile",                                    # C / C++
+})
+PROJECT_MANIFEST_DIRS: FrozenSet[str] = frozenset({"nbproject"})    # NetBeans
+PROJECT_MANIFEST_PATTERNS: Tuple[str, ...] = (
+    "*.csproj", "*.sln",                                             # .NET
+    "vite.config.*", "webpack.config.*", "next.config.*",            # front-end build tools
+)
+_PROJECT_MANIFEST_RE = re.compile("|".join(fnmatch.translate(pattern) for pattern in PROJECT_MANIFEST_PATTERNS))
+
+
+def is_project_manifest(name: str, is_dir: bool = False) -> bool:
+    """True when an entry of that name, in a folder, makes the folder a project root (case-insensitive)."""
+    lowered = name.lower()
+    if is_dir:
+        return lowered in PROJECT_MANIFEST_DIRS
+    return lowered in PROJECT_MANIFEST_FILES or _PROJECT_MANIFEST_RE.match(lowered) is not None
 
 
 def match_junk_rule(
@@ -773,6 +808,10 @@ __all__ = [
     "match_junk_rule",
     "DEPENDENCY_TREE_DIR_NAMES",
     "is_inside_dependency_tree",
+    "PROJECT_MANIFEST_FILES",
+    "PROJECT_MANIFEST_DIRS",
+    "PROJECT_MANIFEST_PATTERNS",
+    "is_project_manifest",
     # Scanner exclusions
     "DEFAULT_EXCLUDE_DIRS",
 ]
