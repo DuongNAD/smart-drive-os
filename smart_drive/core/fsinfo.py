@@ -216,7 +216,7 @@ def slack_model_note(info: FilesystemInfo, model_cluster_size: int) -> Optional[
     model = f"{model_cluster_size // 1024} KB"
     if not info.known:
         return f"Could not detect the filesystem; cluster-slack figures model {model} clusters."
-    if info.is_exfat and info.block_size in (0, model_cluster_size):
+    if info.block_size == model_cluster_size or (info.is_exfat and info.block_size == 0):
         return None
     if info.is_exfat:
         return f"This exFAT volume uses a different cluster size ({info.summary()}); cluster-slack figures model {model} clusters."
