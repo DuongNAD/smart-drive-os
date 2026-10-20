@@ -401,6 +401,33 @@ class TestAutoZonerPlanningAndExecution(_IsolatedAutoZonerTestCase):
         self.assertTrue(shortcut_file.exists())
         self.assertTrue(path_file.exists())
 
+    def test_loose_documents_in_a_path_folder_are_organized_but_executables_stay(self) -> None:
+        """With the drive root itself on PATH, only files Windows can run from there are pinned, not every document."""
+        from smart_drive.core.system_refs import SystemRef, SystemRefIndex
+
+        root = self.test_dir
+        (root / "manual.pdf").write_bytes(b"%PDF-1.7\n%%EOF\n")
+        (root / "backup.zip").write_bytes(b"PK\x05\x06" + b"\x00" * 18)
+        (root / "model.gguf").write_bytes(b"GGUF")
+        (root / "launcher.ps1").write_text("Write-Output 'on path'\n", encoding="utf-8")
+
+        fake_index = SystemRefIndex([SystemRef(kind="path", source="PATH (User)", target=str(root))])
+        zoner = AutoZoner(str(root), system_refs=fake_index)
+
+        plan = zoner.generate_plan()
+        self.assertEqual(
+            sorted(os.path.basename(a.src_path) for a in plan),
+            ["backup.zip", "manual.pdf", "model.gguf"],
+        )
+        self.assertEqual(
+            [os.path.basename(item["path"]) for item in zoner.protected_by_system],
+            ["launcher.ps1"],
+        )
+
+        res = zoner.apply_plan(plan)
+        self.assertEqual(res["moved_count"], 3)
+        self.assertTrue((root / "launcher.ps1").exists())
+
     def test_folder_of_multiple_repositories_routed_to_development_projects(self) -> None:
         """Folders containing >= 2 child repos route to 03_Development_Projects/<name>; 1 child repo returns None."""
         from unittest.mock import patch

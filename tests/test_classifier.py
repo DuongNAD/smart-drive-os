@@ -972,9 +972,9 @@ class TestClassifierEdgeCases(_IsolatedClassifierTestCase):
             # Loose file targeted by shortcut/service AND loose file directly inside a PATH directory are protected
             pinned_py = tmp / "daemon_worker.py"
             pinned_py.write_text("import os\nprint('daemon')\n", encoding="utf-8")
-            path_script = git_dir / "cmd" / "git_hook.py"
+            path_script = git_dir / "cmd" / "git_hook.cmd"
             path_script.parent.mkdir(parents=True, exist_ok=True)
-            path_script.write_text("import sys\nprint('hook')\n", encoding="utf-8")
+            path_script.write_text("@echo hook\n", encoding="utf-8")
 
             file_refs = SystemRefIndex([
                 SystemRef(kind="shortcut", source=r"C:\Users\X\Desktop\Worker.lnk", target=str(pinned_py)),
@@ -999,12 +999,12 @@ class TestClassifierEdgeCases(_IsolatedClassifierTestCase):
                 ),
                 ClassificationResult(
                     source_path=path_script,
-                    name="git_hook.py",
+                    name="git_hook.cmd",
                     is_dir=False,
                     format_type="Script",
                     category="05_Dev_Toolbox",
                     subcategory="Scripts",
-                    recommended_path="05_Dev_Toolbox/Scripts/git_hook.py",
+                    recommended_path="05_Dev_Toolbox/Scripts/git_hook.cmd",
                     confidence=0.95,
                     reason="stale",
                     size_bytes=20,
@@ -1013,6 +1013,24 @@ class TestClassifierEdgeCases(_IsolatedClassifierTestCase):
             self.assertEqual(engine_files.execute_relocation(stale_file_res, dry_run=False), [])
             self.assertTrue(pinned_py.exists())
             self.assertTrue(path_script.exists())
+
+    def test_loose_documents_in_a_path_folder_are_classified_but_executables_stay(self) -> None:
+        from smart_drive.core.system_refs import SystemRef, SystemRefIndex
+
+        with TempWorkspace(prefix="test_path_root_cls_") as tmp:
+            pdf = tmp / "manual.pdf"
+            pdf.write_bytes(b"%PDF-1.7\n%%EOF\n")
+            script = tmp / "launcher.ps1"
+            script.write_text("Write-Output 'on path'\n", encoding="utf-8")
+
+            # The drive root itself is on PATH
+            engine = ClassifierEngine(
+                root_path=tmp,
+                system_refs=SystemRefIndex([SystemRef(kind="path", source="PATH (User)", target=str(tmp))]),
+            )
+            self.assertIsNotNone(engine.inspect_path(pdf))
+            self.assertIsNone(engine.inspect_path(script))
+            self.assertEqual([os.path.basename(item["path"]) for item in engine.protected_by_system], ["launcher.ps1"])
 
 
 if __name__ == "__main__":
