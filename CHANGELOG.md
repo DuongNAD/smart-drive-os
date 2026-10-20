@@ -18,6 +18,23 @@ own, and the shipped folder lists no longer carry one user's folder name.
   Tier 3 junk (temp files, swap files, crash dumps) to the restorable quarantine and deletes nothing else.
   `--only-tier` cannot be combined with `--tier`, its dry run says what `--apply` will do, and `--json` has
   `only_tier`. The READMEs and `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` (and the copies `init` writes) mention it.
+- A release workflow, `.github/workflows/release.yml`. Pushing a tag `v<version>` builds the source distribution and the
+  wheel, checks them with `twine check --strict` (and that the tag is the version in `pyproject.toml`), installs the
+  wheel in a fresh virtual environment on Linux, macOS and Windows with Python 3.9 and 3.13 and smoke-tests it
+  (`packaging/smoke_test.py`: `status --json`, `organize --dry-run`, and starting the MCP server that `mcp register`
+  wrote; also run through `uvx` and `pipx`), and then uploads both files to PyPI through Trusted Publishing (OpenID
+  Connect with attestations; no token is stored anywhere), but only after the owner approves the deployment in the
+  protected `pypi` environment. Branch pushes and pull requests that touch the packaging files, and manual runs, only
+  build and test. The one-time PyPI and GitHub setup, the steps of a release and what to do when one goes wrong are in
+  `docs/RELEASING.md`.
+- `uvx smart-drive-os <subcommand>` and `pipx run smart-drive-os <subcommand>` work: the package now installs a console
+  script named like itself, `smart-drive-os` (`smart-drive` and the other names stay).
+- README install options (`uvx`, `pipx` and a source checkout; the first two once the first release is on PyPI) and
+  ready-to-paste MCP entries for Claude Desktop, Cursor, Antigravity, Windsurf and a project's `.mcp.json`, for Claude
+  Code and for Codex.
+- `server.json` for the official MCP Registry (`io.github.DuongNAD/smart-drive-os`, the PyPI package `smart-drive-os`,
+  started with `uvx smart-drive-os mcp`) and the `mcp-name` comment in `README.md` that the registry looks for in the
+  package description. Nothing is published to the registry yet; `docs/RELEASING.md` has the steps.
 
 ### Changed
 
@@ -29,6 +46,10 @@ own, and the shipped folder lists no longer carry one user's folder name.
   30 days (`QUARANTINE_RETENTION_DAYS`).
 - The package is classified as `Development Status :: 4 - Beta` instead of `5 - Production/Stable`, and
   `README_INTERNAL.md` shows the live CI badge instead of a static "968/968 tests passed" one.
+- Package metadata: the description says what the tool mainly does (organize a drive and relink the paths coding agents
+  and IDEs remember, clean junk safely, search files instantly), the license is the SPDX expression `MIT` (PEP 639;
+  building from source now needs setuptools 77 or newer, which pip fetches by itself), and the empty `setup.py` shim is
+  gone (pip 21.3 and newer build from `pyproject.toml` alone).
 
 ### Removed
 
@@ -79,6 +100,11 @@ own, and the shipped folder lists no longer carry one user's folder name.
   `Smart_Organize` stops at step 2 and asks for them to be closed (Enter checks again, `C` continues, `Q` cancels)
   instead of moving at once. `--apply` itself is unchanged, and `relink` already counted an unreadable list as "still
   running".
+- `mcp register` and `setup` run through `uvx` or `pipx run` wrote the interpreter of the temporary environment the
+  package runs from (uv's cache, or pipx's `<PIPX_HOME>/.cache/<hash>`, which pipx deletes after 14 days without use)
+  into every agent config, which broke the server whenever that environment was cleaned up. They now register
+  `uvx smart-drive-os mcp` and `pipx run smart-drive-os mcp` instead (with the absolute path of `uvx` or `pipx` when it
+  is known). A `pipx install`, `uv tool install` or pip install keeps registering its own Python.
 
 ## [1.4.1] - 2026-10-20
 

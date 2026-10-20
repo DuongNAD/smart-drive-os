@@ -497,6 +497,11 @@ Xong: `.gitattributes` (`*.sh`, `*.command` → LF; `*.bat`, `*.cmd`, `*.ps1` �
 build trong CI cho Windows. Công cụ build chỉ dùng lúc đóng gói, không thành dependency khi chạy. Lưu ý SmartScreen: cần ký số
 nếu phát hành rộng.
 
+**Hoãn (2026-10-21, theo quyết định của chủ dự án):** người dùng coding agent cài từ PyPI bằng `uvx` hoặc `pipx` (uv còn tự
+tải được cả Python), nên bản `.exe` chỉ có ích cho người không có Python mà vẫn muốn chạy các launcher `.bat`. Xem lại khi có
+nhóm người dùng đó. Thay vào đó workflow `.github/workflows/release.yml` phát hành gói lên PyPI khi có tag `v*`; chi phí và các
+cách ký số (nếu sau này phát hành `.exe`) ghi trong `docs/RELEASING.md`.
+
 #### A5. Ngân sách hiệu năng
 Script benchmark tạo cây thư mục giả cỡ 200 nghìn file (có `node_modules`, venv, `__pycache__`) và đo `checkup`, `clean`,
 `organize --dry-run`, `dup`. Ngân sách đề xuất trên ổ cỡ 200 GB / 400 nghìn file: `checkup` < 60 s, `clean` < 30 s, `dup` < 5 phút.
