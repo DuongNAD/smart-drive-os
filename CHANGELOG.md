@@ -11,8 +11,9 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 The safety release for everyday users. Commands that delete or move things keep away from what only looks like clutter
 (installed apps, dependency trees, files git tracks, folders Windows depends on), the folders that do move are followed
-by the coding agents, IDEs and shortcuts that remember them, and the slowest commands finish in seconds on a large
-drive. `#10`, `#11` and `#12` are pull requests; the other entries landed in the same release.
+by the coding agents, IDEs and shortcuts that remember them, and the slowest commands no longer need many minutes on a
+large drive (the measured times are under Changed). `#10`, `#11` and `#12` are pull requests; the other entries landed
+in the same release.
 
 ### Added
 
@@ -58,8 +59,9 @@ drive. `#10`, `#11` and `#12` are pull requests; the other entries landed in the
   with 512 KB clusters the design target, not a fact about every folder. (#10)
 - `checkup` scores and recommends only the stale references that point into the drive being checked; the rest stay
   listed in `paths --broken` as information. (#11)
-- Speed on a 167 GB NTFS drive with 342,000 files: `checkup` 571 s to about 40 s and `clean` 491 s to about 8 s (#11);
-  `dup` from more than 15 minutes without any output to about 3 s once the files are cached.
+- Speed, measured on a 167 GB NTFS drive with 342,000 files: a `clean` dry run took 491 s and takes 8-9 s now, and
+  `checkup` took 571 s and takes 40-65 s now (#11). `dup` ran for more than 15 minutes without any output; it takes 28 s
+  on the first run (Windows Defender scans a file the first time it is opened) and 2-3 s when run again.
 
 ### Fixed
 
@@ -85,7 +87,7 @@ drive. `#10`, `#11` and `#12` are pull requests; the other entries landed in the
 - Junk directories are sized by the files inside them instead of 0 bytes, so `checkup`, `clean --apply` and `ssd_clean`
   report the real space. (#11)
 - `dup` does not enter dependency, environment and cache trees (including the caches tagged with `CACHEDIR.TAG`) or the
-  folders Windows and installed apps depend on, and no longer scans for 15 minutes in silence.
+  folders Windows and installed apps depend on, and no longer scans for more than 15 minutes in silence.
 - The MCP tools accept absolute paths when the storage root is a drive root (`E:\` or `/`). Containment is decided on
   the resolved path, so `/data/drive/../x` is no longer called safe for the root `/data/drive`.
 - `SmartDrive.bat` printed "'Presets' is not recognized as an internal or external command" and cut five menu lines at
