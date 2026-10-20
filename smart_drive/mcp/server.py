@@ -50,7 +50,7 @@ from smart_drive.search.parser import apply_size_spec, parse_search_query
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "smart-drive"
-SERVER_VERSION = "1.4.0"
+SERVER_VERSION = "1.4.1"
 
 # Sent as InitializeResult.instructions: the MCP spec puts it at the top level of the result, which is where
 # clients look for it (it was nested inside serverInfo, so no client ever saw it).
