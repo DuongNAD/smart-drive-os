@@ -2388,8 +2388,15 @@ def last_moves(root: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+UNDOABLE_TOOLS = frozenset({"organize", "classify"})
+
+
 def last_undoable_moves(root: str) -> Optional[Dict[str, Any]]:
-    """Returns the most recent move batch from moves.jsonl that has not yet been undone."""
+    """Returns the most recent organize/classify batch from moves.jsonl that has not yet been undone.
+
+    Batches journaled by `relink` and `paths` record folders the user moved by hand (or a
+    best-guess repair); `undo` never moves those back.
+    """
     path = journal_path(root)
     if not os.path.isfile(path):
         return None
@@ -2408,6 +2415,8 @@ def last_undoable_moves(root: str) -> Optional[Dict[str, Any]]:
             target_time = parsed.get("undoes")
             if isinstance(target_time, str) and target_time:
                 undone_counts[target_time] = undone_counts.get(target_time, 0) + 1
+            continue
+        if parsed.get("tool") not in UNDOABLE_TOOLS:
             continue
         batch_time = parsed.get("time")
         if isinstance(batch_time, str) and undone_counts.get(batch_time, 0) > 0:
