@@ -98,11 +98,9 @@ class TestLauncherInventoryAndSynchronization(unittest.TestCase):
         for name in ALL_20_LAUNCHER_NAMES:
             launcher_path = LAUNCHERS_DIR / name
             root_path = REPO_ROOT / name
-            launcher_content = launcher_path.read_text(encoding="utf-8")
-            root_content = root_path.read_text(encoding="utf-8")
-            self.assertEqual(
-                launcher_content,
-                root_content,
+            # Bytes, not text: the line endings belong to the file (.gitattributes sets them per extension).
+            self.assertTrue(
+                launcher_path.read_bytes() == root_path.read_bytes(),
                 f"Mismatch between {launcher_path} and {root_path}",
             )
 

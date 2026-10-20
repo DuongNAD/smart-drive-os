@@ -1,0 +1,19 @@
+# Line endings. Git stores text files with LF. `text=auto` leaves the line ending of a
+# checkout to core.autocrlf; the rules below fix it for the launchers on every system,
+# in a checkout and in `git archive` (GitHub's Download ZIP), whatever core.autocrlf says.
+* text=auto
+
+# Shell launchers are LF on every system. With CRLF the first line is "#!/bin/bash\r"
+# and macOS/Linux stop with "bad interpreter".
+*.sh text eol=lf
+*.command text eol=lf
+
+# Windows launchers are CRLF on every system. cmd.exe can mis-read `goto` and call
+# labels in a batch file that has bare LF line endings.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Images are never converted.
+*.jpg binary
+*.png binary
