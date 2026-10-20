@@ -633,6 +633,12 @@ def is_inside_dependency_tree(path: str, include_last: bool = False) -> bool:
     return any(part in DEPENDENCY_TREE_DIR_NAMES for part in parts)
 
 
+# Why a scan of one folder looked at nothing (`scan_skipped` of JunkDetector and DuplicateDetector): that folder, or one
+# above it below the drive root, is a place the scan of the whole drive finds nothing in
+SCAN_SKIPPED_PROTECTED_BY_SYSTEM = "protected_by_system"  # Windows or an installed app depends on it
+SCAN_SKIPPED_DEPENDENCY_TREE = "dependency_tree"  # installed packages, a virtualenv, a tagged cache directory
+
+
 # What makes a folder a software project's root: it directly holds one of these. `build`, `dist` and `.cache` mean
 # "regenerable output" only there; anywhere else they are ordinary folder names (the compiled files of an
 # installed program, a user's own `dist/` of deliverables, a tool's data folder). Names are lowercase.
@@ -820,6 +826,8 @@ __all__ = [
     "match_junk_rule",
     "DEPENDENCY_TREE_DIR_NAMES",
     "is_inside_dependency_tree",
+    "SCAN_SKIPPED_PROTECTED_BY_SYSTEM",
+    "SCAN_SKIPPED_DEPENDENCY_TREE",
     "PROJECT_MANIFEST_FILES",
     "PROJECT_MANIFEST_DIRS",
     "PROJECT_MANIFEST_PATTERNS",

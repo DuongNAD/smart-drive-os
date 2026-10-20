@@ -12,6 +12,8 @@ Dependency, environment and cache trees (node_modules, site-packages, virtualenv
 are not entered: their files are copies of one another by design, so they are never worth reclaiming, and on a real
 drive they hold most of the files that share a size (a scan that opened every one of them took more than 15 minutes).
 Neither are the folders Windows or an installed application depends on (`protected_by_system`, as in `organize`).
+A scan of one folder of a drive (`drive_root`) is judged by the folders above it too: inside any of those it scans
+nothing.
 """
 
 from __future__ import annotations
@@ -34,10 +36,17 @@ from smart_drive.core.config import (
     CLUSTER_SIZE,
     CLUSTER_SIZE_BYTES,
     DEFAULT_EXCLUDE_DIRS,
+    SCAN_SKIPPED_DEPENDENCY_TREE,
+    SCAN_SKIPPED_PROTECTED_BY_SYSTEM,
     calculate_allocated_bytes,
     calculate_slack_bytes,
 )
-from smart_drive.core.system_refs import SystemRefIndex, format_protected_by_system_entry
+from smart_drive.core.system_refs import (
+    SystemRef,
+    SystemRefIndex,
+    format_protected_by_system_entry,
+    summarize_system_refs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +150,15 @@ def _result_of(future: Future) -> str:
 
 
 class DuplicateDetector:
-    """High-performance 3-phase duplicate file detector."""
+    """High-performance 3-phase duplicate file detector.
+
+    ``root`` is the folder scanned, and it is always scanned, whatever it is called or holds. Given ``drive_root``
+    (the drive or storage root that ``root`` lies in), the folders from there down to ``root`` are judged first, the
+    way a scan of the whole drive judges them: when one is a dependency tree or something Windows or an installed app
+    depends on, nothing is scanned and ``scan_skipped`` says which folder and why. The drive root and everything above
+    it is never judged. (The names in ``exclude_dirs`` are a choice about a drive-wide scan, not a reason to refuse a
+    folder somebody asked for.)
+    """
 
     def __init__(
         self,
@@ -151,12 +168,14 @@ class DuplicateDetector:
         *,
         skip_dependency_dirs: bool = True,
         system_refs: Optional[SystemRefIndex] = None,
+        drive_root: Optional[str] = None,
         min_size: int = 0,
         workers: Optional[int] = None,
         progress: Optional[Callable[[Dict[str, Any]], None]] = None,
         progress_interval: Optional[float] = None,
     ) -> None:
         self.root = os.path.abspath(root)
+        self.drive_root = os.path.abspath(drive_root) if drive_root else self.root
         self.cluster_size = cluster_size
         self.exclude_dirs = (
             {d.lower() for d in exclude_dirs}
@@ -191,6 +210,9 @@ class DuplicateDetector:
         # Folders (and loose files of the root) that Windows or an installed app depends on, as `organize` reports them
         self.protected_by_system: List[Dict[str, Any]] = []
         self.skipped_protected_dirs = 0
+        # Set when `root` lies in a folder the scan never enters, so that nothing was scanned: {"folder": the outermost
+        # such folder, "reason": SCAN_SKIPPED_*, "detail": what it is, or who uses it}
+        self.scan_skipped: Optional[Dict[str, str]] = None
         # What the last run opened: files that share their size with another file, then those hashed on their head
         # and tail, then those hashed in full (the partial-hash collisions)
         self.size_candidate_files = 0
@@ -201,29 +223,95 @@ class DuplicateDetector:
     def system_refs(self) -> SystemRefIndex:
         """Lazily collects OS/application references once per detector."""
         if self._system_refs is None:
-            self._system_refs = SystemRefIndex.collect(shortcut_roots=[self.root])
+            self._system_refs = SystemRefIndex.collect(shortcut_roots=[self.drive_root])
         return self._system_refs
 
     def _protected_refs(self) -> SystemRefIndex:
-        """The references that point into the scanned tree: only they can protect a folder inside it.
+        """The references that point into the drive being scanned: only they can protect a folder inside it.
 
         Checking a folder walks every reference it is given, and a machine has over a thousand (services, shortcuts,
-        installed apps), nearly all of them elsewhere; filtering once keeps the per-folder check cheap.
+        installed apps), nearly all of them elsewhere; filtering once keeps the per-folder check cheap. (They are the
+        ones under `drive_root`, not only those under `root`: the folders above `root` are judged by them too.)
         """
         if self._scoped_refs is None:
-            self._scoped_refs = SystemRefIndex(self.system_refs.refs_under(self.root, is_file=False))
+            self._scoped_refs = SystemRefIndex(self.system_refs.refs_under(self.drive_root, is_file=False))
         return self._scoped_refs
 
-    def _is_protected_by_system(self, path: str, is_file: bool) -> bool:
-        """Whether Windows or an installed app depends on `path`: a PATH entry, a service, an app's folder, a
-        shortcut target, or a folder holding an uninstaller. Records the answer for the report."""
+    def _protecting_refs(self, path: str, is_file: bool) -> List[SystemRef]:
+        """The references that make `path` something Windows or an installed app depends on: a PATH entry, a service,
+        an app's folder, a shortcut target, or a folder holding an uninstaller. Empty: it is free to scan. Records the
+        folder for the report."""
         refs = self._protected_refs().check_folder(path, is_file=is_file)
-        if not refs:
-            return False
-        self.protected_by_system.append(format_protected_by_system_entry(path, refs))
-        if not is_file:
-            self.skipped_protected_dirs += 1
-        return True
+        if refs:
+            self.protected_by_system.append(format_protected_by_system_entry(path, refs))
+            if not is_file:
+                self.skipped_protected_dirs += 1
+        return refs
+
+    def _is_protected_by_system(self, path: str, is_file: bool) -> bool:
+        return bool(self._protecting_refs(path, is_file))
+
+    def _folders_above_root(self) -> List[str]:
+        """The folders from just below `drive_root` down to `root` itself, outermost first. None at all when `root` is
+        the drive root, or lies outside it (nothing is above it to judge)."""
+        drive_key = os.path.normcase(self.drive_root)
+        below_drive = drive_key if drive_key.endswith(os.sep) else drive_key + os.sep
+        if not os.path.normcase(self.root).startswith(below_drive):
+            return []
+        folders: List[str] = []
+        current = self.root
+        while os.path.normcase(current) != drive_key:
+            folders.append(current)
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+        folders.reverse()
+        return folders
+
+    @staticmethod
+    def _environment_kind(folder: str) -> Optional[str]:
+        """What `folder` is when `_walk_files` would not enter it for what it holds: a virtualenv (pyvenv.cfg) or a
+        tagged cache directory (CACHEDIR.TAG), the same marker files it looks for in a listing. None: neither."""
+        try:
+            with os.scandir(folder) as it:
+                for entry in it:
+                    name = entry.name.lower()
+                    if name == VENV_MARKER_FILE and entry.is_file(follow_symlinks=False):
+                        return "a Python virtual environment (it holds pyvenv.cfg)"
+                    if (
+                        name == CACHE_TAG_FILE
+                        and entry.is_file(follow_symlinks=False)
+                        and _is_cache_dir_tag(entry.path)
+                    ):
+                        return "a cache directory (it holds a CACHEDIR.TAG)"
+        except OSError:
+            pass
+        return None
+
+    def _judge_root(self) -> Optional[Dict[str, str]]:
+        """Why `root` is not to be scanned, when a folder from `drive_root` down to it is one a scan of the whole drive
+        never enters (a dependency tree, a folder the system depends on); None when it is free to scan. The outermost
+        such folder decides, as everything inside it belongs to it."""
+        for folder in self._folders_above_root():
+            if self.skip_dependency_dirs:
+                name = os.path.basename(folder)
+                kind = (
+                    f"a dependency, cache or version-control folder ({name})"
+                    if name.lower() in DEPENDENCY_DIR_NAMES
+                    else self._environment_kind(folder)
+                )
+                if kind is not None:
+                    self.skipped_dependency_dirs += 1
+                    return {"folder": folder, "reason": SCAN_SKIPPED_DEPENDENCY_TREE, "detail": kind}
+            refs = self._protecting_refs(folder, is_file=False)
+            if refs:
+                return {
+                    "folder": folder,
+                    "reason": SCAN_SKIPPED_PROTECTED_BY_SYSTEM,
+                    "detail": summarize_system_refs(refs),
+                }
+        return None
 
     def progress_info(self) -> Dict[str, Any]:
         """Where the run is now: its phase ("scan", "partial" or "full") and the counters so far."""
@@ -255,7 +343,9 @@ class DuplicateDetector:
 
         Of several hard links to the same data (same device and inode) only the first is yielded. Folders named in
         `exclude_dirs`, dependency / environment / cache trees, virtualenvs and the folders Windows or an installed
-        app depends on are not entered. The root itself is always scanned; only what lies below it is judged.
+        app depends on are not entered. The root itself is always scanned; only what lies below it is judged. (Unless
+        a `drive_root` was given: then the folders above the root are judged too, and nothing is yielded when one of
+        them is a place the scan never enters; see `scan_skipped`.)
         """
         self.hardlinked_paths_ignored = 0
         self.folders_scanned = 0
@@ -264,6 +354,9 @@ class DuplicateDetector:
         self.skipped_dependency_dirs = 0
         self.protected_by_system = []
         self.skipped_protected_dirs = 0
+        self.scan_skipped = self._judge_root()
+        if self.scan_skipped is not None:
+            return
         seen_links: Set[Tuple[int, int]] = set()
         stack = [self.root]
         while stack:
@@ -517,6 +610,7 @@ class DuplicateDetector:
             "skipped_dependency_dirs": self.skipped_dependency_dirs,
             "skipped_protected_dirs": self.skipped_protected_dirs,
             "protected_by_system": list(self.protected_by_system),
+            "scan_skipped": self.scan_skipped,
         }
 
 

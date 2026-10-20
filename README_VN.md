@@ -247,8 +247,8 @@ SmartDrive-OS cung cấp máy chủ MCP chuẩn JSON-RPC 2.0 qua `stdio` với *
 
 1. `ssd_search`: Tìm kiếm FTS5 tức thì trả về token rút gọn (<2.000 tokens/truy vấn). *(chỉ đọc)*
 2. `ssd_audit`: Thống kê dung lượng và phân tích lãng phí cluster slack có chế độ nén gọn. *(chỉ đọc)*
-3. `ssd_clean`: Dọn rác an toàn có bảo vệ whitelist và hỗ trợ dry-run. *(xóa rác)*
-4. `ssd_find_duplicates`: Tìm file trùng qua 3 giai đoạn SHA-256 có phân trang và giới hạn xem trước. *(chỉ đọc)*
+3. `ssd_clean`: Dọn rác an toàn có bảo vệ whitelist và hỗ trợ dry-run. `sub_dir` được xét như lúc quét cả ổ, kể cả các thư mục bên trên: nằm trong ứng dụng đã cài thì không quét gì và `scan_skipped` nêu thư mục cùng lý do; kết quả còn liệt kê mục đã giữ lại (`kept`) và các thư mục `protected_by_system`. *(xóa rác)*
+4. `ssd_find_duplicates`: Tìm file trùng qua 3 giai đoạn SHA-256 có phân trang và giới hạn xem trước. `min_size` loại tệp nhỏ trước khi băm; `sub_dir` nằm trong ứng dụng đã cài hoặc thư mục phụ thuộc thì không được quét (`scan_skipped`). *(chỉ đọc)*
 5. `ssd_update_index`: Đồng bộ chỉ mục tìm kiếm gia tăng (<2s). *(idempotent)*
 6. `ssd_check_safety`: Kiểm tra tương thích exFAT (9 ký tự cấm Win32, 22 từ khóa DOS và symlink). *(chỉ đọc)*
 7. `ssd_status`: Kiểm tra trạng thái gắn kết SSD, khiên bảo vệ và phân vùng. *(chỉ đọc)*

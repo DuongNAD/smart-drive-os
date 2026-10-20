@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from smart_drive.core.auditor import StorageAuditor, format_bytes
 from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.config import (
+    SCAN_SKIPPED_PROTECTED_BY_SYSTEM,
     JunkTier,
     ensure_anti_indexing_markers,
     is_protected_root_file,
@@ -94,6 +95,24 @@ def _is_inside(root: str, path: str) -> bool:
         return os.path.normcase(os.path.commonpath([root, path])) == os.path.normcase(root)
     except ValueError:
         return False
+
+
+def _scan_skipped_note(target: str, skipped: Optional[Dict[str, str]], action: str) -> Optional[Dict[str, str]]:
+    """A detector's `scan_skipped` plus a sentence to show: what kept the scan from looking at `target`, and why.
+
+    None when the scan was done. `action` is what the tool would have offered ("cleaning", "deduplication").
+    """
+    if skipped is None:
+        return None
+    folder = skipped["folder"]
+    if skipped["reason"] == SCAN_SKIPPED_PROTECTED_BY_SYSTEM:
+        clause = f"used by Windows or an installed app ({skipped['detail']})"
+    else:
+        clause = skipped["detail"]
+    same = os.path.normcase(os.path.normpath(target)) == os.path.normcase(os.path.normpath(folder))
+    subject = folder if same else f"{target} lies inside {folder}, which"
+    message = f"Nothing was scanned: {subject} is {clause}, so nothing in it is offered for {action}."
+    return {**skipped, "message": message}
 
 
 logger = logging.getLogger("smart_drive.mcp.server")
@@ -919,8 +938,10 @@ class SmartDriveMCPServer:
         tier_map = {1: JunkTier.TIER_1_SAFE, 2: JunkTier.TIER_2_DEV_CACHE, 3: JunkTier.TIER_3_SENSITIVE}
         max_tier = tier_map.get(tier_val, JunkTier.TIER_1_SAFE)
 
-        detector = JunkDetector(target_root, max_tier=max_tier)
-        junk_items = detector.find_junk()
+        # The detector works from the storage root and is told where to start, so that a sub-folder is judged by the
+        # folders above it (an installed app, a dependency tree) as the scan of the whole drive judges it
+        detector = JunkDetector(self._resolve_safe_path(None), max_tier=max_tier)
+        junk_items = detector.find_junk(sub_path=target_root)
 
         guard = SecurityGuard(drive_root=self._ensure_root())
         purge_engine = PurgeEngine(guard, dry_run=dry_run)
@@ -939,6 +960,11 @@ class SmartDriveMCPServer:
             "batch_id": summary.batch_id,
             "nominal_bytes_reclaimed": summary.nominal_bytes_reclaimed,
             "slack_bytes_reclaimed": summary.allocated_bytes_reclaimed,
+            # What looked like junk and was kept (by reason), the folders the system depends on, and the folder that
+            # kept the whole scan from starting (as in `clean --json`)
+            "kept": detector.get_kept_summary(),
+            "protected_by_system": detector.protected_by_system,
+            "scan_skipped": _scan_skipped_note(target_root, detector.scan_skipped, "cleaning"),
         }
 
         if dry_run:
@@ -961,12 +987,11 @@ class SmartDriveMCPServer:
         limit = self._parse_int(args.get("limit"), default=20, min_val=1, max_val=100)
         offset = self._parse_int(args.get("offset"), default=0, min_val=0)
 
-        detector = DuplicateDetector(target_root)
+        # drive_root: a sub-folder is judged by the folders above it, as the scan of the whole drive judges them.
+        # min_size is the detector's, so that small files are dropped before anything is hashed.
+        detector = DuplicateDetector(target_root, drive_root=self._resolve_safe_path(None), min_size=min_size)
         plan = detector.generate_reclamation_plan()
         all_groups = plan.get("duplicate_groups", [])
-
-        if min_size > 0:
-            all_groups = [g for g in all_groups if g.get("size", 0) >= min_size]
 
         total_groups = len(all_groups)
         total_dup_files = sum(len(g.get("files", [])) for g in all_groups)
@@ -1003,6 +1028,9 @@ class SmartDriveMCPServer:
             "has_more": has_more,
             "next_offset": next_offset,
             "duplicate_groups": capped_groups,
+            "skipped_dependency_dirs": plan.get("skipped_dependency_dirs", 0),
+            "skipped_protected_dirs": plan.get("skipped_protected_dirs", 0),
+            "scan_skipped": _scan_skipped_note(target_root, plan.get("scan_skipped"), "deduplication"),
         }
 
     def handle_ssd_update_index(self, args: Dict[str, Any]) -> Dict[str, Any]:
