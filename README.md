@@ -1,4 +1,5 @@
 <p align="center"><img src="docs/banner.jpg" alt="SmartDrive-OS — Saturn and its orderly rings in deep space" width="100%"></p>
+<!-- mcp-name: io.github.DuongNAD/smart-drive-os -->
 
 # SmartDrive-OS
 
