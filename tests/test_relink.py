@@ -2455,6 +2455,11 @@ class TestRelink(SmartDriveTestCase):
         ):
             with contextlib.redirect_stdout(out_relink_txt):
                 rc_rel = cli_main(["relink", "--root", str(drive), "--dry-run"])
+            # Organize relinked the moved venv, so its .pth holds the new path and undo would rewrite it back.
+            # A venv none of whose files would change is not listed: there is nothing to update in it.
+            (expected_container / sp_dir.relative_to(container) / "_b.pth").write_text(
+                f"{expected_container / 'repoB' / 'src'}\n", encoding="utf-8"
+            )
             with contextlib.redirect_stdout(out_undo_json):
                 rc_uj = cli_main(["undo", "--root", str(drive), "--json"])
             with contextlib.redirect_stdout(out_undo_txt):
