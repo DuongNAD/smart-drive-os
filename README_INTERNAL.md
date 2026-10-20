@@ -401,7 +401,7 @@ python -m unittest discover tests -v
 ### Test Suite Summary:
 - **`test_workstation_hybrid.py`**: AcademicClassifier, Vietnamese university localization, FPTU course regex, mojibake font repair, workstation-hybrid profile, and `self-path-check`.
 - **`test_autozoner_defense.py`**: AutoZoner inviolable self-defense, repository anchors, protection of WindowsApps, Steam, Riot Games, LDPlayer, and active SQL Server 2022 database instances.
-- **`test_system_refs.py` & `test_undo_and_quarantine.py`**: `protected_by_system` guard (PATH, Services, Uninstall registry, Startup, `.lnk`, uninstallers), `undo` reversal, and `clean` quarantine/restore.
+- **`test_system_refs.py`, `test_undo.py` & `test_cleaner.py`**: `protected_by_system` guard (PATH, Services, Uninstall registry, Startup, `.lnk`, uninstallers), `undo` reversal, and `clean` quarantine/restore.
 - **`test_relink.py`, `test_paths_broken.py` & `test_checkup.py`**: Agent/IDE/Obsidian/`.lnk` relinking (`storage.json`, `state.vscdb`, `recentProjects.xml`), `paths --broken`, and `checkup` health scoring.
 - **`test_drive_detector.py`**: Drive enumeration, strict `C:` exclusion, Win32 bus type resolution, cluster geometry, and filesystem adaptation.
 - **`test_junction.py`**: NTFS junction detection, creation (`mklink /J`), target normalization, and unlinking safety.
