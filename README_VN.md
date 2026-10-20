@@ -232,7 +232,7 @@ smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an" --dry-run # thư mục tự dờ
 smart-drive relink "E:\Cu\du_an" "E:\Moi\du_an"           # ...rồi áp dụng
 smart-drive relink --find                                # liệt kê đường dẫn cũ của agent/IDE và nơi thư mục đã tới
 smart-drive relink --find --apply --wait                 # cập nhật mục chắc chắn sau khi ứng dụng đang mở đóng
-smart-drive relink --find --apply --ask --wait           # ...và hỏi y/N cho từng mục ? trướ
+smart-drive relink --find --apply --ask --wait           # ...và hỏi y/N cho từng mục ? trước
 smart-drive paths --broken                               # kiểm tra shortcut, mục IDE, PATH và cấu hình agent bị đứt
 smart-drive paths --broken --fix                         # tự sửa các mục khớp chắc chắn qua relink
 ```
