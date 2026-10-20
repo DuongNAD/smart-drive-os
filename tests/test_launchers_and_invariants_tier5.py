@@ -1055,7 +1055,7 @@ class TestSmartOrganizeRetryAndUndo(unittest.TestCase):
             return []
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
-    def _run_flow(self, answers: list, relink_calls: list = None, lang: str = "en") -> tuple:
+    def _run_flow(self, answers: list, relink_calls: list = None, lang: str = "en", on_answer=None) -> tuple:
         import io
         from unittest import mock
         from smart_drive.cli.smart_organize_runner import run_smart_organize
@@ -1068,6 +1068,12 @@ class TestSmartOrganizeRetryAndUndo(unittest.TestCase):
                 relink_calls.append((list(pairs), dry_run))
             return {"busy_apps": [], "changed": []}
 
+        def input_fn(_prompt: str) -> str:
+            answer = next(answers_it)
+            if on_answer is not None:
+                on_answer(answer)
+            return answer
+
         out = io.StringIO()
         with mock.patch("smart_drive.core.system_refs.SystemRefIndex.collect", return_value=SystemRefIndex([])),              mock.patch(
                  "smart_drive.core.relink._resolve_locations",
@@ -1076,7 +1082,7 @@ class TestSmartOrganizeRetryAndUndo(unittest.TestCase):
             rc = run_smart_organize(
                 str(self.drive),
                 lang=lang,
-                input_fn=lambda _prompt: next(answers_it),
+                input_fn=input_fn,
                 output_stream=out,
                 relink_fn=fake_relink,
             )
@@ -1127,6 +1133,24 @@ class TestSmartOrganizeRetryAndUndo(unittest.TestCase):
         self.assertFalse(older_old.exists())
         self.assertTrue(repo.is_dir())
         self.assertEqual(len(self._journal()), 1)
+
+    def test_apply_moves_only_the_plan_the_user_confirmed(self) -> None:
+        self._make_repo("my_service")
+
+        def late_arrival(answer: str) -> None:
+            # A new folder lands at the drive root while the user is typing YES
+            if answer == "YES":
+                self._make_repo("late_arrival")
+
+        rc, out = self._run_flow(["YES", ""], on_answer=late_arrival)
+
+        self.assertEqual(rc, 0, out)
+        self.assertTrue((self.drive / "03_Development_Projects" / "my_service").is_dir())
+        self.assertTrue((self.drive / "late_arrival").is_dir(), "an item the user never saw must not be moved")
+        self.assertFalse((self.drive / "03_Development_Projects" / "late_arrival").exists())
+        journal = self._journal()
+        self.assertEqual(len(journal), 1)
+        self.assertEqual([os.path.basename(src) for src, _dest in journal[0]["moves"]], ["my_service"])
 
     def test_undo_failure_is_reported_and_returns_nonzero(self) -> None:
         from unittest import mock
