@@ -19,6 +19,7 @@ from smart_drive.core.system_refs import (
     RegistryReader,
     SystemRef,
     SystemRefIndex,
+    extract_argument_paths,
     extract_executable_path,
     looks_like_installed_app,
     parse_lnk_bytes,
@@ -202,6 +203,44 @@ class TestExecutableAndPathParsers(unittest.TestCase):
         refs = idx.refs_under(r"E:\Apps\Claude")
         self.assertEqual([r.kind for r in refs], ["startup"])
 
+    def test_extract_argument_paths_finds_scripts_and_dlls_passed_to_a_program(self) -> None:
+        cases = [
+            (r'"C:\Python313\pythonw.exe" "E:\tool\tray.py"', [r"E:\tool\tray.py"]),
+            (r"wscript.exe E:\x.vbs", [r"E:\x.vbs"]),
+            (
+                r'"C:\Program Files\AutoHotkey\AutoHotkey.exe" "E:\scripts\keys.ahk"',
+                [r"E:\scripts\keys.ahk"],
+            ),
+            (r'rundll32.exe "E:\tool\x.dll",Start', [r"E:\tool\x.dll"]),
+            (r"rundll32.exe E:\tool\x.dll,Start", [r"E:\tool\x.dll"]),
+            (r"python E:\tool\main.py --port 8080", [r"E:\tool\main.py"]),
+            (
+                r'"C:\Tools\app.exe" --config=E:\cfg\a.json /log:"E:\My Logs\app.log"',
+                [r"E:\cfg\a.json", r"E:\My Logs\app.log"],
+            ),
+            (r"E:/tool/run.exe E:/tool/data/in.csv", [r"E:\tool\data\in.csv"]),
+            # No path among the arguments
+            (r"C:\Windows\system32\svchost.exe -k netsvcs -p", []),
+            (r'"C:\Tools\a.exe" -x /silent', []),
+            (r"MsiExec.exe /X{0A1B2C3D-0000-1111-2222-333344445555}", []),
+        ]
+        for command, expected in cases:
+            with self.subTest(command=command):
+                self.assertEqual(extract_argument_paths(command), expected)
+
+        # An unquoted path may contain spaces: the rest of the line is reported too
+        spaced = extract_argument_paths(
+            r"rundll32.exe setupapi,InstallHinfSection DefaultInstall 128 C:\Program Files (x86)\Pkg\Video Codec\z.inf"
+        )
+        self.assertIn(r"C:\Program Files (x86)\Pkg\Video Codec\z.inf", spaced)
+
+        # %VAR% in the arguments is expanded through the reader
+        reader = RegistryReader(env={"TOOLS": r"E:\tool"})
+        self.assertEqual(
+            extract_argument_paths(r'"C:\Python313\pythonw.exe" "%TOOLS%\tray.py"', reader=reader),
+            [r"E:\tool\tray.py"],
+        )
+
     def test_split_and_expand_path_with_env_vars(self) -> None:
         reader = RegistryReader(env={"GIT_HOME": r"E:\Git", "DEV_TOOLS": r"E:\DevTools"})
         raw = r"%GIT_HOME%\cmd;%DEV_TOOLS%\bin;E:\PlainDir;%UNRESOLVED_VAR%\bin"
@@ -285,6 +324,40 @@ class TestSystemRefIndexAndBoundaries(unittest.TestCase):
             self.assertIn("PATH", summary)
             self.assertIn('installed app "Git"', summary)
             self.assertIn("1 shortcut", summary)
+
+    def test_collect_protects_folders_of_scripts_passed_as_command_line_arguments(self) -> None:
+        mock_tree = {
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run": {
+                "Tray": r'"C:\Python313\pythonw.exe" "E:\tool\tray.py"',
+                "Hotkeys": r"wscript.exe E:\launchers\hotkeys.vbs",
+                "Shell": r'rundll32.exe "E:\shellext\x.dll",Start',
+            },
+            r"HKLM\SYSTEM\CurrentControlSet\Services": {
+                "MySvc": {"ImagePath": r'"C:\Python313\python.exe" E:\svc\run.py --port 80'},
+            },
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall": {
+                "Pkg": {
+                    "DisplayName": "Pkg",
+                    "UninstallString": r'"C:\Windows\System32\msiexec.exe" /x "E:\Pkg\a.msi"',
+                },
+            },
+        }
+        reader = RegistryReader(tree=mock_tree, env={})
+        with TempWorkspace(prefix="test_arg_paths_") as tmp:
+            idx = SystemRefIndex.collect(home=tmp, reader=reader)
+
+        by_folder = {
+            r"E:\tool": "startup",
+            r"E:\launchers": "startup",
+            r"E:\shellext": "startup",
+            r"E:\svc": "service",
+            r"E:\Pkg": "installed_app",
+        }
+        for folder, kind in by_folder.items():
+            with self.subTest(folder=folder):
+                self.assertEqual([r.kind for r in idx.refs_under(folder)], [kind])
+        # The programs themselves (outside E:) are still recorded; the folders next door are not
+        self.assertEqual(idx.refs_under(r"E:\unrelated"), [])
 
     def test_looks_like_installed_app_detects_top_level_uninstallers(self) -> None:
         with TempWorkspace(prefix="test_uninst_") as tmp:

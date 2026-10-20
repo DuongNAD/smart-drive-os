@@ -31,6 +31,8 @@ _EXEC_EXT_RE = re.compile(
     re.IGNORECASE,
 )
 _ABSOLUTE_START_RE = re.compile(r'^"?(?:[A-Za-z]:[\\/]|\\\\)')
+_ARG_PATH_START_RE = re.compile(r'(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|\\\\[^\\/\s"]+[\\/])')
+_ARG_TOKEN_RE = re.compile(r'[^\s"]+')
 _ICON_INDEX_RE = re.compile(r",\s*-?\d+\s*$")
 _ENV_VAR_RE = re.compile(r"%([^%]+)%")
 
@@ -253,12 +255,8 @@ def _split_unquoted_program(s: str) -> Optional[str]:
     return first
 
 
-def extract_executable_path(
-    raw: str,
-    system_root: Optional[str] = None,
-    reader: Optional[RegistryReader] = None,
-) -> Optional[str]:
-    """Extracts a clean filesystem path from a Windows service ImagePath, DisplayIcon, UninstallString, or Run entry."""
+def _prepare_command_line(raw: str, reader: Optional[RegistryReader]) -> Optional[str]:
+    """Expands %VAR%, unwraps escaped quotes and drops a trailing icon index from a registry command line."""
     if not raw or not isinstance(raw, str):
         return None
 
@@ -275,19 +273,48 @@ def extract_executable_path(
     s = _unescape_quoted_command(s)
 
     # Strip icon index suffix like `,0` or `,-1`
-    s = _ICON_INDEX_RE.sub("", s).strip()
+    return _ICON_INDEX_RE.sub("", s).strip()
 
+
+def _split_command_line(s: str) -> Tuple[str, str, bool]:
+    """Splits a prepared command line into (program, arguments, split_found).
+
+    `split_found` is False when no quote or known extension marks where the program ends; the whole
+    line is then returned as both program and arguments.
+    """
     # Handle quoted executable at the start: `"C:\Path\app.exe" --arg`
     if s.startswith('"'):
         end_quote = s.find('"', 1)
         if end_quote > 1:
-            s = s[1:end_quote].strip()
-        else:
-            s = s[1:].strip()
-    else:
-        program = _split_unquoted_program(s)
-        if program:
-            s = program.strip()
+            return s[1:end_quote].strip(), s[end_quote + 1:], True
+        return s[1:].strip(), "", True
+
+    program = _split_unquoted_program(s)
+    if program:
+        return program.strip(), s[len(program):], True
+    return s, s, False
+
+
+def extract_executable_path(
+    raw: str,
+    system_root: Optional[str] = None,
+    reader: Optional[RegistryReader] = None,
+) -> Optional[str]:
+    """Extracts a clean filesystem path from a Windows service ImagePath, DisplayIcon, UninstallString, or Run entry."""
+    s = _prepare_command_line(raw, reader)
+    if not s:
+        return None
+    program, _args, _found = _split_command_line(s)
+    return _normalize_program_path(program, system_root, reader)
+
+
+def _normalize_program_path(
+    program: str,
+    system_root: Optional[str],
+    reader: Optional[RegistryReader],
+) -> Optional[str]:
+    """Turns the program part of a command line into an absolute path, or None when it is not one."""
+    s = program
 
     # Strip NT namespace prefix `\??\` or `\\?\`
     if s.startswith("\\??\\"):
@@ -327,6 +354,73 @@ def extract_executable_path(
         return None
 
     return s_norm if "\\" in s_norm else s
+
+
+def _clean_argument_path(candidate: str) -> Optional[str]:
+    """Normalizes one absolute path found in a command-line argument, or None when nothing usable is left."""
+    c = candidate.strip().strip('"').strip()
+    c = re.split(r";(?=[A-Za-z]:[\\/])", c)[0]
+    if "," in c:  # `x.dll,Start`: what follows the last comma is an entry point, not part of the path
+        head, _, tail = c.rpartition(",")
+        if tail and "\\" not in tail and "/" not in tail and re.search(r"\.\w{1,5}$", head):
+            c = head
+    c = c.rstrip(" ,;").replace("/", "\\")
+    if c.startswith("\\\\?\\"):
+        c = c[4:]
+    if "%" in c or not re.match(r"^(?:[A-Za-z]:\\|\\\\)", c):
+        return None
+    if len([part for part in c.split("\\") if part]) < 2:
+        return None
+    return c
+
+
+def _absolute_paths_in_text(text: str) -> List[str]:
+    """Finds the absolute Windows paths (drive letter or UNC) written anywhere in a command-line fragment.
+
+    A path inside quotes ends at the closing quote. An unquoted one ends at whitespace, but it may carry
+    spaces too (`... 128 C:\\Program Files\\X\\a.inf`), so the text up to the next option, path or quoted
+    argument is reported as a second candidate.
+    """
+    found: List[str] = []
+    for m in _ARG_PATH_START_RE.finditer(text):
+        start = m.start()
+        candidates: List[str] = []
+        if text.count('"', 0, start) % 2 == 1:
+            close = text.find('"', start)
+            candidates.append(text[start:close if close != -1 else len(text)])
+        else:
+            tokens = list(_ARG_TOKEN_RE.finditer(text, start))
+            if not tokens:
+                continue
+            candidates.append(tokens[0].group(0))
+            end = tokens[0].end()
+            for tok in tokens[1:]:
+                word = tok.group(0)
+                if text[tok.start() - 1] == '"' or word[0] in "-/" or _ARG_PATH_START_RE.match(word):
+                    break
+                end = tok.end()
+            if end > tokens[0].end():
+                candidates.append(text[start:end])
+        for candidate in candidates:
+            cleaned = _clean_argument_path(candidate)
+            if cleaned and cleaned not in found:
+                found.append(cleaned)
+    return found
+
+
+def extract_argument_paths(raw: str, reader: Optional[RegistryReader] = None) -> List[str]:
+    """Absolute paths a command line passes to its program, e.g. the script in `pythonw.exe "E:\\tool\\tray.py"`.
+
+    Covers quoted and unquoted arguments, `--opt=PATH` / `/opt:PATH` forms and `rundll32.exe X.dll,Entry`.
+    When the program is not an absolute path (`wscript.exe E:\\x.vbs`, `python E:\\x.py`) the whole line is scanned.
+    """
+    s = _prepare_command_line(raw, reader)
+    if not s:
+        return []
+    program, args, found_split = _split_command_line(s)
+    if found_split and _normalize_program_path(program, None, reader) is not None:
+        return _absolute_paths_in_text(args)
+    return _absolute_paths_in_text(s)
 
 
 def split_and_expand_path(
@@ -607,6 +701,8 @@ class SystemRefIndex:
                 exe = extract_executable_path(raw_img, reader=reader)
                 if exe:
                     out.append(SystemRef(kind="service", source=f"service {svc_name}", target=exe))
+                for arg_path in extract_argument_paths(raw_img, reader=reader):
+                    out.append(SystemRef(kind="service", source=f"service {svc_name}", target=arg_path))
             except Exception:
                 continue
 
@@ -638,6 +734,8 @@ class SystemRefIndex:
                         uninst_path = extract_executable_path(uninstall_str, reader=reader)
                         if uninst_path and not os.path.basename(uninst_path).lower().startswith(("msiexec", "rundll32")):
                             out.append(SystemRef(kind="installed_app", source=source_label, target=uninst_path))
+                        for arg_path in extract_argument_paths(uninstall_str, reader=reader):
+                            out.append(SystemRef(kind="installed_app", source=source_label, target=arg_path))
                 except Exception:
                     continue
 
@@ -652,6 +750,8 @@ class SystemRefIndex:
                     exe = extract_executable_path(val, reader=reader)
                     if exe:
                         out.append(SystemRef(kind="startup", source=f"startup {name}", target=exe))
+                    for arg_path in extract_argument_paths(val, reader=reader):
+                        out.append(SystemRef(kind="startup", source=f"startup {name}", target=arg_path))
             except Exception:
                 continue
 
@@ -860,6 +960,7 @@ __all__ = [
     "RegistryReader",
     "SystemRef",
     "SystemRefIndex",
+    "extract_argument_paths",
     "extract_executable_path",
     "format_protected_by_system_entry",
     "looks_like_installed_app",
