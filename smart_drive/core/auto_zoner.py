@@ -31,6 +31,7 @@ from smart_drive.core.academic_classifier import AcademicClassifier
 from smart_drive.core.exfat_compat import ExFatEngine
 from smart_drive.core.fsinfo import detect_filesystem
 from smart_drive.core.learning_units import find_unit_root
+from smart_drive.core.scanner import measure_tree
 from smart_drive.core.system_refs import (
     SystemRefIndex,
     format_protected_by_system_entry,
@@ -402,21 +403,9 @@ class AutoZoner:
             except OSError:
                 return 0, 0
 
-        total_nom = 0
-        total_slack = 0
-        try:
-            for root, _, files in os.walk(path):
-                for f in files:
-                    fp = os.path.join(root, f)
-                    try:
-                        sz = os.path.getsize(fp)
-                        total_nom += sz
-                        total_slack += calculate_slack_bytes(sz, self.cluster_size)
-                    except OSError:
-                        pass
-        except OSError:
-            pass
-        return total_nom, total_slack
+        # One listing per folder with the sizes the listing already carries (os.walk + getsize cost a stat per file)
+        total_nom, total_alloc = measure_tree(path, self.cluster_size)
+        return total_nom, total_alloc - total_nom
 
     def generate_plan(self, scan_dir: Optional[str] = None) -> List[ZoningAction]:
         """Scans the specified directory (defaults to drive root) and generates a ZoningPlan."""
