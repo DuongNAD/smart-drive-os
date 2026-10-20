@@ -1525,8 +1525,66 @@ def _relink_history(
             report.errors.append({"file": str(src), "error": str(err)})
 
 
-def _run_git_repair(git_bin: str, repo_dir: Path, extra_args: Sequence[str], report: RelinkReport) -> bool:
-    """Executes `git -C <repo_dir> worktree repair ...` and updates report."""
+_LinkState = Dict[str, Optional[bytes]]
+
+# git prints "repair: <what>: <path>" for each file it fixes (on stderr; stdout in some versions)
+_GIT_REPAIR_LINE_RE = re.compile(r"^\s*repair:", re.IGNORECASE | re.MULTILINE)
+
+
+def _read_bytes_or_none(path: Path) -> Optional[bytes]:
+    try:
+        return path.read_bytes() if _is_file(path) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _worktree_link_state(repo_dir: Path, worktree_dirs: Sequence[str] = ()) -> _LinkState:
+    """The contents, by path, of the files `git worktree repair` can rewrite for repo_dir (None: missing).
+
+    A repository keeps `.git/worktrees/<name>/gitdir`, the path of each linked worktree's `.git` file, and a
+    linked worktree's own `.git` file names that folder back. Reading them before and after a repair shows
+    whether git changed anything, however it phrased its output.
+    """
+    state: _LinkState = {}
+
+    def watch(path: Path) -> Optional[bytes]:
+        state[str(path)] = data = _read_bytes_or_none(path)
+        return data
+
+    dot_git = repo_dir / ".git"
+    own = watch(dot_git)  # a file in a linked worktree, a folder (read as None) in a repository
+    if own is not None:
+        target = own.decode("utf-8", errors="replace").strip()
+        if target.startswith("gitdir:"):
+            watch(Path(target[len("gitdir:") :].strip()) / "gitdir")
+    try:
+        pointers = sorted((dot_git / "worktrees").glob("*/gitdir")) if _is_dir(dot_git) else []
+    except OSError:
+        pointers = []
+    for pointer in pointers:
+        recorded = (watch(pointer) or b"").decode("utf-8", errors="replace").strip()
+        if recorded:
+            watch(Path(recorded))
+    for worktree_dir in worktree_dirs:
+        watch(Path(worktree_dir) / ".git")
+    return state
+
+
+def _run_git_repair(
+    git_bin: str,
+    repo_dir: Path,
+    extra_args: Sequence[str],
+    report: RelinkReport,
+    state_before: Optional[_LinkState] = None,
+) -> bool:
+    """Executes `git -C <repo_dir> worktree repair ...`; True when git succeeded.
+
+    repo_dir is listed in report.worktrees only when git repaired something: it printed a "repair:" line, or the
+    files it can rewrite changed since state_before (read here unless the caller took it before changing a file
+    itself). A repository whose worktrees are already in order is not "repaired", though git exits 0.
+    """
+    if state_before is None:
+        state_before = _worktree_link_state(repo_dir, extra_args)
     try:
         done = subprocess.run(
             [git_bin, *NO_FSMONITOR, "-C", str(repo_dir), "worktree", "repair", *extra_args],
@@ -1543,9 +1601,11 @@ def _run_git_repair(git_bin: str, repo_dir: Path, extra_args: Sequence[str], rep
         return False
 
     if done.returncode == 0:
-        repo_str = str(repo_dir)
-        if repo_str not in report.worktrees:
-            report.worktrees.append(repo_str)
+        said_so = bool(_GIT_REPAIR_LINE_RE.search(f"{done.stdout or ''}\n{done.stderr or ''}"))
+        if said_so or _worktree_link_state(repo_dir, extra_args) != state_before:
+            repo_str = str(repo_dir)
+            if repo_str not in report.worktrees:
+                report.worktrees.append(repo_str)
         return True
 
     stderr = (done.stderr or done.stdout or "").strip()
@@ -1732,6 +1792,8 @@ def _repair_worktrees(
         wt_key = str(wt_dir).casefold() if _CASE_INSENSITIVE else str(wt_dir)
         if wt_key in repaired_wt_paths:
             continue
+        # Taken before the .git file is rewritten below, which is part of the repair
+        state_before = _worktree_link_state(wt_dir)
         # If the worktree's .git file points to an old main repo path, rewrite it before running repair.
         dot_git = wt_dir / ".git"
         try:
@@ -1744,7 +1806,7 @@ def _repair_worktrees(
                     dot_git.write_text(f"gitdir: {mapped_target}{eol}", encoding="utf-8")
         except OSError:
             pass
-        _run_git_repair(git_bin, wt_dir, [], report)
+        _run_git_repair(git_bin, wt_dir, [], report, state_before=state_before)
 
 
 def _candidate_venv_dirs(base: Path, max_subdirs: int = _MAX_WORKTREE_SCAN_DIRS) -> List[Path]:

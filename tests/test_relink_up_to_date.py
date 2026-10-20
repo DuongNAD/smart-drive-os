@@ -15,15 +15,19 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import unittest
-from typing import Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 from unittest.mock import patch
 
 from smart_drive.cli.main import main as cli_main
-from smart_drive.core.relink import AgentFile, RelinkReport, relink
+from smart_drive.core.relink import AgentFile, PathMapper, RelinkReport, relink
 import smart_drive.core.relink as relink_core
 from tests.helpers import SmartDriveTestCase
+
+NEEDS_GIT = unittest.skipUnless(shutil.which("git"), "git is required for the worktree repair tests")
 
 
 class TestRelinkUpToDate(SmartDriveTestCase):
@@ -95,6 +99,65 @@ class TestRelinkUpToDate(SmartDriveTestCase):
     @staticmethod
     def _console_script_warnings(report: RelinkReport) -> List[str]:
         return [w for w in report.warnings if "console scripts" in w]
+
+    @staticmethod
+    def _git(cwd: Path, *args: str) -> "subprocess.CompletedProcess[str]":
+        return subprocess.run(
+            ["git", "-C", str(cwd), *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+        )
+
+    def _make_repo(self, repo: Path, worktrees: Sequence[Path] = ()) -> None:
+        """A git repository with one commit and a linked worktree at each of the given folders."""
+        repo.mkdir(parents=True)
+        self._git(repo, "init", "-q")
+        self._git(repo, "config", "user.email", "test@example.com")
+        self._git(repo, "config", "user.name", "Test User")
+        (repo / "README.md").write_text("# Test\n", encoding="utf-8")
+        self._git(repo, "add", "README.md")
+        self._git(repo, "commit", "-q", "-m", "initial")
+        for index, worktree in enumerate(worktrees):
+            self._git(repo, "worktree", "add", "-q", str(worktree), "-b", f"wt{index}")
+
+    def _plain_worktree_layout(self, name: str = "plain") -> Tuple[Path, Path, Path, Path]:
+        """The files git keeps for one linked worktree, written by hand (no git needed).
+
+        Returns the repository, the worktree folder, the repository's `gitdir` pointer to the worktree and
+        the worktree's `.git` file, which names the repository's admin folder back.
+        """
+        repo = self.test_dir / f"{name}_repo"
+        worktree = self.test_dir / f"{name}_wt"
+        admin = repo / ".git" / "worktrees" / "wt"
+        admin.mkdir(parents=True)
+        worktree.mkdir()
+        pointer = admin / "gitdir"
+        pointer.write_text(f"{worktree / '.git'}\n", encoding="utf-8")
+        gitfile = worktree / ".git"
+        gitfile.write_text(f"gitdir: {admin}\n", encoding="utf-8")
+        return repo, worktree, pointer, gitfile
+
+    @staticmethod
+    def _fake_git(
+        returncode: int = 0,
+        stdout: str = "",
+        stderr: str = "",
+        rewrites: Sequence[Path] = (),
+    ) -> Tuple[Any, List[List[str]]]:
+        """A stand-in for subprocess.run that behaves like `git worktree repair`: it may rewrite the given files
+        and print what it did. Returns (the patch to apply, the list of commands it was called with)."""
+        calls: List[List[str]] = []
+
+        def run(cmd: Sequence[str], **kwargs: Any) -> "subprocess.CompletedProcess[str]":
+            calls.append(list(cmd))
+            for path in rewrites:
+                path.write_bytes(b"rewritten by git\n")
+            return subprocess.CompletedProcess(list(cmd), returncode, stdout, stderr)
+
+        return patch.object(relink_core.subprocess, "run", side_effect=run), calls
 
     def test_01_relinking_a_venv_twice_lists_it_only_the_first_time(self) -> None:
         old_proj = self.test_dir / "my_pkg"
@@ -197,6 +260,183 @@ class TestRelinkUpToDate(SmartDriveTestCase):
         self.assertEqual(rc, 0, out)
         payload = json.loads(out)
         self.assertEqual((payload["venvs"], payload["worktrees"], payload["warnings"]), ([], [], []))
+
+    @NEEDS_GIT
+    def test_06_relinking_a_moved_repository_twice_repairs_its_worktrees_only_once(self) -> None:
+        old_repo = self.test_dir / "repo"
+        new_repo = self.test_dir / "03_Development_Projects" / "repo"
+        outside = self.test_dir / "outside_wt"
+        self._make_repo(old_repo, [old_repo / ".claude" / "worktrees" / "wt", outside])
+        new_repo.parent.mkdir(parents=True)
+        os.rename(old_repo, new_repo)
+        moves = [(str(old_repo), str(new_repo))]
+
+        first = self._relink(moves)
+        self.assertEqual(first.worktrees, [str(new_repo)])
+        self.assertEqual(first.warnings, [])
+        for worktree in (new_repo / ".claude" / "worktrees" / "wt", outside):
+            self._git(worktree, "status", "--porcelain")  # fails while the worktree is still cut off
+
+        second = self._relink(moves)
+        self.assertEqual(second.worktrees, [])
+        self.assertEqual(second.warnings, [])
+        self.assertFalse(second.changed)
+        self.assertEqual(second.to_dict()["worktrees"], [])
+
+    @NEEDS_GIT
+    def test_07_dry_run_and_real_run_agree_on_the_worktrees_of_a_moved_repository(self) -> None:
+        old_repo = self.test_dir / "repo"
+        new_repo = self.test_dir / "03_Development_Projects" / "repo"
+        self._make_repo(old_repo, [old_repo / ".claude" / "worktrees" / "wt"])
+        new_repo.parent.mkdir(parents=True)
+        os.rename(old_repo, new_repo)
+        moves = [(str(old_repo), str(new_repo))]
+
+        preview = self._relink(moves, dry_run=True)  # moved, not relinked yet
+        first = self._relink(moves)
+        self.assertEqual(preview.worktrees, [str(new_repo)])
+        self.assertEqual(first.worktrees, preview.worktrees)
+
+        dry, real = self._relink(moves, dry_run=True), self._relink(moves)
+        for report in (dry, real):
+            self.assertEqual(report.worktrees, [])
+            self.assertFalse(report.changed)
+        self.assertEqual({**dry.to_dict(), "dry_run": False}, real.to_dict())
+
+    @NEEDS_GIT
+    def test_08_a_moved_linked_worktree_is_listed_only_the_first_time(self) -> None:
+        main = self.test_dir / "main_repo"
+        old_wt = self.test_dir / "feature_wt"
+        new_wt = self.test_dir / "03_Development_Projects" / "feature_wt"
+        self._make_repo(main, [old_wt])
+        new_wt.parent.mkdir(parents=True)
+        os.rename(old_wt, new_wt)
+        moves = [(str(old_wt), str(new_wt))]
+
+        first = self._relink(moves)
+        self.assertEqual(first.worktrees, [str(new_wt)])
+        listing = self._git(main, "worktree", "list", "--porcelain").stdout.replace("\\", "/")
+        self.assertIn(new_wt.as_posix(), listing)
+
+        second = self._relink(moves)
+        self.assertEqual(second.worktrees, [])
+        self.assertFalse(second.changed)
+
+    @NEEDS_GIT
+    def test_09_cli_relink_again_after_a_move_says_there_is_nothing_left_to_change(self) -> None:
+        # What the menu's [11] does after folders were moved: the repositories and venvs sit one folder down
+        drive = self.test_dir / "drive"
+        old_container = drive / "project"
+        new_container = drive / "03_Development_Projects" / "project"
+        self._make_repo(old_container / "openclaw", [old_container / "openclaw" / ".claude" / "worktrees" / "wt"])
+        self._make_venv(old_container / "research" / "venv", [str(old_container / "research" / "src")])
+        new_container.parent.mkdir(parents=True)
+        os.rename(old_container, new_container)
+
+        rc, out = self._cli(["relink", str(old_container), str(new_container), "--root", str(drive)])
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"git worktrees repaired: {new_container / 'openclaw'}", out)
+        self.assertIn(f"Python venv updated: {new_container / 'research' / 'venv'}", out)
+        self.assertNotIn("Nothing left to change", out)
+
+        for argv in (["relink", "--root", str(drive), "--dry-run"], ["relink", "--root", str(drive)]):
+            rc, out = self._cli(argv)
+            self.assertEqual(rc, 0, out)
+            self.assertIn("Nothing left to change: all coding agent paths are up to date.", out)
+            for claim in ("repaired", "Python venv", "console scripts"):
+                self.assertNotIn(claim, out)
+
+        rc, out = self._cli(["relink", "--root", str(drive), "--json"])
+        self.assertEqual(rc, 0, out)
+        payload = json.loads(out)
+        self.assertEqual(
+            (payload["worktrees"], payload["venvs"], payload["warnings"], payload["errors"]), ([], [], [], [])
+        )
+
+    def test_10_git_that_repairs_nothing_lists_nothing(self) -> None:
+        repo, worktree, _pointer, _gitfile = self._plain_worktree_layout()
+        patcher, calls = self._fake_git()
+        report = RelinkReport()
+        with patcher:
+            ok = relink_core._run_git_repair("git", repo, [str(worktree)], report)
+
+        self.assertTrue(ok)
+        self.assertEqual(report.worktrees, [])
+        self.assertEqual(report.warnings, [])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][-3:], ["worktree", "repair", str(worktree)])
+
+    def test_11_a_repair_line_from_git_is_a_repair(self) -> None:
+        # git prints "repair: <what>: <path>" on stderr (stdout in some versions) for each file it fixes
+        for channel in ("stdout", "stderr"):
+            with self.subTest(channel=channel):
+                repo, worktree, _pointer, _gitfile = self._plain_worktree_layout(channel)
+                line = f"repair: gitdir incorrect: {repo}/.git/worktrees/wt/gitdir\n"
+                patcher, _calls = self._fake_git(**{channel: line})
+                report = RelinkReport()
+                with patcher:
+                    self.assertTrue(relink_core._run_git_repair("git", repo, [str(worktree)], report))
+                self.assertEqual(report.worktrees, [str(repo)])
+
+    def test_12_a_rewritten_gitdir_file_is_a_repair_whatever_git_prints(self) -> None:
+        # git translates its messages and older versions print nothing, so the files are compared, too
+        said = {"silent": "", "translated": "réparation : gitdir incorrect\n"}
+        for what, index in (("the repository's pointer", 0), ("the worktree's .git file", 1)):
+            for how, stderr in said.items():
+                with self.subTest(rewritten=what, git=how):
+                    repo, worktree, pointer, gitfile = self._plain_worktree_layout(f"{index}{how}")
+                    patcher, _calls = self._fake_git(stderr=stderr, rewrites=[(pointer, gitfile)[index]])
+                    report = RelinkReport()
+                    with patcher:
+                        self.assertTrue(relink_core._run_git_repair("git", repo, [str(worktree)], report))
+                    self.assertEqual(report.worktrees, [str(repo)])
+
+    def test_13_a_failing_git_lists_nothing_and_warns(self) -> None:
+        repo, worktree, _pointer, _gitfile = self._plain_worktree_layout()
+        patcher, _calls = self._fake_git(returncode=1, stderr="error: not a valid path: nowhere\n")
+        report = RelinkReport()
+        with patcher:
+            ok = relink_core._run_git_repair("git", repo, [str(worktree)], report)
+
+        self.assertFalse(ok)
+        self.assertEqual(report.worktrees, [])
+        self.assertEqual(len(report.warnings), 1)
+        self.assertIn("not a valid path: nowhere", report.warnings[0])
+
+    def test_14_pointing_the_gitfile_at_the_moved_repository_is_a_repair(self) -> None:
+        # The worktree's .git file still names the old repository folder; relink rewrites it before git runs
+        old_main = self.test_dir / "old_main"
+        repo, worktree, _pointer, gitfile = self._plain_worktree_layout("moved_main")
+        admin = repo / ".git" / "worktrees" / "wt"
+        gitfile.write_text(f"gitdir: {old_main / '.git' / 'worktrees' / 'wt'}\n", encoding="utf-8")
+        mapper = PathMapper([(str(old_main), str(repo))])
+        patcher, calls = self._fake_git()
+        first, second = RelinkReport(), RelinkReport()
+        with patcher, patch("smart_drive.core.relink.shutil.which", return_value="git"):
+            relink_core._repair_worktrees([str(worktree)], mapper, first)
+            relink_core._repair_worktrees([str(worktree)], mapper, second)
+
+        self.assertEqual(first.worktrees, [str(worktree)])
+        self.assertEqual(gitfile.read_text(encoding="utf-8").strip().replace("\\", "/"), f"gitdir: {admin}".replace("\\", "/"))
+        self.assertEqual(second.worktrees, [])
+        self.assertEqual(len(calls), 2)  # git ran both times, and had nothing to say the second time
+
+    def test_15_a_worktree_repaired_through_its_repository_is_not_repaired_again(self) -> None:
+        repo = self.test_dir / "nested_repo"
+        worktree = repo / "feature"  # not a hidden folder, so that it is scanned as a candidate of its own
+        admin = repo / ".git" / "worktrees" / "feature"
+        admin.mkdir(parents=True)
+        worktree.mkdir()
+        (admin / "gitdir").write_text(f"{worktree / '.git'}\n", encoding="utf-8")
+        (worktree / ".git").write_text(f"gitdir: {admin}\n", encoding="utf-8")
+        mapper = PathMapper([(str(self.test_dir / "was_here"), str(repo))])
+        patcher, calls = self._fake_git()
+        report = RelinkReport()
+        with patcher, patch("smart_drive.core.relink.shutil.which", return_value="git"):
+            relink_core._repair_worktrees([str(repo)], mapper, report)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(report.worktrees, [])
 
 
 if __name__ == "__main__":
