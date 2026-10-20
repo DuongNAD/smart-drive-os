@@ -89,9 +89,10 @@ while ($true) {
     Write-Host "  [8] Relink Coding Agents After Moving Folders (smart-drive relink --find)"
     Write-Host "  [9] Drive Health Checkup & Score (smart-drive checkup)"
     Write-Host "  [10] Safe Guided Organizer (Smart_Organize)"
+    Write-Host "  [11] Relink Coding Agents to the Latest Move (smart-drive relink)"
     Write-Host "  [0] Exit"
     Write-Host ""
-    $Opt = Read-Host "Select an option [0-10]"
+    $Opt = Read-Host "Select an option [0-11]"
 
     switch ($Opt) {
         "1" {
@@ -201,6 +202,21 @@ while ($true) {
                 Write-Host ""
                 Read-Host "Press Enter to return to menu..."
             }
+        }
+        "11" {
+            Write-Host ""
+            Run-SmartDrive @("relink", "--dry-run")
+            Write-Host ""
+            $Confirm = Read-Host "Relink the coding agents to the latest move now? Open coding agents will be waited for, so quit them. [y/N]"
+            if ($Confirm -eq "y" -or $Confirm -eq "Y") {
+                Write-Host ""
+                Run-SmartDrive @("relink", "--wait")
+            } else {
+                Write-Host ""
+                Write-Host "Relink aborted." -ForegroundColor Green
+            }
+            Write-Host ""
+            Read-Host "Press Enter to return to menu..."
         }
         "0" {
             Write-Host ""
