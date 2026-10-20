@@ -92,7 +92,7 @@ def cmd_dup(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{e}\n")
         return 2
 
-    detector = DuplicateDetector(root)
+    detector = DuplicateDetector(root, min_size=getattr(args, "min_size", 0) or 0)
     plan = detector.generate_reclamation_plan()
 
     if getattr(args, "json", False):
@@ -342,6 +342,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_dup = subparsers.add_parser("dup", help="3-Phase SHA-256 duplicate detection")
     p_dup.add_argument("--root", help="Root directory of the SSD")
     p_dup.add_argument("--json", action="store_true", help="Output duplicate groups in JSON format")
+    p_dup.add_argument(
+        "--min-size",
+        type=int,
+        default=0,
+        metavar="BYTES",
+        help="Ignore files smaller than BYTES (default 0: every file, empty ones included)",
+    )
 
     # 11. index
     p_idx = subparsers.add_parser("index", help="Build SQLite FTS5 search index")

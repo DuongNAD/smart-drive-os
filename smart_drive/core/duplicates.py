@@ -106,6 +106,7 @@ class DuplicateDetector:
         *,
         skip_dependency_dirs: bool = True,
         system_refs: Optional[SystemRefIndex] = None,
+        min_size: int = 0,
     ) -> None:
         self.root = os.path.abspath(root)
         self.cluster_size = cluster_size
@@ -119,6 +120,9 @@ class DuplicateDetector:
         self.skip_dependency_dirs = skip_dependency_dirs
         self._system_refs: Optional[SystemRefIndex] = system_refs
         self._scoped_refs: Optional[SystemRefIndex] = None
+        # Files smaller than this many bytes are not looked at, so they are neither grouped nor opened. The default
+        # keeps empty files: they are grouped by size alone (never opened) and are worth 0 bytes to reclaim.
+        self.min_size = max(0, int(min_size))
         # Extra paths of hard-linked data met during the last walk. They are the same storage as a path already
         # yielded, so they are neither hashed again nor reported as redundant copies.
         self.hardlinked_paths_ignored = 0
@@ -126,6 +130,7 @@ class DuplicateDetector:
         # counted once, at its top: the files inside are never listed)
         self.folders_scanned = 0
         self.files_scanned = 0
+        self.files_below_min_size = 0
         self.skipped_dependency_dirs = 0
         # Folders (and loose files of the root) that Windows or an installed app depends on, as `organize` reports them
         self.protected_by_system: List[Dict[str, Any]] = []
@@ -169,6 +174,7 @@ class DuplicateDetector:
         self.hardlinked_paths_ignored = 0
         self.folders_scanned = 0
         self.files_scanned = 0
+        self.files_below_min_size = 0
         self.skipped_dependency_dirs = 0
         self.protected_by_system = []
         self.skipped_protected_dirs = 0
@@ -220,6 +226,9 @@ class DuplicateDetector:
                 except (OSError, PermissionError):
                     continue
                 self.files_scanned += 1
+                if info.st_size < self.min_size:
+                    self.files_below_min_size += 1
+                    continue
                 if curr_dir == self.root and self._is_protected_by_system(entry.path, is_file=True):
                     continue
                 if info.st_nlink > 1 and info.st_ino:  # (Windows leaves both at 0: "unknown")
@@ -336,8 +345,10 @@ class DuplicateDetector:
             "duplicate_file_count": total_dup_files,
             "duplicate_groups": groups,
             "hardlinked_paths_ignored": self.hardlinked_paths_ignored,
+            "min_size": self.min_size,
             "folders_scanned": self.folders_scanned,
             "files_scanned": self.files_scanned,
+            "files_below_min_size": self.files_below_min_size,
             "skipped_dependency_dirs": self.skipped_dependency_dirs,
             "skipped_protected_dirs": self.skipped_protected_dirs,
             "protected_by_system": list(self.protected_by_system),

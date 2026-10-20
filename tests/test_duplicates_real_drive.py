@@ -10,14 +10,18 @@ reclamation.
 
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from unittest.mock import patch
 
 import smart_drive.core.duplicates as duplicates
+from smart_drive.cli.main import main
 from smart_drive.core.duplicates import DEPENDENCY_DIR_NAMES, DuplicateDetector
 from smart_drive.core.system_refs import SystemRef, SystemRefIndex
 
@@ -55,6 +59,34 @@ class _Tree(unittest.TestCase):
 
     def reported(self, plan: Dict[str, Any]) -> List[str]:
         return sorted(self.rel(f) for g in plan["duplicate_groups"] for f in g["files"])
+
+    def opened_by(self, run: Callable[[], Any]) -> List[str]:
+        """The files `run()` opened to hash them (partial or full), as paths relative to the root."""
+        opened: List[str] = []
+        real_partial, real_full = duplicates.compute_partial_hash, duplicates.compute_full_sha256
+
+        def partial(path: str, *args: Any, **kwargs: Any) -> str:
+            opened.append(self.rel(path))
+            return real_partial(path, *args, **kwargs)
+
+        def full(path: str, *args: Any, **kwargs: Any) -> str:
+            opened.append(self.rel(path))
+            return real_full(path, *args, **kwargs)
+
+        with patch.object(duplicates, "compute_partial_hash", partial), patch.object(
+            duplicates, "compute_full_sha256", full
+        ):
+            run()
+        return opened
+
+    def run_dup(self, *argv: str) -> Tuple[int, str, str]:
+        """`smart-drive dup --root <tree> ...` in-process: (exit code, stdout, stderr)."""
+        out, err = io.StringIO(), io.StringIO()
+        with patch(
+            "smart_drive.core.system_refs.SystemRefIndex.collect", return_value=SystemRefIndex([])
+        ), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["dup", "--root", str(self.root), *argv])
+        return code, out.getvalue(), err.getvalue()
 
 
 class TestDependencyTreesAreNotScanned(_Tree):
@@ -120,21 +152,8 @@ class TestDependencyTreesAreNotScanned(_Tree):
             self.write(f"app{i}/.venv/Lib/site-packages/pkg/data.bin")
         self.write("docs/original.bin")
         self.write("backup/copy.bin")
-        opened: List[str] = []
-        real_partial, real_full = duplicates.compute_partial_hash, duplicates.compute_full_sha256
 
-        def partial(path: str, *args: Any, **kwargs: Any) -> str:
-            opened.append(self.rel(path))
-            return real_partial(path, *args, **kwargs)
-
-        def full(path: str, *args: Any, **kwargs: Any) -> str:
-            opened.append(self.rel(path))
-            return real_full(path, *args, **kwargs)
-
-        with patch.object(duplicates, "compute_partial_hash", partial), patch.object(
-            duplicates, "compute_full_sha256", full
-        ):
-            self.detector().generate_reclamation_plan()
+        opened = self.opened_by(lambda: self.detector().generate_reclamation_plan())
 
         self.assertTrue(opened)  # the two ordinary copies were compared
         self.assertEqual(sorted(set(opened)), ["backup/copy.bin", "docs/original.bin"])
@@ -187,17 +206,10 @@ class TestFoldersUsedBySystemAreNotScanned(_Tree):
         self.write("docs/original.bin")
         self.write("backup/copy.bin")
         index = SystemRefIndex([SystemRef(kind="shortcut", source="Demo.lnk", target=str(self.root / "App" / "demo.exe"))])
-        opened: List[str] = []
-        real = duplicates.compute_partial_hash
 
-        def partial(path: str, *args: Any, **kwargs: Any) -> str:
-            opened.append(self.rel(path))
-            return real(path, *args, **kwargs)
+        opened = self.opened_by(lambda: self.detector(system_refs=index).generate_reclamation_plan())
 
-        with patch.object(duplicates, "compute_partial_hash", partial):
-            self.detector(system_refs=index).generate_reclamation_plan()
-
-        self.assertEqual(sorted(opened), ["backup/copy.bin", "docs/original.bin"])
+        self.assertEqual(sorted(set(opened)), ["backup/copy.bin", "docs/original.bin"])
 
     def test_references_to_other_places_protect_nothing(self) -> None:
         self.write("a/x.bin")
@@ -243,6 +255,85 @@ class TestFoldersUsedBySystemAreNotScanned(_Tree):
         self.write("a/x.bin")
         self.write("b/x.bin")
         self.detector().generate_reclamation_plan()  # the guard in setUp would raise
+
+
+class TestMinSize(_Tree):
+    """Cheap work first: files below the minimum are dropped by size alone, before anything is opened."""
+
+    def seed(self) -> None:
+        for rel in ("a/small1", "b/small2"):
+            self.write(rel, b"s" * 40)
+        for rel in ("a/big1", "b/big2"):
+            self.write(rel, b"B" * 5000)
+        for rel in ("a/empty1", "b/empty2"):
+            self.write(rel, b"")
+
+    def test_files_below_the_minimum_are_neither_grouped_nor_opened(self) -> None:
+        self.seed()
+        plan: Dict[str, Any] = {}
+        opened = self.opened_by(lambda: plan.update(self.detector(min_size=1000).generate_reclamation_plan()))
+
+        self.assertEqual(self.reported(plan), ["a/big1", "b/big2"])
+        self.assertEqual(sorted(set(opened)), ["a/big1", "b/big2"])
+        self.assertEqual((plan["min_size"], plan["files_below_min_size"]), (1000, 4))
+        self.assertEqual(plan["total_reclaimable_bytes"], 5000)
+
+    def test_by_default_empty_files_are_grouped_but_never_opened(self) -> None:
+        self.seed()
+        plan: Dict[str, Any] = {}
+        opened = self.opened_by(lambda: plan.update(self.detector().generate_reclamation_plan()))
+
+        self.assertEqual(sorted(g["size"] for g in plan["duplicate_groups"]), [0, 40, 5000])
+        empty = next(g for g in plan["duplicate_groups"] if g["size"] == 0)
+        self.assertEqual((empty["reclaimable_bytes"], empty["reclaimable_slack"]), (0, 0))
+        self.assertFalse([name for name in opened if "empty" in name])
+        self.assertEqual((plan["min_size"], plan["files_below_min_size"]), (0, 0))
+
+    def test_a_minimum_of_one_byte_leaves_out_the_empty_files(self) -> None:
+        self.seed()
+        plan = self.detector(min_size=1).generate_reclamation_plan()
+        self.assertEqual(sorted(g["size"] for g in plan["duplicate_groups"]), [40, 5000])
+        self.assertEqual(plan["files_below_min_size"], 2)
+
+    def test_a_negative_minimum_means_no_minimum(self) -> None:
+        self.assertEqual(self.detector(min_size=-5).min_size, 0)
+
+
+class TestDupCommandMinSize(_Tree):
+    def seed(self) -> None:
+        for rel in ("a/small1", "b/small2"):
+            self.write(rel, b"s" * 40)
+        for rel in ("a/big1", "b/big2"):
+            self.write(rel, b"B" * 5000)
+
+    def test_min_size_flag_filters_the_json_plan(self) -> None:
+        self.seed()
+        code, out, _ = self.run_dup("--json", "--min-size", "1000")
+        self.assertEqual(code, 0)
+        plan = json.loads(out)
+        self.assertEqual(self.reported(plan), ["a/big1", "b/big2"])
+        self.assertEqual(plan["min_size"], 1000)
+
+    def test_every_file_counts_without_the_flag(self) -> None:
+        self.seed()
+        code, out, _ = self.run_dup("--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.reported(json.loads(out)), ["a/big1", "a/small1", "b/big2", "b/small2"])
+
+    def test_min_size_flag_in_text_mode(self) -> None:
+        self.seed()
+        code, out, _ = self.run_dup("--min-size", "1000")
+        self.assertEqual(code, 0)
+        self.assertIn("Found 1 duplicate groups (2 files)", out)
+
+    def test_a_negative_minimum_is_ignored_and_a_word_is_refused(self) -> None:
+        self.seed()
+        code, out, _ = self.run_dup("--json", "--min-size", "-5")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["min_size"], 0)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as refused:
+            self.run_dup("--min-size", "lots")
+        self.assertEqual(refused.exception.code, 2)
 
 
 class TestExistingScanOptionsKeepWorking(_Tree):
