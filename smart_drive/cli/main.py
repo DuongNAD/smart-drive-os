@@ -230,7 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_status.add_argument("--json", action="store_true", help="Output status in JSON format")
 
     # 3. audit
-    p_audit = subparsers.add_parser("audit", help="Storage breakdown & 512KB cluster slack audit")
+    p_audit = subparsers.add_parser("audit", help="Storage breakdown & cluster slack audit at the volume's real cluster size")
     p_audit.add_argument("--root", help="Root directory of the SSD")
     p_audit.add_argument("--json", action="store_true", help="Output audit report in JSON format")
     p_audit.add_argument("--markdown", action="store_true", help="Output audit report in Markdown format")
