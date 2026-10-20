@@ -38,7 +38,13 @@ else:
     if not hasattr(cfg_m, "STANDARD_TAXONOMIES"):
         cfg_m.STANDARD_TAXONOMIES = getattr(cfg_m, "PROTECTED_CORE_TAXONOMIES", ())
 
-from smart_drive.core.initializer import DriveInitializer, PROFILES
+from smart_drive.core.initializer import (
+    AGENTS_MD_TEMPLATE,
+    CLAUDE_MD_TEMPLATE,
+    GEMINI_MD_TEMPLATE,
+    DriveInitializer,
+    PROFILES,
+)
 from smart_drive.core.auditor import StorageAuditor
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine
@@ -299,6 +305,35 @@ class TestCrossFeatureInteractionsAfterInit(SmartDriveTestCase):
         self.assertEqual([p.name for p in code_parent.iterdir()], ["smart-drive-os"])
         self.assertFalse((code_parent / "01_AI_Models").exists())
         self.assertFalse((code_parent / ".metadata_never_index").exists())
+
+
+class TestManifestsPointToTheRelinkMenuOption(unittest.TestCase):
+    """`organize --apply` run from inside a coding agent leaves that agent's own paths stale, because a running agent
+    writes its old paths back. The manifests say so: quit the agent, then pick option [11] of the SmartDrive menu."""
+
+    # What every manifest says about it, whatever comes before ("After ..." or "...batch: after ...").
+    CLAUSE = (
+        "`organize --apply` ran inside a coding agent, quit that agent first (a running agent may write its old paths "
+        "back), then pick `[11]` in the `SmartDrive.*` menu or run `smart-drive relink`."
+    )
+
+    def manifests(self) -> dict:
+        texts = {name: (PROJECT_ROOT / name).read_text(encoding="utf-8") for name in ("AGENTS.md", "CLAUDE.md", "GEMINI.md")}
+        texts["AGENTS template"] = AGENTS_MD_TEMPLATE
+        texts["CLAUDE template"] = CLAUDE_MD_TEMPLATE
+        texts["GEMINI template"] = GEMINI_MD_TEMPLATE
+        return texts
+
+    def test_every_manifest_and_its_template_say_to_quit_the_agent_and_pick_option_11(self) -> None:
+        for name, text in self.manifests().items():
+            with self.subTest(manifest=name):
+                self.assertEqual(text.count(self.CLAUSE), 1)
+
+    def test_the_menu_option_they_name_exists_in_every_smartdrive_launcher(self) -> None:
+        for extension in (".bat", ".ps1", ".sh", ".command"):
+            with self.subTest(launcher=f"SmartDrive{extension}"):
+                text = (PROJECT_ROOT / "launchers" / f"SmartDrive{extension}").read_text(encoding="utf-8")
+                self.assertIn("[11] Relink Coding Agents to the Latest Move (smart-drive relink)", text)
 
 
 if __name__ == "__main__":

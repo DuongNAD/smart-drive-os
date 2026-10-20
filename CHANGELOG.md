@@ -20,7 +20,8 @@ drive. `#10`, `#11` and `#12` are pull requests; the other entries landed in the
   `.command`. It shows `smart-drive relink --dry-run`, asks `[y/N]`, and only then runs `smart-drive relink --wait`,
   which re-applies the latest `organize`/`classify` batch once the open coding agents have closed. Use it after
   `organize --apply` was run from inside a coding agent and that agent has quit: a running agent can write its old
-  paths back. Option `[8]` (`relink --find`) stays for folders moved by hand.
+  paths back. Option `[8]` (`relink --find`) stays for folders moved by hand. `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`,
+  and the copies `init` writes to a drive, tell coding agents the same.
 - `.gitattributes` pins the line endings of the launchers: `.sh` and `.command` are LF, `.bat`, `.cmd` and `.ps1` are
   CRLF, on every system. A Windows checkout no longer gives the macOS and Linux launchers CRLF ("bad interpreter"), and a
   ZIP of the repository keeps CRLF in the batch files.
