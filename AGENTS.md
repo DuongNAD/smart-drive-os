@@ -18,12 +18,13 @@ Workspace: External High-Speed SSD (exFAT, Allocation Unit: 512 KB).
 - Gitignore governance: run `smart-drive gitignore audit` before committing.
 
 ## 3. First-Time Setup (MCP ecosystem)
-On a fresh clone or a new machine, run once from the repo root. No prompts; safe to repeat:
+On a fresh clone or a new machine, run once from the repo root. It installs nothing until the user agrees; safe to repeat:
 ```bash
-python3 -m smart_drive setup    # macOS / Linux
-python -m smart_drive setup     # Windows (or `py -m smart_drive setup` when `python` is not on PATH)
+python3 -m smart_drive setup --json    # macOS / Linux
+python -m smart_drive setup --json     # Windows (or `py -m smart_drive setup --json` when `python` is not on PATH)
 ```
-- Needs Node >= 22.4 and git. Fetches Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius and Mira into `~/.smart-drive/mcp`, registers them and SmartDrive with the installed coding agents (Claude Code, Antigravity, Cursor, Codex), then health-checks them.
+- It exits 4 and lists the MCP servers (`consent` in the JSON: name, repo, what each does). Show the user each server (name + what it does) with your own question/confirmation prompt, ask which to install, then run `python -m smart_drive setup --only <approved,names> --yes`. Never pass `--yes` without the user's answer. If the user declines, stop. Constellation (the control plane) is installed together with any server.
+- Needs Node >= 22.4 and git (exit code 2 when one is missing). Once approved it fetches Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius and Mira (as chosen) into `~/.smart-drive/mcp`, registers them and SmartDrive with the installed coding agents (Claude Code, Antigravity, Cursor, Codex), then health-checks them.
 - Check state without changing anything: `python3 -m smart_drive setup --check --json` (exit code 3 = setup needed). Preview: `--dry-run`. Offline: `--no-clone`.
 - Afterwards restart the agent (new conversation) so it loads the new MCP servers.
 

@@ -13,6 +13,9 @@
 6. verify    ``constellation health <servers>`` starts every server over stdio
 
 Safe to re-run: what is already set up is left alone, and nothing is written when nothing changed.
+Nothing is downloaded or registered without the user's approval: the CLI (``smart_drive.cli.cmd_setup``)
+plans first with ``dry_run``, lists the servers with ``consent_items`` and asks; a coding agent that
+cannot ask gets the list back with exit code 4 instead of an installation.
 The only network access is ``git clone`` (skipped by ``--no-clone``). Every server runs from a
 ``dist/*.mjs`` bundle that is committed in its repository, so no npm install or build is needed.
 
@@ -71,6 +74,16 @@ POSIX_NODE_PATHS: Tuple[str, ...] = ("/opt/homebrew/bin/node", "/usr/local/bin/n
 _VERSION_RE = re.compile(r"(\d+)\.(\d+)(?:\.(\d+))?")
 #: Server states in which the bundle is on disk and the server can be registered.
 _RESOLVED = ("ok", "adopted", "found", "installed")
+#: Server states in which setup would download or register something, so the user must approve it.
+_CONSENT_STATUSES = ("missing", "found", "adopted")
+
+#: Last step of every plan; the CLI drops it where the plan is not meant to be re-run unchanged.
+APPLY_HINT = "Run `smart-drive setup` without --check/--dry-run to apply."
+#: First step of a plan that is waiting for the user (exit code 4).
+CONSENT_STEP = (
+    "Ask the user which of these MCP servers to install (show each name and what it does), "
+    "then run `smart-drive setup --only <names> --yes`. Never pass --yes without the user's answer."
+)
 
 
 # --------------------------------------------------------------------------- host
@@ -767,7 +780,7 @@ def run_setup(
     if write and (registration["files"] or manifest_saved):
         next_steps.append("Restart your coding agent or open a new conversation so it loads the new MCP servers.")
     if not write and pending:
-        next_steps.append("Run `smart-drive setup` without --check/--dry-run to apply.")
+        next_steps.append(APPLY_HINT)
 
     needs_setup = bool(pending)
     return {
@@ -795,15 +808,64 @@ def run_setup(
     }
 
 
+def consent_items(report: Mapping[str, Any], repair: bool = False, no_clone: bool = False) -> List[Dict[str, Any]]:
+    """The servers a ``dry_run`` report would download or register: what the user has to approve first.
+
+    Servers that are already ``ok`` need nothing and are left out; so is a missing one when ``no_clone``
+    is set, because nothing would be downloaded for it. Each item has ``name``, ``repo``, ``description``,
+    ``action`` ("download and register" or "register") and ``control_plane`` (Constellation, which every
+    other server is registered through).
+    """
+    wanted = set(_CONSENT_STATUSES) | ({"stale"} if repair else set())
+    members = {m.name: m for m in MEMBERS}
+    items: List[Dict[str, Any]] = []
+    for state in report["members"]:
+        member = members.get(state["name"])
+        status = state["status"]
+        if member is None or status not in wanted or (status == "missing" and no_clone):
+            continue
+        items.append(
+            {
+                "name": member.name,
+                "repo": member.repo,
+                "description": member.description,
+                "action": "download and register" if status == "missing" else "register",
+                "control_plane": member.name == CONTROL_PLANE,
+            }
+        )
+    return items
+
+
+def consent_report(plan: Mapping[str, Any], items: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    """Turns a ``dry_run`` plan into "nothing was installed, ask the user first" (exit code 4)."""
+    report = dict(plan)
+    report.update(ok=False, needs_consent=True, consent=[dict(item) for item in items])
+    report["next_steps"] = [CONSENT_STEP, *plan["next_steps"]]
+    return report
+
+
 def exit_code(report: Mapping[str, Any]) -> int:
-    """0 done, 1 something failed, 2 a prerequisite is missing, 3 (``--check``) setup is still needed."""
+    """0 done, 1 something failed, 2 a prerequisite is missing, 3 (``--check``) setup is still needed,
+    4 the user must approve the servers first (nothing was installed; see ``consent_report``)."""
     if report["blocked"]:
         return 2
+    if report.get("needs_consent"):
+        return 4
     if report["errors"]:
         return 1
     if report["mode"] == "check" and report["needs_setup"]:
         return 3
     return 0
+
+
+def format_consent(items: Sequence[Mapping[str, Any]]) -> List[str]:
+    """The numbered list the user picks from: name, what it does, what setup would do, and from where."""
+    lines: List[str] = []
+    for number, item in enumerate(items, 1):
+        note = "  (required by the other servers)" if item["control_plane"] else ""
+        lines.append(f"  {number}. {item['name']} - {item['description']}{note}")
+        lines.append(f"       {item['action']}: {item['repo']}")
+    return lines
 
 
 def format_report(report: Mapping[str, Any]) -> str:
@@ -845,6 +907,11 @@ def format_report(report: Mapping[str, Any]) -> str:
     if report["health"]:
         answered = sum(1 for item in report["health"] if item["status"] == "ok")
         lines.append(f"Health    {answered}/{len(report['health'])} servers answered over stdio")
+    if report.get("needs_consent"):
+        lines.append("")
+        lines.append("Consent   nothing was installed; the user must approve these MCP servers first:")
+        lines.extend(format_consent(report["consent"]))
+        lines.append("")
     for message in report["errors"]:
         lines.append(f"ERROR     {message}")
     for message in report["pending"]:
@@ -855,13 +922,18 @@ def format_report(report: Mapping[str, Any]) -> str:
 
 
 __all__ = [
+    "APPLY_HINT",
+    "CONSENT_STEP",
     "Host",
     "Options",
     "agent_config_files",
+    "consent_items",
+    "consent_report",
     "default_dest",
     "default_host",
     "detect_agents",
     "exit_code",
+    "format_consent",
     "format_report",
     "install_member",
     "load_manifest",

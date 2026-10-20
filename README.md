@@ -64,10 +64,12 @@ python -m smart_drive init --profile ai-developer
 ```
 
 ### 3. Set up the MCP ecosystem (one command)
-Fetch Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, and Mira into `~/.smart-drive/mcp` (off the exFAT drive), register them with SmartDrive in every installed coding agent (Claude Code, Antigravity, Cursor, Codex), and health-check them. No prompts; safe to repeat:
+Fetch Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, and Mira into `~/.smart-drive/mcp` (off the exFAT drive), register them with SmartDrive in every installed coding agent (Claude Code, Antigravity, Cursor, Codex), and health-check them. It lists the servers and asks which ones you want before it downloads or registers anything; safe to repeat:
 ```bash
 python3 -m smart_drive setup  # macOS / Linux (Windows: python -m smart_drive setup or py -m smart_drive setup)
 ```
+Answer `a` (all), `n` (none, the default), or numbers/names such as `1,3` or `polaris,vega`; Constellation, the control plane, always comes with the others. `--yes` skips the question (`--only polaris,vega --yes` installs just those). A coding agent has no terminal to answer in: its run installs nothing, exits with code `4` and lists the servers, and the agent asks you in its own chat before it runs `setup --only <your picks> --yes`.
+
 Needs Node.js >= 22.4 and git. `--dry-run` previews; `--check --json` reports state (exit code `3` = setup needed); `--no-clone` stays offline; `--agents claude,cursor` limits targets. Registered servers are reused, never cloned twice (`mcp-agy` is separate: own venv, Python >= 3.10, API key).
 
 ### 4. Register SmartDrive MCP standalone
@@ -192,7 +194,7 @@ All commands run via `smart-drive <command>`, `python -m smart_drive <command>`,
 | `sentinel` | `--root <path>`, `--auto-heal`, `--no-heal`, `--json` | 1-touch health audit (detected filesystem, git repo status) and shield self-healing (alias: `agent-check`). |
 | `mcp` | `[{serve,register}]`, `--root <path>`, `--all`, `--auth-token <token>`, `--require-auth` | Starts the JSON-RPC 2.0 stdio MCP server (`serve`) or registers configs for AI agents (`register`). |
 | `mcp-config` | `--all`, `--antigravity`, `--claude`, `--cursor`, `--windsurf`, `--workspace`, `--json` | Auto-registers SmartDrive MCP Server in AI coding agent config files. |
-| `setup` | `--check`, `--dry-run`, `--json`, `--agents <list>`, `--only <list>`, `--dest <dir>`, `--no-clone`, `--no-health`, `--repair` | Fetches the MCP ecosystem (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira), registers it with installed coding agents (Claude Code, Antigravity, Cursor, Codex), and health-checks it. Exit code `3` from `--check` = setup needed. |
+| `setup` | `--check`, `--dry-run`, `--json`, `--agents <list>`, `--only <list>`, `--dest <dir>`, `--no-clone`, `--no-health`, `--repair`, `--yes` | Asks which MCP servers to install (Constellation, Polaris, Aurora Slides, Vega, Orion, Sirius, Mira), then fetches them, registers them with installed coding agents (Claude Code, Antigravity, Cursor, Codex), and health-checks them. `--yes` skips the question. Exit code `3` from `--check` = setup needed; `4` = without a terminal and without `--yes`, user approval is needed (nothing installed). |
 | `snapshot create` | `[name]`, `--partitions <list>`, `--include-hidden`, `--root <path>`, `--json` | Generates a point-in-time manifest with 64KB-chunk streaming SHA-256 hashes. |
 | `snapshot list` | `--root <path>`, `--json` | Lists recorded point-in-time snapshots with sizes and file counts. |
 | `snapshot verify` | `<name>`, `--no-untracked`, `--root <path>`, `--json` | Validates file integrity against snapshot manifest to detect tampering or bit rot. |
