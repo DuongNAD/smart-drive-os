@@ -108,10 +108,10 @@ smart-drive relink "E:\Old\proj" "E:\New\proj" --wait
 smart-drive paths --broken      # scan for broken IDE entries, agent configs, and .lnk shortcuts
 ```
 
-**Clean (with quarantine & restore)** — Preview and move OS metadata junk, build caches, or logs into `.smart_drive/quarantine/` (mandatory dry-run default):
+**Clean (with quarantine & restore)** — Preview junk first (mandatory dry-run default). `--apply` deletes regenerable OS metadata and build caches (Tier 1-2) at once; only logs, temp files, and dumps (Tier 3) go to a restorable `.smart_drive/quarantine/`:
 ```bash
-smart-drive clean
-smart-drive clean --apply --tier 1
+smart-drive clean                      # dry-run preview (Tier 1 by default)
+smart-drive clean --apply --tier 3     # delete Tier 1-2 junk, quarantine Tier 3 junk
 smart-drive clean --list-quarantine
 smart-drive clean --restore latest
 ```
@@ -185,7 +185,7 @@ All commands run via `smart-drive <command>`, `python -m smart_drive <command>`,
 | `init` | `--profile <name>`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
 | `status` | `--root <path>`, `--json` | Inspect SSD mount point, detected filesystem, geometry, shield health, and taxonomy status. |
 | `audit` | `--root <path>`, `--html [file]`, `--json`, `--markdown`, `--export <file>` | Storage & cluster slack audit using the drive's real cluster size (4 KB NTFS, 512 KB exFAT, etc.). `--html` exports a self-contained offline treemap report (default `<root>/.smart_drive/reports/audit.html`). Hard links counted once; symlinks/junctions skipped and counted. |
-| `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--no-quarantine`, `--list-quarantine`, `--restore <batch\|latest>`, `--purge-quarantine`, `--older-than <days>`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run, inviolable whitelist, and default quarantine to `<root>/.smart_drive/quarantine/<batch_id>/` (restorable via `--restore`). |
+| `clean` | `--dry-run` *(default)*, `--apply`, `--tier {1,2,3}`, `--no-quarantine`, `--list-quarantine`, `--restore <batch\|latest>`, `--purge-quarantine`, `--older-than <days>`, `--log`, `--json` | Safe junk cleaner with mandatory dry-run and inviolable whitelist. `--apply` deletes regenerable Tier 1-2 junk at once and quarantines only Tier 3 junk to `<root>/.smart_drive/quarantine/<batch_id>/` (restorable via `--restore`; `--no-quarantine` deletes Tier 3 too). |
 | `search` | `<query>`, `--ext <ext>`, `--size <spec>`, `--category <cat>`, `--kind <k>`, `--limit <n>`, `--json` | Sub-10ms SQLite FTS5 multi-criteria query parser with BM25 ranking. |
 | `organize` | `--dry-run`, `--apply`, `--clean`, `--json` | Auto-zoning, loose-file relocation, `AcademicClassifier` routing, `protected_by_system` guard, and agent/IDE/shortcut relinking; logs move batches to `.smart_drive/moves.jsonl`. |
 | `undo` | `--apply`, `--dry-run`, `--root <path>`, `--json` | Reverses the latest `organize`/`classify` move batch that has not been undone yet, skips items instead of overwriting when the original place is taken, and relinks agents/IDEs/shortcuts back to the original paths (dry-run default). |
@@ -355,11 +355,11 @@ Purgeable files are grouped into 3 tiers with a mandatory dry-run default (`--ap
 2. **Tier 2 (Developer Caches)**: Python `__pycache__`, `*.pyc`, `*.pyo`, `.pytest_cache`; Node `node_modules/.cache`; Rust `target/debug/build`; legacy `polaris/.cache/**`.
 3. **Tier 3 (Transient & Logs)**: `*.log`, `*.tmp`, `*.bak`, crash dumps.
 
-By default, `smart-drive clean --apply` moves files into a reversible quarantine batch under `<root>/.smart_drive/quarantine/<batch_id>/` (with `manifest.json`) instead of permanently unlinking them:
+`smart-drive clean --apply` permanently deletes Tier 1 and Tier 2 items at once: they are regenerable (OS metadata, build caches), so they are never quarantined. Only Tier 3 items (`--tier 3`: logs, temp files, backups, crash dumps) move into a reversible quarantine batch under `<root>/.smart_drive/quarantine/<batch_id>/` (with `manifest.json`) instead of being unlinked:
 - Inspect quarantined batches: `smart-drive clean --list-quarantine`
 - Restore a batch to its original paths: `smart-drive clean --restore latest` (or `--restore <batch_id>`)
 - Permanently purge old quarantine batches: `smart-drive clean --purge-quarantine --older-than 14`
-- Bypass quarantine (or when free space is critically low): `smart-drive clean --apply --no-quarantine`
+- Delete Tier 3 items outright instead of quarantining them (for example when free space is critically low): `smart-drive clean --apply --tier 3 --no-quarantine`
 
 > **Inviolable Whitelist**: Root manifests (`AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `README.md`, `PRIVACY.md`), launcher scripts (`Setup_*`, `Quick_*`, `Smart_Organize.*`, `SmartDrive.*`), the 6 taxonomies, Windows folders (`WindowsApps`, `Program Files`, `DumpStack.log.tmp`), system-referenced folders (`protected_by_system`: Windows `PATH`, Services, Installed Apps, Startup, `.lnk` targets, uninstallers), game libraries (`SteamLibrary`, `Riot Games`, `Epic Games`, `XboxGames`, `GOG Galaxy`, `Battle.net`, `Ubisoft Game Launcher`, `EA Games`, `HoYoPlay`, `Genshin Impact`, `LDPlayer`), active SQL Server databases (`Microsoft SQL Server 2022`), and `smart-drive-os` are permanently protected.
 
@@ -396,7 +396,7 @@ All 24 portable launchers reside in both the repo root and `launchers/` (zero Gi
 |---|---|---|---|---|---|
 | **Drive Setup** | `Setup_SSD.bat` | `Setup_SSD.ps1` | `Setup_SSD.command` | `Setup_SSD.sh` | Interactive 1-touch initialization & profile selector |
 | **Quick Search** | `Quick_Search.bat` | `Quick_Search.ps1` | `Quick_Search.command` | `Quick_Search.sh` | Instant interactive SQLite FTS5 search prompt |
-| **Quick Clean** | `Quick_Clean.bat` | `Quick_Clean.ps1` | `Quick_Clean.command` | `Quick_Clean.sh` | Dry-run junk preview followed by confirmed Tier 1 quarantine |
+| **Quick Clean** | `Quick_Clean.bat` | `Quick_Clean.ps1` | `Quick_Clean.command` | `Quick_Clean.sh` | Dry-run junk preview followed by confirmed Tier 1 deletion |
 | **Quick Audit** | `Quick_Audit.bat` | `Quick_Audit.ps1` | `Quick_Audit.command` | `Quick_Audit.sh` | Instant storage breakdown and cluster slack audit |
 | **Safe Guided Organizer** | `Smart_Organize.bat` | `Smart_Organize.ps1` | `Smart_Organize.command` | `Smart_Organize.sh` | Step-by-step dry-run preview, busy-app wait, `YES` confirmation, post-move verification, and 1-key `U` undo (EN/VI) |
 | **Interactive Menu** | `SmartDrive.bat` | `SmartDrive.ps1` | `SmartDrive.command` | `SmartDrive.sh` | Full interactive TUI menu (including `[8]` Relink Agents, `[9]` Checkup, `[10]` Safe Guided Organizer) |

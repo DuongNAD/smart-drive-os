@@ -241,7 +241,7 @@ D:\ (or E:\)
 ```
 
 ### Inviolable Protection Rules:
-- All 6 partitions are registered in `smart_drive.core.config.PROTECTED_CORE_TAXONOMIES`. SmartDrive-OS junk cleaner algorithms (`smart-drive clean`) will **never** delete user files or root taxonomies inside these partitions, and move cleaned junk into reversible `.smart_drive/quarantine/` batches by default (`--restore latest`).
+- All 6 partitions are registered in `smart_drive.core.config.PROTECTED_CORE_TAXONOMIES`. SmartDrive-OS junk cleaner algorithms (`smart-drive clean`) will **never** delete user files or root taxonomies inside these partitions, and delete regenerable Tier 1-2 junk at once while moving Tier 3 junk (logs, temp files, dumps) into reversible `.smart_drive/quarantine/` batches by default (`--restore latest`).
 - **System Reference Guard (`protected_by_system`)**: Folders on your secondary drive (`D:`, `E:`, …) referenced by Windows `PATH`, Services, Installed Apps (`Uninstall` registry), Startup (`Run`), `.lnk` shortcuts, folders containing `unins000.exe` / `uninstall.exe`, and game libraries (`SteamLibrary`, `Riot Games`, `Epic Games`, `XboxGames`, `GOG Galaxy`, `Battle.net`, `Ubisoft Game Launcher`, `EA Games`, `HoYoPlay`, `Genshin Impact`, `LDPlayer`) are automatically pinned in place and never moved by `organize` or `classify`.
 - **Reversible Moves (`undo`) & Path Doctor (`paths --broken`)**: Every `organize`/`classify` batch is logged to `.smart_drive/moves.jsonl`, rewrites IDE/agent/shortcut paths (`storage.json`, `state.vscdb`, JetBrains `recentProjects.xml`, Obsidian `obsidian.json`, `.lnk`), and can be reverted via `smart-drive undo --apply`.
 
