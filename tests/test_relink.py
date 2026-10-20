@@ -2262,6 +2262,41 @@ class TestRelink(SmartDriveTestCase):
         # --apply relinks (and asks) itself, so it points nowhere
         self.assertEqual(footer({**name_only, **ambiguous}, "--apply"), [])
 
+    def test_57_find_moved_never_takes_a_package_folder_for_the_moved_one(self) -> None:
+        drive = self.test_dir / "drive_packages"
+        # node_modules and vendor hold other people's code: their bin/ is a package's, not the user's moved folder
+        (drive / "node_modules" / "playwright-core" / "bin").mkdir(parents=True)
+        (drive / "web" / "vendor" / "bin").mkdir(parents=True)
+        (drive / "app" / "vendor").mkdir(parents=True)
+        (drive / "05_Dev_Toolbox" / "tools").mkdir(parents=True)
+        projects = {str(drive / name): {} for name in ("bin", "vendor", "tools")}
+        (self.fake_home / ".claude.json").write_text(json.dumps({"projects": projects}), encoding="utf-8")
+
+        entries = find_moved(root=str(drive), home=self.fake_home, skip_dirs=[])
+
+        self.assertEqual(
+            {e.old: (e.kind, e.new, e.candidates) for e in entries},
+            {
+                # The package's bin/ at both search levels; a vendor/ is a dependency folder, never a moved one
+                str(drive / "bin"): ("not-found", None, []),
+                str(drive / "vendor"): ("not-found", None, []),
+                # A folder outside any dependency tree is still found by its name
+                str(drive / "tools"): ("name-only", str(drive / "05_Dev_Toolbox" / "tools"), []),
+            },
+        )
+
+    def test_58_find_moved_searches_a_dependency_tree_when_the_missing_folder_lay_inside_one(self) -> None:
+        drive = self.test_dir / "drive_in_packages"
+        # web/node_modules/pkg is gone; the package now sits one node_modules deeper, under host
+        moved = drive / "web" / "node_modules" / "host" / "node_modules" / "pkg"
+        moved.mkdir(parents=True)
+        missing = drive / "web" / "node_modules" / "pkg"
+        (self.fake_home / ".claude.json").write_text(json.dumps({"projects": {str(missing): {}}}), encoding="utf-8")
+
+        entries = find_moved(root=str(drive), home=self.fake_home, skip_dirs=[])
+
+        self.assertEqual([(e.old, e.kind, e.new) for e in entries], [(str(missing), "name-only", str(moved))])
+
     @unittest.skipUnless(shutil.which("git"), "git is required for nested worktree repair test")
     def test_31_nested_repo_worktree_repaired_when_container_moved(self) -> None:
         old_container = self.test_dir / "container"

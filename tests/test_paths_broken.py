@@ -244,6 +244,45 @@ class TestPathsBroken(SmartDriveTestCase):
         self.assertIn(_to_uri(stale_proj_old), updated_storage)
         self.assertTrue(orphan_lnk.is_file(), "Orphan shortcut must never be deleted by --fix")
 
+    def test_03_path_entry_is_never_matched_to_a_folder_inside_a_package(self) -> None:
+        # ~/bin is gone, and npm's playwright-core ships a bin/ of its own: that one is not the missing folder
+        (self.fake_home / "node_modules" / "playwright-core" / "bin").mkdir(parents=True)
+        missing_bin = self.fake_home / "bin"
+        reader = RegistryReader(tree={r"HKCU\Environment": {"Path": str(missing_bin)}})
+
+        report = inspect_broken_paths(
+            root=str(self.drive),
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            reader=reader,
+        )
+
+        path_by_target = {item["target"]: item for item in report["path_entries"]}
+        self.assertIn(str(missing_bin), path_by_target)
+        self.assertEqual(path_by_target[str(missing_bin)]["kind"], "not-found")
+        self.assertIsNone(path_by_target[str(missing_bin)]["suggested_target"])
+        self.assertEqual(path_by_target[str(missing_bin)]["candidates"], [])
+
+    def test_04_path_entry_inside_a_dependency_tree_is_matched_inside_dependency_trees(self) -> None:
+        # web/node_modules/tool is gone; the package now sits one node_modules deeper, under host
+        node_modules = self.drive / "web" / "node_modules"
+        moved_bin = node_modules / "host" / "node_modules" / "tool" / "bin"
+        moved_bin.mkdir(parents=True)
+        missing_bin = node_modules / "tool" / "bin"
+        reader = RegistryReader(tree={r"HKCU\Environment": {"Path": str(missing_bin)}})
+
+        report = inspect_broken_paths(
+            root=str(self.drive),
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            reader=reader,
+        )
+
+        path_by_target = {item["target"]: item for item in report["path_entries"]}
+        self.assertIn(str(missing_bin), path_by_target)
+        self.assertEqual(path_by_target[str(missing_bin)]["kind"], "same-name")
+        self.assertEqual(path_by_target[str(missing_bin)]["suggested_target"], str(moved_bin))
+
 
 if __name__ == "__main__":
     unittest.main()

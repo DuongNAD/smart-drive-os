@@ -7,6 +7,15 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `paths --broken` and `relink --find` no longer take a folder inside installed packages for a moved one. Looking for
+  a missing folder by its name one and two levels below its parent, they went into `node_modules`, `site-packages`,
+  `vendor` and the like, so the stale `PATH` folder `C:\Users\<you>\bin` was reported as moved to
+  `C:\Users\<you>\node_modules\playwright-core\bin`. The search now neither enters nor returns a folder named
+  `node_modules`, `bower_components`, `jspm_packages`, `.pnpm-store`, `site-packages`, `dist-packages`,
+  `__pypackages__`, `.venv`, `venv` or `vendor`, unless the missing folder itself lay inside one.
+
 ## [1.4.1] - 2026-10-20
 
 A patch release for what the first moves on a real drive turned up: a refused move now says what holds the folder,

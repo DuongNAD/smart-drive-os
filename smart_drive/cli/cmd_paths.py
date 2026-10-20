@@ -22,7 +22,7 @@ from smart_drive.core.relink import (
     _is_under,
     _join_split,
     _key,
-    _list_subdirs,
+    _same_name_folders,
     _split,
     _unmounted_root,
     find_moved,
@@ -94,18 +94,7 @@ def _locate_missing_target(
 
     # 2. Search A/*/<name> and A/*/*/<name>
     if resolved_kind is None:
-        target_cf = m_names[-1].casefold()
-        same_all: List[Path] = []
-        a_children = _list_subdirs(a_path) if _is_dir(a_path) else []
-        for c1 in a_children:
-            c1_children = _list_subdirs(c1)
-            for c2 in c1_children:
-                if c2.name.casefold() == target_cf:
-                    same_all.append(c2)
-                else:
-                    for c3 in _list_subdirs(c2):
-                        if c3.name.casefold() == target_cf:
-                            same_all.append(c3)
+        same_all = _same_name_folders(a_path, m_names)
 
         if rel_tail:
             same_passing = [

@@ -49,6 +49,7 @@ try:
 except ImportError:  # Python < 3.11: only the line-level duplicate guard protects TOML files
     tomllib = None  # type: ignore[assignment]
 
+from smart_drive.core.config import DEPENDENCY_TREE_DIR_NAMES, is_inside_dependency_tree
 from smart_drive.core.git_locks import NO_FSMONITOR
 from smart_drive.core.processes import normalize_process_name, probe_running_processes
 from smart_drive.core.root import same_file
@@ -3013,6 +3014,34 @@ def _list_subdirs(directory: Path, listings: Optional[Dict[str, List[Path]]] = N
     return out
 
 
+def _same_name_folders(
+    a_path: Path, m_names: Sequence[str], listings: Optional[Dict[str, List[Path]]] = None
+) -> List[Path]:
+    """Folders named like the missing folder m_names[-1] at a_path/*/<name> and a_path/*/*/<name>.
+
+    A `bin` or `src` inside node_modules, site-packages, vendor or a venv is a package's, not the user's moved
+    folder: the search neither enters nor returns such a folder, unless the missing folder itself lay inside one.
+    listings is the cache of _list_subdirs (see there)."""
+    target = _fold(m_names[-1])
+    # Only a folder above the missing one counts: a deleted proj\node_modules never matches another's node_modules
+    in_tree = is_inside_dependency_tree("/".join(m_names))
+
+    def subdirs(folder: Path) -> List[Path]:
+        found = _list_subdirs(folder, listings)
+        return found if in_tree else [d for d in found if d.name.lower() not in DEPENDENCY_TREE_DIR_NAMES]
+
+    same: List[Path] = []
+    if not _is_dir(a_path):
+        return same
+    for c1 in subdirs(a_path):
+        for c2 in subdirs(c1):
+            if _fold(c2.name) == target:
+                same.append(c2)
+            else:
+                same.extend(c3 for c3 in subdirs(c2) if _fold(c3.name) == target)
+    return same
+
+
 def _has_all_subs(folder: Path, subs: Set[str], listings: Optional[Dict[str, List[Path]]] = None) -> bool:
     """Returns True if folder contains every directory name in subs (case-insensitive)."""
     if not subs:
@@ -3340,18 +3369,7 @@ def find_moved(
 
         # 2. same-name (at A/*/<name> and A/*/*/<name>, verified against direct_subs) or name-only, and 3. renamed
         if resolved_kind is None:
-            target_cf = _fold(m_names[-1])
-            same_all: List[Path] = []
-            a_children = _list_subdirs(a_path, listings) if _is_dir(a_path) else []
-            for c1 in a_children:
-                c1_children = _list_subdirs(c1, listings)
-                for c2 in c1_children:
-                    if _fold(c2.name) == target_cf:
-                        same_all.append(c2)
-                    else:
-                        for c3 in _list_subdirs(c2, listings):
-                            if _fold(c3.name) == target_cf:
-                                same_all.append(c3)
+            same_all = _same_name_folders(a_path, m_names, listings)
 
             # What agents remember inside a moved MCP server or venv is often a file (main.py) or a hidden
             # folder (.venv): the same-name folder must hold those too, not only subfolders.
@@ -3363,6 +3381,7 @@ def find_moved(
                 resolved_kind = "same-name" if direct_subs else "name-only"
             else:
                 if len(direct_subs) >= 2:
+                    a_children = _list_subdirs(a_path, listings) if _is_dir(a_path) else []
                     renamed_matches = [str(c1) for c1 in a_children if _has_all_subs(c1, direct_subs, listings)]
                     if len(renamed_matches) == 1:
                         resolved_new = renamed_matches[0]
