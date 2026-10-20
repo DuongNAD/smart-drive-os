@@ -103,6 +103,11 @@ class TestSlackModelNote(unittest.TestCase):
         self.assertIsNone(slack_model_note(self.info("exfat", CLUSTER_SIZE_BYTES), CLUSTER_SIZE_BYTES))
         self.assertIsNone(slack_model_note(self.info("exfat", 0), CLUSTER_SIZE_BYTES))
 
+    def test_no_note_when_the_model_is_the_volumes_real_allocation_unit(self) -> None:
+        self.assertIsNone(slack_model_note(self.info("ntfs", 4096), 4096))
+        self.assertIsNone(slack_model_note(self.info("apfs", 4096), 4096))
+        self.assertIn("what-if", slack_model_note(self.info("ntfs", 4096), CLUSTER_SIZE_BYTES))
+
     def test_other_cluster_sizes_filesystems_and_unknown_get_an_explanation(self) -> None:
         small = slack_model_note(self.info("exfat", 32768), CLUSTER_SIZE_BYTES)
         self.assertIn("32 KB", small)
