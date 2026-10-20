@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import shutil
 import tempfile
 import threading
@@ -24,6 +25,7 @@ from unittest.mock import patch
 import smart_drive.core.duplicates as duplicates
 from smart_drive.cli.main import main
 from smart_drive.core.duplicates import DEPENDENCY_DIR_NAMES, DuplicateDetector
+from smart_drive.core.learning_units import clear_unit_cache
 from smart_drive.core.system_refs import SystemRef, SystemRefIndex
 
 SAME = b"the same bytes in every copy\n" * 20
@@ -424,6 +426,49 @@ class TestHashingRunsInParallel(_Tree):
         self.assertEqual(self.detector(workers=0).workers, 1)
         self.assertEqual(self.detector(workers=-4).workers, 1)
         self.assertEqual(self.detector(workers=3).workers, 3)
+
+
+class TestLearningUnitIsAskedOncePerFolder(_Tree):
+    """The learning-unit lookup resolves the path (about a millisecond on Windows): once per folder is enough."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        clear_unit_cache()
+        self.addCleanup(clear_unit_cache)
+
+    def test_copies_in_two_folders_cost_two_lookups(self) -> None:
+        for i in range(25):
+            payload = f"payload {i} ".encode() * (20 + i)
+            self.write(f"left/file{i}.bin", payload)
+            self.write(f"right/file{i}.bin", payload)
+        asked: List[str] = []
+        real = duplicates.is_in_learning_unit
+
+        def counting(path: Any, *args: Any, **kwargs: Any) -> bool:
+            asked.append(os.path.dirname(str(path)))
+            return real(path, *args, **kwargs)
+
+        with patch.object(duplicates, "is_in_learning_unit", counting):
+            plan = self.detector().generate_reclamation_plan()
+
+        self.assertEqual(plan["duplicate_group_count"], 25)
+        self.assertEqual(sorted(asked), sorted([str(self.root / "left"), str(self.root / "right")]))
+
+    def test_every_file_of_a_unit_is_still_kept_first_and_never_reclaimable(self) -> None:
+        self.write("deck/deck.json", b'{"type": "deck"}')
+        for name, folder in (("a.png", "deck"), ("b.png", "deck/images"), ("c.png", "deck/images")):
+            payload = name.encode() * 400
+            self.write(f"{folder}/{name}", payload)
+            self.write(f"copies/{name}", payload)
+
+        plan = self.detector().generate_reclamation_plan()
+
+        self.assertEqual(plan["duplicate_group_count"], 3)
+        for group in plan["duplicate_groups"]:
+            first, second = (self.rel(f) for f in group["files"])
+            self.assertTrue(first.startswith("deck/"), first)  # the unit's copy is the one that is kept
+            self.assertTrue(second.startswith("copies/"), second)
+            self.assertEqual(group["reclaimable_bytes"], group["size"])  # only the outside copy is offered
 
 
 class _FakeClock:
