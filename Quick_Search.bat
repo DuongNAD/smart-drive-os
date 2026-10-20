@@ -1,5 +1,6 @@
 @echo off
-setlocal EnableDelayedExpansion
+setlocal DisableDelayedExpansion
+:: Delayed expansion stays off, so an exclamation mark in the folder of this file or in a typed query is kept.
 chcp 65001 >nul
 title SmartDrive-OS - Instant FTS5 Search
 

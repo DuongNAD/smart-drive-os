@@ -92,6 +92,11 @@ drive. `#10`, `#11` and `#12` are pull requests; the other entries landed in the
 - `Quick_Audit.bat` printed "'Cluster' is not recognized as an internal or external command" and cut its window title
   and banner at an unescaped `&`, and `Quick_Search.bat` wrote a file named `10MB` into the program folder instead of
   showing the example `size:>10MB`. No `.bat` launcher holds such a line any more.
+- The `.bat` launchers turned delayed expansion on, which makes cmd.exe delete every `!` in a path or a typed text it
+  has just expanded. A launcher in a folder with a `!` in its name lost the `!` from its own path (`cd` failed with "The
+  system cannot find the path specified" and the code was not found), `Quick_Search.bat` searched for `wowbc` when asked
+  for `wow! a!b!c`, and "Goodbye!" and the Python-missing error printed without their `!`. Delayed expansion is now off;
+  only the line of `SmartDrive.bat` that shows the drive root switches it on.
 
 [Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.0...main
 [1.4.0]: https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.4.0

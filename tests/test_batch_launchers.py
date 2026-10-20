@@ -1,10 +1,16 @@
 """tests.test_batch_launchers - the .bat launchers must do under cmd.exe what their text says.
 
-Plain text is not safe in an `echo`, a `title` or the prompt of a `set /p`. cmd.exe takes an unescaped `&` for the end
-of the command and runs the rest of the line as a new one ("'Cluster' is not recognized as an internal or external
-command"); `>` and `<` redirect (`echo size:>10MB` wrote a file named 10MB instead of printing the line); `|` pipes;
-and inside a ( ... ) block a bare `)` closes the block early ("after was unexpected at this time."). The text needs
-`^&`, `^>`, `^<`, `^|` or `^)`, or "double quotes" around it.
+cmd.exe reads a batch line in several passes, and two of them caught these launchers out:
+
+* Plain text is not safe in an `echo`, a `title` or the prompt of a `set /p`. An unescaped `&` ends the command and
+  runs the rest of the line as a new one ("'Cluster' is not recognized as an internal or external command"); `>` and
+  `<` redirect (`echo size:>10MB` wrote a file named 10MB instead of printing the line); `|` pipes; and inside a
+  ( ... ) block a bare `)` closes the block early ("after was unexpected at this time."). The text needs `^&`, `^>`,
+  `^<`, `^|` or `^)`, or "double quotes" around it.
+* `setlocal EnableDelayedExpansion` makes every `!` special once `%~dp0` and `%CODE_DIR%` have been expanded. In a
+  folder called `Drive!A` the `!` vanished, so `cd /d` failed and the launcher ran against a path that does not exist;
+  "Goodbye!" lost its `!` as well. Delayed expansion now stays off for the whole script and is switched on only
+  around the one `echo` that needs it.
 
 The static tests run on every system. The empirical ones run each launcher under cmd.exe against a fake `smart_drive`
 package that only records how it was called; they answer 0 or n, or end the launcher at its first prompt, so no
@@ -183,18 +189,42 @@ class TestBatchFilesAreSafeForCmd(unittest.TestCase):
             'for the character, or put the text in "double quotes".',
         )
 
+    def test_delayed_expansion_is_off_for_the_script_and_on_only_around_an_echo(self):
+        """With it on, a `!` in a path or a typed query is eaten once %~dp0, %CODE_DIR% or %Q_TERM% are expanded."""
+        for path in BAT_PATHS:
+            with self.subTest(launcher=str(path.relative_to(REPO_ROOT))):
+                lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines()]
+                setlocals = [(n, line) for n, line in enumerate(lines) if line.lower().startswith("setlocal")]
+                self.assertTrue(setlocals, "a batch file must keep its changes to the environment to itself")
+                self.assertEqual(setlocals[0][1].lower(), "setlocal disabledelayedexpansion")
+                for n, line in setlocals[1:]:
+                    self.assertEqual(line.lower(), "setlocal enabledelayedexpansion")
+                    end = next((m for m in range(n + 1, len(lines)) if lines[m].lower() == "endlocal"), None)
+                    self.assertIsNotNone(end, "delayed expansion was switched on and never off again")
+                    for between in lines[n + 1 : end]:
+                        self.assertTrue(
+                            between.lower().startswith("echo "),
+                            f"only an echo may run while delayed expansion is on, not: {between}",
+                        )
+
 
 # ---------------------------------------------------------------------------------------------------------------
 # What cmd.exe does with them
 # ---------------------------------------------------------------------------------------------------------------
 
-# A stand-in for `python -m smart_drive ...` (and for the guided runner): it records how it was called and where,
-# and says so on stdout. A launcher that finds it can never reach the real smart-drive.
+# A stand-in for `python -m smart_drive ...` (and for the guided runner): it records how it was called, where, and with
+# which root and PYTHONPATH, and says so on stdout. A launcher that finds it can never reach the real smart-drive.
 FAKE_MODULE = (
     "import json\n"
     "import os\n"
     "import sys\n"
-    "record = {'script': os.path.basename(sys.argv[0]), 'args': sys.argv[1:], 'cwd': os.getcwd()}\n"
+    "record = {\n"
+    "    'script': os.path.basename(sys.argv[0]),\n"
+    "    'args': sys.argv[1:],\n"
+    "    'cwd': os.getcwd(),\n"
+    "    'root': os.environ.get('SMART_DRIVE_ROOT', ''),\n"
+    "    'pythonpath': os.environ.get('PYTHONPATH', ''),\n"
+    "}\n"
     "with open(os.environ['FAKE_SD_LOG'], 'a', encoding='utf-8') as handle:\n"
     "    handle.write(json.dumps(record) + '\\n')\n"
     "print('FAKE ' + record['script'] + ' ' + ' '.join(record['args']))\n"
@@ -202,6 +232,7 @@ FAKE_MODULE = (
 
 MENU_PROMPT = "Select an option [0-11]: "
 PYTHON_MISSING_LINES = (
+    "[ERROR] Python 3.9+ was not found on system PATH!",
     "SmartDrive-OS requires Python 3.9 or higher.",
     'Make sure to check "Add Python to PATH" during install.',
 )
@@ -252,6 +283,7 @@ WALKS = {
             "[6] Auto-Zoning & Anti-Slack Rebalancer (smart-drive organize)",
             "[9] Drive Health Checkup & Score (smart-drive checkup)",
             "[11] Relink Coding Agents to the Latest Move (smart-drive relink)",
+            "Exiting SmartDrive-OS. Goodbye!",
         ],
         [],
     ),
@@ -289,16 +321,28 @@ class TestBatchLaunchersUnderCmd(unittest.TestCase):
         return f'cmd.exe /d /s /c ""{launcher}""'
 
     @staticmethod
-    def _install(scratch: Path, name: str, folder_name: str) -> tuple[Path, Path]:
-        """Copies a launcher into a folder called `folder_name`, next to a fake smart_drive. Returns (launcher, folder)."""
+    def _install(scratch: Path, name: str, folder_name: str, layout: str = "beside") -> tuple[Path, Path]:
+        """Copies a launcher into a folder called `folder_name` and gives it a fake smart_drive.
+
+        Returns (launcher, folder). Layouts: "beside" has smart_drive/ next to the launcher, "launchers" has the
+        launcher in launchers/ under the folder that holds smart_drive/, and "root" is a launcher alone in a drive
+        root that finds the fake through PYTHONPATH.
+        """
         folder = scratch / folder_name
-        package = folder / "smart_drive"
+        if layout == "beside":
+            launcher_dir, code_dir = folder, folder
+        elif layout == "launchers":
+            launcher_dir, code_dir = folder / "launchers", folder
+        else:
+            launcher_dir, code_dir = folder, scratch / "fakepkg"
+        launcher_dir.mkdir(parents=True)
+        package = code_dir / "smart_drive"
         (package / "cli").mkdir(parents=True)
         for relative in ("__init__.py", "cli/__init__.py"):
             (package / relative).write_text("", encoding="utf-8")
         for relative in ("__main__.py", "cli/smart_organize_runner.py"):
             (package / relative).write_text(FAKE_MODULE, encoding="utf-8")
-        launcher = folder / name
+        launcher = launcher_dir / name
         shutil.copy2(LAUNCHERS_DIR / name, launcher)
         return launcher, folder
 
@@ -351,8 +395,25 @@ class TestBatchLaunchersUnderCmd(unittest.TestCase):
             with self.subTest(launcher=name):
                 self._check_walk(name, "repo")
 
+    def test_a_folder_with_exclamation_marks_in_its_name_does_not_stop_any_launcher(self):
+        """The `!` of the folder must reach `cd /d`: with delayed expansion on it was eaten and `cd` failed."""
+        for name in WALKS:
+            with self.subTest(launcher=name):
+                self._check_walk(name, "Drive!A!B")
+
+    def test_a_typed_query_keeps_its_exclamation_marks(self):
+        """With delayed expansion on, the text between two `!` of a query was looked up as a variable and dropped."""
+        scratch = self._scratch()
+        launcher, _ = self._install(scratch, "Quick_Search.bat", "repo")
+        query = "wow! a!b!c"
+        returncode, stdout, stderr = _drive_prompts(
+            self._command(launcher), self._env(scratch), str(scratch / "elsewhere"), [("dir:): ", query + "\r\n")], timeout=60.0
+        )
+        self.assertEqual(returncode, 0, f"{stdout}\n{stderr}")
+        self.assertEqual([call["args"] for call in self._calls(scratch)], [["search", query]])
+
     def test_every_launcher_says_python_is_missing_in_one_piece(self):
-        """With no Python on PATH the error banner is printed whole and the launcher stops with exit code 1."""
+        """With no Python on PATH the error banner is printed whole, with its `!`, and the launcher stops with 1."""
         system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
         for name in BAT_NAMES:
             with self.subTest(launcher=name):
@@ -374,6 +435,48 @@ class TestBatchLaunchersUnderCmd(unittest.TestCase):
                 for line in PYTHON_MISSING_LINES:
                     self.assertIn(line, self._lines(stdout))
                 self.assertEqual(self._calls(scratch), [])
+
+    def test_menu_shows_the_drive_root_as_it_is_and_auto_without_one(self):
+        scratch = self._scratch()
+        launcher, _ = self._install(scratch, "SmartDrive.bat", "repo")
+        root = scratch / "Root!x! & (y)"  # every character here is syntax for cmd.exe, delayed expansion or a block
+        root.mkdir()
+        without_root = {k: v for k, v in self._env(scratch).items() if k != "SMART_DRIVE_ROOT"}
+        for expected, env in (
+            (f"Drive Root: {root}", self._env(scratch, SMART_DRIVE_ROOT=str(root))),
+            ("Drive Root: (auto)", without_root),
+        ):
+            with self.subTest(expected=expected):
+                _, stdout, stderr = _drive_prompts(
+                    self._command(launcher), env, str(scratch / "elsewhere"), [(MENU_PROMPT, "0\r\n")], timeout=60.0
+                )
+                self.assertEqual(stderr.strip(), "")
+                self.assertIn(expected, self._lines(stdout))
+
+    def test_a_launcher_finds_its_code_and_drive_root_in_a_folder_with_exclamation_marks(self):
+        """All three ways a launcher locates itself: beside smart_drive/, in launchers/, alone in a drive root."""
+        for layout in ("beside", "launchers", "root"):
+            with self.subTest(layout=layout):
+                scratch = self._scratch()
+                launcher, folder = self._install(scratch, "Quick_Audit.bat", "Drive!A!B", layout)
+                extra = {"PYTHONPATH": str(scratch / "fakepkg")} if layout == "root" else {}
+                env = self._env(scratch, **extra)
+                if layout == "root":
+                    del env["SMART_DRIVE_ROOT"]  # a launcher in a drive root works the root out for itself
+                returncode, stdout, stderr = _drive_prompts(
+                    self._command(launcher), env, str(scratch / "elsewhere"), [], timeout=60.0
+                )
+                self.assertEqual(returncode, 0, f"{stdout}\n{stderr}")
+                self.assertEqual(stderr.strip(), "", "cd /d must find the folder, whose real name has the !")
+                (call,) = self._calls(scratch)
+                self.assertEqual(call["args"], ["audit"])
+                self.assertTrue(_same_path(call["cwd"], folder), f"ran in {call['cwd']}, not in {folder}")
+                self.assertTrue(
+                    _same_path(call["pythonpath"].split(";")[0], folder),
+                    f"PYTHONPATH starts with {call['pythonpath']!r}, not with {folder}",
+                )
+                if layout == "root":
+                    self.assertTrue(_same_path(call["root"], folder), f"SMART_DRIVE_ROOT is {call['root']!r}")
 
 
 if __name__ == "__main__":
