@@ -156,6 +156,52 @@ class TestExecutableAndPathParsers(unittest.TestCase):
             r"E:\Git\mingw64\share\git\git-for-windows.ico",
         )
 
+    def test_unquoted_program_keeps_folder_names_that_contain_an_extension(self) -> None:
+        # `E:\My.com` is a folder here: the program only ends at `app.exe`, not at the first `.com` + space
+        self.assertEqual(
+            extract_executable_path(r"E:\My.com Tools\app.exe -k"),
+            r"E:\My.com Tools\app.exe",
+        )
+        self.assertEqual(
+            extract_executable_path(r"E:\Apps\v1.exe Files\bin\run.exe /silent"),
+            r"E:\Apps\v1.exe Files\bin\run.exe",
+        )
+        # A second absolute path is an argument, not the rest of the program
+        self.assertEqual(
+            extract_executable_path(r"C:\Tools\a.exe C:\Tools\b.exe"),
+            r"C:\Tools\a.exe",
+        )
+        # Nothing after the extension that continues a path: first match still wins
+        self.assertEqual(
+            extract_executable_path(r"E:\Tools\run.exe -k"),
+            r"E:\Tools\run.exe",
+        )
+
+    def test_backslash_escaped_quotes_in_run_values_are_unwrapped(self) -> None:
+        self.assertEqual(
+            extract_executable_path(r'"\"C:\Users\X\AppData\Local\AnthropicClaude\claude.exe\" --startup"'),
+            r"C:\Users\X\AppData\Local\AnthropicClaude\claude.exe",
+        )
+        self.assertEqual(
+            extract_executable_path(r'\"E:\Tools\tray.exe\" --minimized'),
+            r"E:\Tools\tray.exe",
+        )
+        # A path that merely ends in a backslash before its closing quote is left alone
+        self.assertEqual(
+            extract_executable_path(r'"E:\Tools\run.exe" "E:\Data\"'),
+            r"E:\Tools\run.exe",
+        )
+
+        mock_tree = {
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run": {
+                "Claude": r'"\"E:\Apps\Claude\claude.exe\" --startup"',
+            },
+        }
+        with TempWorkspace(prefix="test_escaped_quotes_") as tmp:
+            idx = SystemRefIndex.collect(home=tmp, reader=RegistryReader(tree=mock_tree, env={}))
+        refs = idx.refs_under(r"E:\Apps\Claude")
+        self.assertEqual([r.kind for r in refs], ["startup"])
+
     def test_split_and_expand_path_with_env_vars(self) -> None:
         reader = RegistryReader(env={"GIT_HOME": r"E:\Git", "DEV_TOOLS": r"E:\DevTools"})
         raw = r"%GIT_HOME%\cmd;%DEV_TOOLS%\bin;E:\PlainDir;%UNRESOLVED_VAR%\bin"
