@@ -9,7 +9,7 @@
 [![Privacy: 100% Cục bộ](https://img.shields.io/badge/Privacy-100%25%20C%E1%BB%A5c%20b%E1%BB%99-success?style=flat-square&logo=shield)](PRIVACY.md)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
-[![Phiên bản: v1.4.0](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.4.0-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.4.0)
+[![Phiên bản: v1.4.1](https://img.shields.io/badge/phi%C3%AAn%20b%E1%BA%A3n-v1.4.1-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.4.1)
 [![Giấy phép: MIT](https://img.shields.io/badge/Gi%E1%BA%A5y%20ph%C3%A9p-MIT-yellow.svg)](LICENSE)
 
 SmartDrive-OS là bộ quản trị ổ đĩa và tìm kiếm tức thì (<10ms) bằng SQLite FTS5 cho ổ SSD di động (exFAT cluster 512 KB) và ổ phụ gắn trong máy trạm (NTFS cluster 4 KB). Dự án dành cho lập trình viên, sinh viên đại học (đặc biệt FPTU) và các trợ lý lập trình AI (Claude Code, Claude Desktop, Antigravity, Cursor, Codex, Windsurf) để tự quy hoạch thư mục không làm gãy đường dẫn agent, chuẩn hóa `.gitignore`, dời cache ổ `C:` và kiểm chứng tệp bằng SHA-256. Hệ thống chạy 100% cục bộ bằng thư viện chuẩn Python 3.9+ (`dependencies = []`), không thu thập dữ liệu.

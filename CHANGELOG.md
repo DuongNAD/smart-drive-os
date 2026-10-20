@@ -7,6 +7,57 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-20
+
+A patch release for what the first moves on a real drive turned up: a refused move now says what holds the folder,
+`relink` reports only what it changed, and a moved virtual environment works again without a reinstall.
+
+### Added
+
+- `relink` now repoints the console scripts of a moved virtual environment instead of only warning about them: the
+  interpreter path in the shebang line of each pip/distlib launcher (`pip.exe`, `fastapi.exe`, ... on Windows; the zip
+  archive in them stays byte for byte the same and the result is checked to open and read back) and in the shebang of
+  text scripts in `Scripts/` and `bin/` (including distlib's `#!/bin/sh` form) follows the move, with a backup
+  `<file>.bak.smart-drive` of every file it rewrites. This also covers virtual environments that hold no `.pth` file.
+  `--json` has `console_scripts` per venv. A launcher it cannot parse or rewrite safely, such as one made by uv, is left
+  untouched and is the only thing that still gets the console-scripts warning.
+- `relink` also repoints the activation scripts of a moved virtual environment. `activate`, `activate.bat`,
+  `activate.fish`, `activate.csh`, `activate.nu` and the like hold the venv's path as text, so after a move activating
+  the venv put its old folder on `PATH`. relink writes the new path into them, replacing only whole occurrences of the
+  old venv path (also its forward-slash, doubled-backslash, Git Bash `/e/...` and Cygwin `/cygdrive/e/...` spellings)
+  and keeping line endings, encoding and every other byte, with a `.bak.smart-drive` backup of each rewritten script.
+  The venv line reads `Python venv updated: <venv> (15 console scripts and 3 activation scripts repointed)`, and
+  `--json` has `activation_scripts` per venv.
+
+### Fixed
+
+- A move that Windows refuses (`[WinError 5] Access is denied`) now names the folder that is in use. `organize`, `undo`
+  and `classify` listed the usual suspects and asked the Restart Manager about the files directly in the folder, so a
+  handle on a nested folder (`E:\project` could not be moved because `...\datathon-2026-round-1\Nop_bai\Images` was
+  open) was named by nothing. NTFS refuses to rename a folder while anything below it is open, so after a refused move
+  on Windows a read-only probe (8 levels, 20,000 entries, 5 seconds; it renames nothing and keeps nothing open) tries to
+  open every folder and file exclusively and reports the deepest entries that are in use. The hint says
+  `in use: E:\project\...\Images`, asks the Restart Manager about the files that were found open, and when no program
+  can be named it names `explorer.exe` (an open Explorer window or Quick Access) as a common holder and says how to find
+  a system service or an elevated program: Resource Monitor as administrator (`resmon`) → CPU → Associated Handles, or
+  a restart. The paths also come back as `in_use` in the `--json` output of `organize`, `undo` and `classify` and in the
+  errors of the MCP tool `ssd_auto_organize`.
+- A folder pinned in Explorer's Quick Access keeps every folder above it from being moved: Explorer holds a
+  change-notification handle on each Quick Access folder and opens it again at every logon, so unpinning alone does
+  not release it and neither does restarting Windows while the folder is still pinned. When something is in use below
+  the folder being moved, the hint now asks Windows for the Quick Access list (one short PowerShell call, 5 seconds,
+  skipped silently when it fails) and, if a folder inside is listed, says so: unpin it (right-click → Unpin from Quick
+  access), restart Windows Explorer (Task Manager → Windows Explorer → Restart) and run the command again.
+- `relink` no longer claims work it did not do. Running `smart-drive relink` again for a move that was already relinked
+  (menu `[11]`) listed every repository under "git worktrees repaired" and every virtual environment under "Python venv
+  updated" with a console-scripts warning each, although the dry run said "Nothing left to change" and nothing had
+  changed: `git worktree repair` exits 0 whether or not it repaired anything, and the venv check was always true in a
+  real run. A repository is now listed as repaired only when git printed a `repair:` line or the
+  `.git/worktrees/*/gitdir` and `.git` files it rewrites changed, and a virtual environment only when one of its files
+  (`.pth`, `.egg-link`, editable finder, console script, activation script) was rewritten, or in a dry run would be. A
+  second `relink` of the same move now ends with "Nothing left to change", `--json` reports empty `worktrees` and
+  `venvs`, and `relink --dry-run` no longer adds "Close these before --apply" when it has nothing to apply.
+
 ## [1.4.0] - 2026-10-20
 
 The safety release for everyday users. Commands that delete or move things keep away from what only looks like clutter
@@ -115,5 +166,6 @@ in the same release.
   for `wow! a!b!c`, and "Goodbye!" and the Python-missing error printed without their `!`. Delayed expansion is now off;
   only the line of `SmartDrive.bat` that shows the drive root switches it on.
 
-[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.0...main
+[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.1...main
+[1.4.1]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.4.0
