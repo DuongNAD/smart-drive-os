@@ -216,6 +216,17 @@ class TestWhatIsAskedOfGit(TreeCase):
         self.assertEqual(sorted(asked), ["build", "dist"])
         self.assertEqual(self.found, {"repo/dist", "repo/build"})
 
+    def test_the_number_of_questions_put_to_git_in_one_scan_is_bounded(self) -> None:
+        fake_repository(self.root / "repo")
+        for i in range(6):
+            self.write(f"repo/d{i}/core.js")  # matches the `core.*` core-dump rule, and may well be tracked
+        with patch.object(junk_detector, "MAX_GIT_QUERIES", 4):
+            with patch.object(junk_detector, "_git_tracks", return_value=False) as asked:
+                detector = self.detect()
+        self.assertEqual(asked.call_count, 4)
+        self.assertEqual(len(self.found), 4)
+        self.assertEqual(detector.kept, {KEPT_GIT_UNVERIFIED: 2})  # past the limit the rest is kept, not guessed
+
     def test_without_git_an_entry_in_a_work_tree_is_kept_and_one_outside_is_not(self) -> None:
         self.skip_if_temp_is_in_a_work_tree()
         fake_repository(self.root / "repo")

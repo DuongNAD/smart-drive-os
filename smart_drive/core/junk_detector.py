@@ -52,6 +52,9 @@ KEPT_GIT_TRACKED = "git_tracked"  # git tracks files in it: it is part of a repo
 KEPT_GIT_UNVERIFIED = "git_unverified"  # inside a git work tree that git could not be asked about
 
 GIT_TIMEOUT = 20  # seconds for one `git ls-files`
+# Questions put to git in one scan. A process per entry would take minutes when a repository holds hundreds of files
+# named like junk (`core.py` matches `core.*`); past the limit the entries left in a work tree are kept unverified.
+MAX_GIT_QUERIES = 300
 # Set when this runs from a git hook; they would send `git -C <folder>` to the wrong repository
 _GIT_ENV_UNSET = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX")
 
@@ -227,6 +230,7 @@ class JunkDetector:
         self._manifest_cache: Dict[str, bool] = {}
         # Folder (normcase) -> whether it is, or lies in, a git work tree
         self._work_tree_cache: Dict[str, bool] = {}
+        self._git_queries = 0  # questions put to git so far in this scan
         # Entries that matched a junk rule by name but were kept anyway: reason -> count (reset by find_junk)
         self.kept: Dict[str, int] = {}
         self._entry_kept_reason: Optional[str] = None  # why the entry inspected last was kept, if it was
@@ -401,6 +405,9 @@ class JunkDetector:
         parent = os.path.dirname(path)
         if not self._in_git_work_tree(parent):
             return None
+        if self._git_queries >= MAX_GIT_QUERIES:
+            return KEPT_GIT_UNVERIFIED
+        self._git_queries += 1
         tracked = _git_tracks(path) if is_dir else _git_tracks(parent, os.path.basename(path))
         if tracked is None:
             return KEPT_GIT_UNVERIFIED
@@ -583,6 +590,7 @@ class JunkDetector:
         self._folder_protection = {}
         self._manifest_cache = {}
         self._work_tree_cache = {}
+        self._git_queries = 0
 
         # Only exclude version control, agent working directories, and SmartDrive metadata/quarantine during scan;
         # allow scanner to inspect system junk directories like $RECYCLE.BIN, .Trashes
