@@ -240,8 +240,8 @@ class TestMarketplaceMetadataCompliance(SmartDriveTestCase):
         self.assertTrue(any("MacOS" in c for c in classifiers))
         self.assertTrue(any("Linux" in c for c in classifiers))
 
-        # License & Topic
-        self.assertTrue(any("MIT License" in c for c in classifiers))
+        # License (SPDX expression, PEP 639) & Topic
+        self.assertEqual(self.project.get("license"), "MIT")
         self.assertTrue(any("Topic :: System :: Filesystems" in c for c in classifiers))
         self.assertTrue(any("Topic :: Security" in c for c in classifiers))
 

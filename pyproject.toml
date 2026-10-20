@@ -1,14 +1,15 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "smart-drive-os"
 version = "1.4.1"
-description = "Autonomous exFAT SSD Governance, 512KB Cluster Slack Optimization & SQLite FTS5 Instant Search Suite"
+description = "Organize a drive without breaking your coding agents and IDEs: move folders and relink the paths they remember, clean junk safely, and search files instantly. Zero-dependency CLI and MCP server."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "DuongNAD", email = "smartdrive.os@proton.me" },
     { name = "SmartDrive Team", email = "smartdrive.os@proton.me" },
@@ -41,12 +42,16 @@ keywords = [
     "ntfs-junction",
     "cache-offload",
     "ssd-health",
+    "relink",
+    "file-organizer",
+    "vscode",
+    "jetbrains",
+    "file-search",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: MacOS",
@@ -76,6 +81,7 @@ dev = [
 ]
 
 [project.scripts]
+smart-drive-os = "smart_drive.cli.main:main"
 smart-drive = "smart_drive.cli.main:main"
 smart_drive = "smart_drive.cli.main:main"
 smart-drive-manager = "smart_drive.cli.main:main"
