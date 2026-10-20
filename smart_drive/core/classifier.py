@@ -34,6 +34,7 @@ from smart_drive.core.exfat_compat import detect_drive_root
 from smart_drive.core.git_locks import release_git_locks
 from smart_drive.core.junction import is_directory_junction
 from smart_drive.core.learning_units import find_unit_root, unit_kind
+from smart_drive.core.move_hint import explain_refused_move
 from smart_drive.core.root import same_file
 from smart_drive.core.system_refs import (
     SystemRefIndex,
@@ -1277,7 +1278,7 @@ class ClassifierEngine:
                         relative_target=rel_target,
                         status="ERROR",
                         collision_resolved=collision,
-                        error_message=str(exc),
+                        error_message=explain_refused_move(exc, str(item.source_path), "smart-drive classify --apply"),
                     ))
 
         return actions
