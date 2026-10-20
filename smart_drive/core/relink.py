@@ -1782,7 +1782,11 @@ def _relink_virtualenvs(
     report: RelinkReport,
     dry_run: bool = False,
 ) -> None:
-    """Updates .pth and .egg-link files inside moved Python virtualenvs and warns about console scripts."""
+    """Updates .pth, .egg-link and editable finder files inside moved Python virtualenvs.
+
+    A venv is listed, with a warning about its console scripts, only when one of its files was rewritten (or, in
+    a dry run, would be): a venv whose paths already follow the move has nothing left to change.
+    """
     seen_venvs: Set[str] = set()
     for old_path, new_path in moves:
         new_p = Path(new_path)
@@ -1793,7 +1797,6 @@ def _relink_virtualenvs(
             base = old_p
         else:
             continue
-        base_is_old = base == old_p and mapper.map(str(base)) is not None
         for venv_dir in _candidate_venv_dirs(base):
             reported_venv = mapper.map(str(venv_dir)) or str(venv_dir)
             key = reported_venv.casefold() if _CASE_INSENSITIVE else reported_venv
@@ -1816,7 +1819,7 @@ def _relink_virtualenvs(
                 except OSError:
                     pass
 
-            pth_updated = False
+            rewritten = False
             for sp in site_packages:
                 try:
                     files = (
@@ -1834,17 +1837,20 @@ def _relink_virtualenvs(
                     try:
                         process = _process_finder_file if finder else _process_lines_file
                         new_bytes, count = process(af, mapper, report)
-                        if new_bytes is not None and count > 0:
-                            pth_updated = True
-                            if dry_run:
-                                mapped_file = mapper.map(str(af.path)) or str(af.path)
-                                report.updated.append({"file": mapped_file, "agent": af.agent, "paths": count})
-                            elif _write_agent_file(af, new_bytes, report):
-                                report.updated.append({"file": str(af.path), "agent": af.agent, "paths": count})
+                        if new_bytes is None or count == 0:
+                            continue
+                        if dry_run:
+                            mapped_file = mapper.map(str(af.path)) or str(af.path)
+                            report.updated.append({"file": mapped_file, "agent": af.agent, "paths": count})
+                        elif _write_agent_file(af, new_bytes, report):
+                            report.updated.append({"file": str(af.path), "agent": af.agent, "paths": count})
+                        else:
+                            continue  # not written: the file keeps its old paths and is reported as an error
+                        rewritten = True
                     except Exception as err:
                         report.errors.append({"file": str(af.path), "error": str(err)})
 
-            if not dry_run or base_is_old or pth_updated:
+            if rewritten:
                 if reported_venv not in report.venvs:
                     report.venvs.append(reported_venv)
                 report.warnings.append(
