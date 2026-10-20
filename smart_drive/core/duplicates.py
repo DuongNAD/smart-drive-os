@@ -8,10 +8,10 @@ Implements:
 4. Duplicate grouping & space reclamation analysis with 512KB cluster allocation math.
 5. Zero dependencies outside Python 3.9+ standard library.
 
-Dependency, environment and cache trees (node_modules, site-packages, virtualenvs, ...) are not entered: their
-files are copies of one another by design, so they are never worth reclaiming, and on a real drive they hold most
-of the files that share a size (a scan that opened every one of them took more than 15 minutes). Neither are the
-folders Windows or an installed application depends on (`protected_by_system`, as in `organize` and `classify`).
+Dependency, environment and cache trees (node_modules, site-packages, virtualenvs, folders tagged CACHEDIR.TAG, ...)
+are not entered: their files are copies of one another by design, so they are never worth reclaiming, and on a real
+drive they hold most of the files that share a size (a scan that opened every one of them took more than 15 minutes).
+Neither are the folders Windows or an installed application depends on (`protected_by_system`, as in `organize`).
 """
 
 from __future__ import annotations
@@ -56,6 +56,10 @@ DEPENDENCY_DIR_NAMES: FrozenSet[str] = frozenset({
 })
 # A folder holding this file is a Python virtual environment, whatever it is called.
 VENV_MARKER_FILE = "pyvenv.cfg"
+# A folder holding this file, starting with this signature, is a cache directory (Cache Directory Tagging
+# Specification, https://bford.info/cachedir/): Cargo tags its target/ folder, as do pytest, mypy, restic and more.
+CACHE_TAG_FILE = "cachedir.tag"
+CACHE_TAG_SIGNATURE = b"Signature: 8a477f597d28d172789f06886806bc55"
 
 # Files hashed at the same time. What a hash waits for is the file being opened, not read: with Windows Defender
 # scanning each file as it is opened that was ~16 files a second one after another, and overlapping the opens is an
@@ -117,6 +121,15 @@ def compute_full_sha256(filepath: str, chunk_size: int = 65536) -> str:
         return hasher.hexdigest()
     except (OSError, PermissionError):
         return ""
+
+
+def _is_cache_dir_tag(path: str) -> bool:
+    """Whether the CACHEDIR.TAG at `path` carries the signature that makes its folder a cache directory."""
+    try:
+        with open(path, "rb") as f:
+            return f.read(len(CACHE_TAG_SIGNATURE)) == CACHE_TAG_SIGNATURE
+    except OSError:
+        return False
 
 
 def _result_of(future: Future) -> str:
@@ -262,12 +275,13 @@ class DuplicateDetector:
                 continue
             self.folders_scanned += 1
 
-            # One pass over the listing sorts the entries and spots a virtualenv (its pyvenv.cfg) before any file
-            # of the folder is reported
+            # One pass over the listing sorts the entries and spots a virtualenv (its pyvenv.cfg) or a tagged cache
+            # directory (its CACHEDIR.TAG) before any file of the folder is reported
             subdirs: List[str] = []
             files: List[os.DirEntry] = []
             dependency_dirs = 0
             is_venv = False
+            cache_tag: Optional[str] = None
             for entry in entries:
                 try:
                     if entry.is_dir(follow_symlinks=False):
@@ -280,12 +294,17 @@ class DuplicateDetector:
                         subdirs.append(entry.path)
                     elif entry.is_file(follow_symlinks=False):
                         files.append(entry)
-                        if entry.name.lower() == VENV_MARKER_FILE:
+                        file_name = entry.name.lower()
+                        if file_name == VENV_MARKER_FILE:
                             is_venv = True
+                        elif file_name == CACHE_TAG_FILE:
+                            cache_tag = entry.path
                 except (OSError, PermissionError):
                     continue
 
-            if is_venv and self.skip_dependency_dirs and curr_dir != self.root:
+            if self.skip_dependency_dirs and curr_dir != self.root and (
+                is_venv or (cache_tag is not None and _is_cache_dir_tag(cache_tag))
+            ):
                 self.skipped_dependency_dirs += 1
                 continue
             self.skipped_dependency_dirs += dependency_dirs
@@ -505,6 +524,8 @@ __all__ = [
     "DuplicateDetector",
     "compute_partial_hash",
     "compute_full_sha256",
+    "CACHE_TAG_FILE",
+    "CACHE_TAG_SIGNATURE",
     "DEPENDENCY_DIR_NAMES",
     "HASH_WORKERS",
     "PROGRESS_INTERVAL_SECONDS",
