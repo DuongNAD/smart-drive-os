@@ -296,6 +296,38 @@ class TestAuditHtmlTreemap(SmartDriveTestCase):
         self.assertTrue(custom_html.is_file())
 
 
+class TestCliAuditClusterSize(SmartDriveTestCase):
+    """`smart-drive audit` models the volume's real allocation unit in every output mode."""
+
+    def run_audit(self, *flags: str, block_size: int) -> str:
+        import contextlib
+        import io
+        from unittest import mock
+
+        from smart_drive.cli.main import main as cli_main
+        from smart_drive.core.fsinfo import FilesystemInfo
+
+        root = self.create_mock_drive()
+        volume = FilesystemInfo(str(root), "ntfs", block_size, str(root), "win32")
+        out = io.StringIO()
+        with mock.patch("smart_drive.cli.cmd_audit.detect_filesystem", return_value=volume):
+            with contextlib.redirect_stdout(out):
+                rc = cli_main(["audit", "--root", str(root), *flags])
+        self.assertEqual(rc, 0)
+        return out.getvalue()
+
+    def test_json_audit_uses_the_detected_cluster_size(self) -> None:
+        data = json.loads(self.run_audit("--json", block_size=4096))
+        self.assertEqual(data["cluster_size"], 4096)
+
+    def test_plain_audit_uses_the_detected_cluster_size(self) -> None:
+        self.assertIn("Cluster Size: 4 KB (4096 B)", self.run_audit(block_size=4096))
+
+    def test_undetected_cluster_size_falls_back_to_the_exfat_model(self) -> None:
+        data = json.loads(self.run_audit("--json", block_size=0))
+        self.assertEqual(data["cluster_size"], CLUSTER_SIZE_BYTES)
+
+
 if __name__ == "__main__":
     unittest.main()
 

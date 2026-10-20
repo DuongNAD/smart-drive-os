@@ -1,4 +1,4 @@
-"""smart_drive.cli.cmd_audit - Storage breakdown & 512KB cluster slack audit."""
+"""smart_drive.cli.cmd_audit - Storage breakdown & cluster slack audit at the volume's real cluster size."""
 
 from __future__ import annotations
 
@@ -21,18 +21,11 @@ def cmd_audit(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{e}\n")
         return 2
 
-    html_arg = getattr(args, "html", None)
-    if html_arg:
-        fs_info = detect_filesystem(root)
-        real_cluster = (
-            fs_info.block_size
-            if (fs_info is not None and getattr(fs_info, "block_size", None))
-            else CLUSTER_SIZE_BYTES
-        )
-        auditor = StorageAuditor(root, cluster_size=real_cluster)
-    else:
-        auditor = StorageAuditor(root)
+    fs_info = detect_filesystem(root)
+    real_cluster = fs_info.block_size if fs_info.block_size > 0 else CLUSTER_SIZE_BYTES
+    auditor = StorageAuditor(root, cluster_size=real_cluster)
 
+    html_arg = getattr(args, "html", None)
     report = auditor.run_audit()
 
     if html_arg:
