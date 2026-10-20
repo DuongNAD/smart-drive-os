@@ -12,6 +12,8 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+import shutil
+import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -23,10 +25,10 @@ from smart_drive.core.config import (
     ANTI_INDEXING_ROOT_FILE,
     CLUSTER_SIZE_BYTES,
     JUNK_RULES,
+    PROJECT_MANIFEST_DIRS,
     JunkRule,
     JunkTier,
     calculate_allocated_bytes,
-    PROJECT_MANIFEST_DIRS,
     is_inside_dependency_tree,
     is_project_manifest,
     is_protected_root_dir,
@@ -46,6 +48,57 @@ from smart_drive.core.system_refs import (
 KEPT_DEPENDENCY_TREE = "dependency_tree"  # inside node_modules, site-packages...: installed packages, not leftovers
 KEPT_SYSTEM_REFERENCED = "system_referenced"  # in a folder Windows or an installed application depends on
 KEPT_NOT_PROJECT_ROOT = "not_project_root"  # a build/dist/.cache folder with no project manifest beside it
+KEPT_GIT_TRACKED = "git_tracked"  # git tracks files in it: it is part of a repository, not an untracked leftover
+KEPT_GIT_UNVERIFIED = "git_unverified"  # inside a git work tree that git could not be asked about
+
+GIT_TIMEOUT = 20  # seconds for one `git ls-files`
+# Set when this runs from a git hook; they would send `git -C <folder>` to the wrong repository
+_GIT_ENV_UNSET = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX")
+
+
+def _holds_git_repository(folder: str) -> bool:
+    """Whether ``folder`` has a `.git` that git itself would take for a repository.
+
+    A `.git` file points at a repository kept elsewhere (linked worktrees, submodules). A `.git` folder counts when
+    it has what git's own check asks for: a HEAD file and `objects` and `refs` folders. A stray `.git/HEAD` alone,
+    as a test or a half-deleted clone leaves behind, is not one.
+    """
+    dot_git = os.path.join(folder, ".git")
+    if not os.path.lexists(dot_git):
+        return False
+    if os.path.isfile(dot_git):
+        return True
+    return (
+        os.path.isfile(os.path.join(dot_git, "HEAD"))
+        and os.path.isdir(os.path.join(dot_git, "objects"))
+        and os.path.isdir(os.path.join(dot_git, "refs"))
+    )
+
+
+def _git_tracks(folder: str, name: Optional[str] = None) -> Optional[bool]:
+    """Whether git tracks any file in ``folder`` (or, given ``name``, at or under ``folder/name``).
+
+    None when git could not say: it is not installed, refused (a repository owned by another user, a damaged
+    index) or timed out. Untracked and ignored files are not "tracked", so a regenerable folder that
+    .gitignore hides is not one.
+    """
+    git = shutil.which("git")
+    if git is None:
+        return None
+    env = {key: value for key, value in os.environ.items() if key not in _GIT_ENV_UNSET}
+    env.update(GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0")
+    command = [git, "--literal-pathspecs", "-C", folder, "ls-files", "-z"]
+    if name is not None:
+        command += ["--", name]
+    try:
+        done = subprocess.run(
+            command, capture_output=True, stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT, env=env, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    return bool(done.stdout)
 
 
 def _drop_items_inside_junk_dirs(items: List["JunkItem"]) -> List["JunkItem"]:
@@ -140,7 +193,8 @@ class JunkDetector:
        dependency trees (node_modules, site-packages...) are installed packages, not leftovers, and nothing
        of any tier is reported inside a folder that Windows or an installed application depends on (the same
        SystemRefIndex that keeps ``organize`` and ``classify`` from moving it), and a ``build``, ``dist`` or
-       ``.cache`` folder counts only at a project root (a manifest such as package.json lies beside it).
+       ``.cache`` folder counts only at a project root (a manifest such as package.json lies beside it), and
+       a Tier 2-3 entry that git tracks is never reported (git is asked only for those that survive the other checks).
 
     ``system_refs`` is that index; without one it is collected from this computer the first time an entry needs
     it (a scan that finds nothing that looks like junk never reads the registry).
@@ -165,6 +219,8 @@ class JunkDetector:
         self._folder_protection: Dict[str, Optional[Tuple[str, List[SystemRef]]]] = {}
         # Folder (normcase) -> whether it directly holds a project manifest
         self._manifest_cache: Dict[str, bool] = {}
+        # Folder (normcase) -> whether it is, or lies in, a git work tree
+        self._work_tree_cache: Dict[str, bool] = {}
         # Entries that matched a junk rule by name but were kept anyway: reason -> count (reset by find_junk)
         self.kept: Dict[str, int] = {}
         self._entry_kept_reason: Optional[str] = None  # why the entry inspected last was kept, if it was
@@ -292,6 +348,45 @@ class JunkDetector:
             self._manifest_cache[key] = found
         return found
 
+    def _in_git_work_tree(self, folder: str) -> bool:
+        """Whether ``folder`` is, or lies in, a git work tree (a repository's `.git` here or in a folder above)."""
+        cache = self._work_tree_cache
+        pending: List[str] = []
+        found = False
+        current = folder
+        while True:
+            key = os.path.normcase(current)
+            if key in cache:
+                found = cache[key]
+                break
+            pending.append(key)
+            if _holds_git_repository(current):
+                found = True
+                break
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+        for key in pending:
+            cache[key] = found
+        return found
+
+    def _git_keep_reason(self, path: str, is_dir: bool) -> Optional[str]:
+        """Whether git has a stake in ``path``: the files it tracks are the project's, not leftovers.
+
+        Asked only for the few entries that survive every other check, and only inside a git work tree. When git
+        cannot be asked, an entry in a work tree is kept: a wrong guess here would delete tracked work.
+        """
+        if is_dir and _holds_git_repository(path):
+            return KEPT_GIT_TRACKED  # a repository of its own
+        parent = os.path.dirname(path)
+        if not self._in_git_work_tree(parent):
+            return None
+        tracked = _git_tracks(path) if is_dir else _git_tracks(parent, os.path.basename(path))
+        if tracked is None:
+            return KEPT_GIT_UNVERIFIED
+        return KEPT_GIT_TRACKED if tracked else None
+
     def _keep_reason(self, path: str, tier: JunkTier, is_dir: bool, rule: Optional[JunkRule] = None) -> Optional[str]:
         """Why an entry whose name matches ``rule`` (of ``tier``) is still not junk, or None when it is."""
         if tier >= JunkTier.TIER_2_DEV_CACHE and is_inside_dependency_tree(path):
@@ -310,6 +405,8 @@ class JunkDetector:
             return KEPT_SYSTEM_REFERENCED
         if rule is not None and rule.project_root_only and not self._has_project_manifest(os.path.dirname(path)):
             return KEPT_NOT_PROJECT_ROOT
+        if tier >= JunkTier.TIER_2_DEV_CACHE:
+            return self._git_keep_reason(path, is_dir)
         return None
 
     def _note_if_kept(self, path: str, tier: JunkTier, is_dir: bool, rule: Optional[JunkRule] = None) -> bool:
@@ -466,6 +563,7 @@ class JunkDetector:
         self._protected_entries = {}
         self._folder_protection = {}
         self._manifest_cache = {}
+        self._work_tree_cache = {}
 
         # Only exclude version control, agent working directories, and SmartDrive metadata/quarantine during scan;
         # allow scanner to inspect system junk directories like $RECYCLE.BIN, .Trashes
