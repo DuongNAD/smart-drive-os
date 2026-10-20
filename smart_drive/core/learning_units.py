@@ -19,6 +19,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+_UNIT_MARKER_FILES = frozenset({"course.json", "deck.json"})
+
 # Global in-memory cache: (resolved directory path, resolved drive_root or "") -> unit root Path (or None)
 _UNIT_ROOT_CACHE: Dict[Tuple[str, str], Optional[Path]] = {}
 
@@ -26,6 +28,30 @@ _UNIT_ROOT_CACHE: Dict[Tuple[str, str], Optional[Path]] = {}
 def clear_unit_cache() -> None:
     """Clears the unit root path resolution cache (useful between test runs)."""
     _UNIT_ROOT_CACHE.clear()
+
+
+def _unit_kind_at(directory: str) -> Optional[str]:
+    """`unit_kind` for a directory path that is already resolved: the marker checks only, no resolve()."""
+    try:
+        if not os.path.isdir(directory):
+            return None
+
+        # 1. Aurora Course takes precedence over standalone deck
+        if os.path.isfile(os.path.join(directory, "course.json")):
+            return "Aurora course"
+
+        # 2. Polaris Subject
+        if os.path.isfile(os.path.join(directory, "polaris", "brief.json")):
+            return "Polaris subject"
+
+        # 3. Aurora Deck (standalone)
+        if os.path.isfile(os.path.join(directory, "deck.json")):
+            return "Aurora deck"
+
+    except (OSError, PermissionError, ValueError):
+        return None
+
+    return None
 
 
 def unit_kind(root: Union[str, Path]) -> Optional[str]:
@@ -37,26 +63,9 @@ def unit_kind(root: Union[str, Path]) -> Optional[str]:
     3. Directory containing deck.json -> "Aurora deck"
     """
     try:
-        p = Path(root).resolve()
-        if not p.is_dir():
-            return None
-
-        # 1. Aurora Course takes precedence over standalone deck
-        if (p / "course.json").is_file():
-            return "Aurora course"
-
-        # 2. Polaris Subject
-        if (p / "polaris" / "brief.json").is_file():
-            return "Polaris subject"
-
-        # 3. Aurora Deck (standalone)
-        if (p / "deck.json").is_file():
-            return "Aurora deck"
-
+        return _unit_kind_at(str(Path(root).resolve()))
     except (OSError, PermissionError, ValueError):
         return None
-
-    return None
 
 
 def is_unit_root(path: Union[str, Path]) -> bool:
@@ -118,7 +127,9 @@ def find_unit_root(
 
         visited_on_walk.append(str(curr))
 
-        k = unit_kind(curr)
+        # `curr` is the resolved start directory or one of its parents, already canonical: no resolve() per level
+        # (two _getfinalpathname calls on Windows, ~60 us each, for every directory of a scan)
+        k = _unit_kind_at(str(curr))
         if k is not None:
             unit_roots.append(curr)
 
@@ -208,6 +219,13 @@ def get_learning_summary(
         for dirpath, dirnames, filenames in os.walk(str(root_p)):
             # Prune excluded system dirs
             dirnames[:] = [d for d in dirnames if d.lower() not in excluded_dir_names and not d.startswith("._")]
+
+            # A unit holds course.json, deck.json or a polaris folder: only directories listing one of those names
+            # (in any letter case) need the real check, which is several filesystem calls.
+            if not any(f.lower() in _UNIT_MARKER_FILES for f in filenames) and not any(
+                d.lower() == "polaris" for d in dirnames
+            ):
+                continue
 
             curr = Path(dirpath)
             # Check unit kind

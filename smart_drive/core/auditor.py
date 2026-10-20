@@ -537,6 +537,8 @@ class StorageAuditor:
 
         # Directory node index for quick parent lookups
         dir_nodes: Dict[str, DirectoryNode] = {"": root_node}
+        # parent_dir -> its relative path: a folder's files come one after the other, normalise it once per folder
+        parent_rels: Dict[str, str] = {}
 
         # Track drive-wide summary accumulators
         total_files = 0
@@ -613,7 +615,10 @@ class StorageAuditor:
                 categories[cat_name].record_file(entry.ext, size, allocated)
 
                 # 3. Directory Tree Aggregation
-                parent_rel = normalize_rel_path(entry.parent_dir, self.root_path).strip().replace("\\", "/").strip("/")
+                parent_rel = parent_rels.get(entry.parent_dir)
+                if parent_rel is None:
+                    parent_rel = normalize_rel_path(entry.parent_dir, self.root_path).strip().replace("\\", "/").strip("/")
+                    parent_rels[entry.parent_dir] = parent_rel
                 if parent_rel not in dir_nodes:
                     parts = parent_rel.split("/") if parent_rel else []
                     curr = root_node
