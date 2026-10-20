@@ -89,6 +89,9 @@ drive. `#10`, `#11` and `#12` are pull requests; the other entries landed in the
   the resolved path, so `/data/drive/../x` is no longer called safe for the root `/data/drive`.
 - `SmartDrive.bat` printed "'Presets' is not recognized as an internal or external command" and cut five menu lines at
   an unescaped `&`; `SmartDrive.ps1` drew the menu again after option `[0]` instead of exiting.
+- `Quick_Audit.bat` printed "'Cluster' is not recognized as an internal or external command" and cut its window title
+  and banner at an unescaped `&`, and `Quick_Search.bat` wrote a file named `10MB` into the program folder instead of
+  showing the example `size:>10MB`. No `.bat` launcher holds such a line any more.
 
 [Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.0...main
 [1.4.0]: https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.4.0
