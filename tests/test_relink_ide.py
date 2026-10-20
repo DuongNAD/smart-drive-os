@@ -371,7 +371,7 @@ class TestRelinkIDE(SmartDriveTestCase):
     def test_05_find_moved_discovers_vscode_and_jetbrains_stale_paths(self) -> None:
         drive = self.test_dir / "drive"
         new_loc = drive / "03_Development_Projects" / "moved_ide_proj"
-        new_loc.mkdir(parents=True)
+        (new_loc / "src").mkdir(parents=True)
         old_loc = drive / "moved_ide_proj"
 
         if sys.platform == "win32":
@@ -394,7 +394,7 @@ class TestRelinkIDE(SmartDriveTestCase):
         jb_opts = self.fake_appdata / "JetBrains" / "PyCharm2026.1" / "options"
         jb_opts.mkdir(parents=True, exist_ok=True)
         (jb_opts / "recentProjects.xml").write_text(
-            f'<application><entry key="{old_loc.as_posix()}" /></application>\n',
+            f'<application><entry key="{old_loc.as_posix()}/src" /></application>\n',
             encoding="utf-8",
         )
 

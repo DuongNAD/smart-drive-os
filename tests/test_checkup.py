@@ -67,7 +67,7 @@ class TestCheckup(SmartDriveTestCase):
 
         # 3. Seed stale IDE entry pointing to moved folder
         moved_new = self.drive / "03_Development_Projects" / "demo_repo"
-        moved_new.mkdir(parents=True, exist_ok=True)
+        (moved_new / "src").mkdir(parents=True, exist_ok=True)
         moved_old = self.drive / "demo_repo"
 
         def _to_uri(p: Path) -> str:
@@ -78,7 +78,7 @@ class TestCheckup(SmartDriveTestCase):
         code_gs = self.fake_appdata / "Code" / "User" / "globalStorage"
         code_gs.mkdir(parents=True, exist_ok=True)
         (code_gs / "storage.json").write_text(
-            json.dumps({"backupWorkspaces": {"folders": [{"folderUri": _to_uri(moved_old)}], "workspaces": []}}),
+            json.dumps({"backupWorkspaces": {"folders": [{"folderUri": _to_uri(moved_old)}, {"folderUri": _to_uri(moved_old / "src")}], "workspaces": []}}),
             encoding="utf-8",
         )
 

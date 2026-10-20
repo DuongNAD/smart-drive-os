@@ -58,7 +58,7 @@ class TestPathsBroken(SmartDriveTestCase):
     def test_01_inspect_broken_paths_ide_shortcuts_and_path_entries(self) -> None:
         # 1. Create moved and valid directories on the mock drive
         moved_proj_new = self.drive / "03_Development_Projects" / "moved_proj"
-        moved_proj_new.mkdir(parents=True, exist_ok=True)
+        (moved_proj_new / "src").mkdir(parents=True, exist_ok=True)
         moved_proj_old = self.drive / "moved_proj"
         deleted_proj_old = self.drive / "aptech-learning"
 
@@ -86,6 +86,7 @@ class TestPathsBroken(SmartDriveTestCase):
             "backupWorkspaces": {
                 "folders": [
                     {"folderUri": _to_uri(moved_proj_old)},
+                    {"folderUri": _to_uri(moved_proj_old / "src")},
                     {"folderUri": _to_uri(deleted_proj_old)},
                     {"folderUri": _to_uri(valid_app_dir)},
                 ],
@@ -160,7 +161,7 @@ class TestPathsBroken(SmartDriveTestCase):
 
     def test_02_cli_paths_broken_dry_run_and_fix_preserves_orphan_shortcuts(self) -> None:
         moved_proj_new = self.drive / "03_Development_Projects" / "Java_Learning"
-        moved_proj_new.mkdir(parents=True, exist_ok=True)
+        (moved_proj_new / "src").mkdir(parents=True, exist_ok=True)
         moved_proj_old = self.drive / "Java_Learning"
         stale_proj_old = self.drive / "Learning_Machine_AI"
 
@@ -176,7 +177,7 @@ class TestPathsBroken(SmartDriveTestCase):
             {
                 "backupWorkspaces": {
                     "folders": [
-                        {"folderUri": _to_uri(moved_proj_old)},
+                        {"folderUri": _to_uri(moved_proj_old / "src")},
                         {"folderUri": _to_uri(stale_proj_old)},
                     ],
                     "workspaces": [],
