@@ -256,6 +256,48 @@ class TestUndo(SmartDriveTestCase):
             self.assertIn("Failed to restore", err_t)
             self.assertIn("Permission denied", err_t)
 
+    def test_05_undo_ignores_relink_and_paths_batches(self) -> None:
+        """Folders the user moved by hand (relink/paths journal batches) are never moved back by undo."""
+        drive = self.create_mock_drive()
+
+        organized_old = drive / "my_repo"
+        organized_new = drive / "03_Development_Projects" / "my_repo"
+        organized_new.mkdir(parents=True)
+        (organized_new / "main.py").write_text("print(1)\n", encoding="utf-8")
+        record_moves(str(drive), [(str(organized_old), str(organized_new))], "organize")
+
+        manual_old = drive / "Photos"
+        manual_new = drive / "Archive" / "Photos"
+        manual_new.mkdir(parents=True)
+        (manual_new / "a.jpg").write_bytes(b"jpg")
+        record_moves(str(drive), [(str(manual_old), str(manual_new))], "relink")
+
+        guessed_old = drive / "tools" / "App"
+        guessed_new = drive / "tools" / "old" / "App"
+        guessed_new.mkdir(parents=True)
+        record_moves(str(drive), [(str(guessed_old), str(guessed_new))], "paths")
+
+        batch = last_undoable_moves(str(drive))
+        self.assertIsNotNone(batch)
+        self.assertEqual(batch["tool"], "organize")
+
+        code, out, err = self._run_cli(["undo", "--root", str(drive), "--apply", "--json"])
+        self.assertEqual(code, 0, err)
+        data = json.loads(out)
+        self.assertEqual(data["batch_tool"], "organize")
+        self.assertEqual(data["restored_count"], 1)
+        self.assertTrue((organized_old / "main.py").is_file())
+        self.assertTrue((manual_new / "a.jpg").is_file(), "relink batch must not be undone")
+        self.assertFalse(manual_old.exists())
+        self.assertTrue(guessed_new.is_dir(), "paths batch must not be undone")
+        self.assertFalse(guessed_old.exists())
+
+        # Nothing organize/classify is left, even though relink/paths batches remain in the journal
+        self.assertIsNone(last_undoable_moves(str(drive)))
+        code2, out2, _ = self._run_cli(["undo", "--root", str(drive), "--apply", "--json"])
+        self.assertEqual(code2, 0)
+        self.assertEqual(json.loads(out2)["status"], "nothing_to_undo")
+
 
 if __name__ == "__main__":
     unittest.main()
