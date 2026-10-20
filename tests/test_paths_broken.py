@@ -29,7 +29,11 @@ class TestPathsBroken(SmartDriveTestCase):
         super().setUp()
         self.drive = self.create_mock_drive()
         self.fake_home = self.test_dir / "fake_home"
-        self.fake_appdata = self.fake_home / "AppData" / "Roaming"
+        self.fake_appdata = (
+            self.fake_home / "Library" / "Application Support"
+            if sys.platform == "darwin"
+            else self.fake_home / "AppData" / "Roaming"
+        )
         self.fake_temp = self.test_dir / "sys_temp"
         self.fake_home.mkdir(parents=True, exist_ok=True)
         self.fake_appdata.mkdir(parents=True, exist_ok=True)
