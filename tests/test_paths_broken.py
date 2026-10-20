@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 from smart_drive.cli.cmd_paths import inspect_broken_paths
 from smart_drive.cli.main import main as cli_main
+from smart_drive.core.relink import last_moves
 from smart_drive.core.system_refs import RegistryReader, SystemRefIndex
 from tests.helpers import SmartDriveTestCase
 from tests.test_system_refs import _build_lnk_bytes
@@ -58,6 +59,18 @@ class TestPathsBroken(SmartDriveTestCase):
             "LOCALAPPDATA": str(self.fake_home / "AppData" / "Local"),
             "XDG_CONFIG_HOME": str(self.fake_appdata),
         }
+
+    def _paths_cli(self, reader: RegistryReader, *flags: str) -> tuple[int, str]:
+        """Runs `paths --broken *flags` on the mock drive with `reader` as the registry; returns (exit code, stdout)."""
+        orig_collect = SystemRefIndex.collect
+        out = io.StringIO()
+        with patch.dict(os.environ, self._cli_env()):
+            with patch.object(
+                SystemRefIndex, "collect", side_effect=lambda **kw: orig_collect(home=self.fake_home, reader=reader)
+            ):
+                with contextlib.redirect_stdout(out):
+                    rc = cli_main(["paths", "--broken", *flags, "--root", str(self.drive)])
+        return rc, out.getvalue()
 
     def test_01_inspect_broken_paths_ide_shortcuts_and_path_entries(self) -> None:
         # 1. Create moved and valid directories on the mock drive
@@ -144,7 +157,8 @@ class TestPathsBroken(SmartDriveTestCase):
 
         path_by_target = {item["target"]: item for item in report["path_entries"]}
         self.assertIn(moved_cli_old, path_by_target)
-        self.assertEqual(path_by_target[moved_cli_old]["kind"], "same-name")
+        # Nothing lies below a PATH folder to check the same-named folder against: only the name matches
+        self.assertEqual(path_by_target[moved_cli_old]["kind"], "name-only")
         self.assertEqual(path_by_target[moved_cli_old]["suggested_target"], str(moved_tool_new))
         self.assertIn(missing_cli, path_by_target)
         self.assertEqual(path_by_target[missing_cli]["kind"], "not-found")
@@ -282,6 +296,146 @@ class TestPathsBroken(SmartDriveTestCase):
         self.assertIn(str(missing_bin), path_by_target)
         self.assertEqual(path_by_target[str(missing_bin)]["kind"], "same-name")
         self.assertEqual(path_by_target[str(missing_bin)]["suggested_target"], str(moved_bin))
+
+    def test_05_path_entry_matched_by_its_name_alone_is_only_a_guess(self) -> None:
+        # Nothing lies below a PATH folder to check a same-named folder against: it may be another program's
+        missing = self.drive / "cli_tool"
+        found = self.drive / "04_Apps" / "cli_tool"
+        found.mkdir(parents=True)
+        reader = RegistryReader(tree={r"HKCU\Environment": {"Path": str(missing)}})
+        suggestion = (
+            f"Only the folder name matches; if you moved it there, update the PATH (User) entry to {found}, "
+            "otherwise remove it"
+        )
+
+        report = inspect_broken_paths(
+            root=str(self.drive),
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            reader=reader,
+        )
+
+        entry = {item["target"]: item for item in report["path_entries"]}[str(missing)]
+        self.assertEqual(entry["kind"], "name-only")
+        self.assertEqual(entry["suggested_folder"], str(found))
+        self.assertEqual(entry["suggested_target"], str(found))
+        self.assertEqual(entry["candidates"], [])
+        self.assertEqual(entry["suggestion"], suggestion)
+        # A guess is listed, never repaired
+        self.assertEqual(report["fixable_count"], 0)
+        self.assertEqual(report["sure_moves"], [])
+
+        rc, out = self._paths_cli(reader, "--json")
+        self.assertEqual(rc, 0, out)
+        payload = json.loads(out)
+        self.assertEqual([(i["target"], i["kind"]) for i in payload["path_entries"]], [(str(missing), "name-only")])
+        self.assertEqual(payload["fixable_count"], 0)
+
+        rc, text = self._paths_cli(reader)
+        self.assertEqual(rc, 0, text)
+        self.assertIn(f"  ? [PATH (User)] {missing} -> maybe moved to {found} ({suggestion})", text)
+        self.assertNotIn("-> moved to", text)
+        self.assertNotIn("paths --broken --fix", text)
+
+    def test_06_several_same_named_folders_only_one_that_holds_what_lay_below_is_sure(self) -> None:
+        # The PATH entry lies inside the missing folder: a same-named folder is sure only if it holds that too
+        apps, toolbox = self.drive / "04_Apps", self.drive / "05_Dev_Toolbox"
+        (apps / "tool3" / "bin").mkdir(parents=True)
+        (toolbox / "tool3").mkdir()
+        (apps / "tool4").mkdir()
+        (toolbox / "tool4").mkdir()
+        sure_bin, ambiguous_bin = self.drive / "tool3" / "bin", self.drive / "tool4" / "bin"
+        reader = RegistryReader(tree={r"HKCU\Environment": {"Path": ";".join([str(sure_bin), str(ambiguous_bin)])}})
+
+        report = inspect_broken_paths(
+            root=str(self.drive),
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            reader=reader,
+        )
+
+        path_by_target = {item["target"]: item for item in report["path_entries"]}
+        sure = path_by_target[str(sure_bin)]
+        self.assertEqual(sure["kind"], "same-name")
+        self.assertEqual(sure["suggested_target"], str(apps / "tool3" / "bin"))
+        ambiguous = path_by_target[str(ambiguous_bin)]
+        self.assertEqual(ambiguous["kind"], "ambiguous")
+        self.assertEqual(ambiguous["candidates"], [str(apps / "tool4"), str(toolbox / "tool4")])
+        self.assertIsNone(ambiguous["suggested_target"])
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows shortcuts (.lnk) are read on Windows only")
+    def test_07_shortcut_matched_by_its_name_alone_is_never_a_sure_move(self) -> None:
+        # A shortcut to a folder that is gone: the only folder of that name may be another program's
+        guessed_old, guessed_new = self.drive / "tool", self.drive / "04_Apps" / "tool"
+        guessed_new.mkdir(parents=True)
+        # Control: a shortcut to a file that the same-named folder holds too is sure
+        sure_old, sure_new = self.drive / "tool2", self.drive / "04_Apps" / "tool2"
+        sure_new.mkdir()
+        (sure_new / "app.exe").write_bytes(b"MZ")
+        desktop = self.fake_home / "Desktop"
+        desktop.mkdir(parents=True, exist_ok=True)
+        guessed_lnk, sure_lnk = desktop / "Tool.lnk", desktop / "Tool2.lnk"
+        guessed_lnk.write_bytes(_build_lnk_bytes(str(guessed_old), use_unicode=True))
+        sure_lnk.write_bytes(_build_lnk_bytes(str(sure_old / "app.exe"), use_unicode=True))
+
+        report = inspect_broken_paths(
+            root=str(self.drive),
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            reader=RegistryReader(tree={}),
+        )
+
+        sc_by_path = {item["shortcut"]: item for item in report["shortcuts"]}
+        guessed = sc_by_path[str(guessed_lnk)]
+        self.assertEqual(guessed["kind"], "name-only")
+        self.assertEqual(guessed["suggested_folder"], str(guessed_new))
+        self.assertIn(f'smart-drive relink "{guessed_old}" "{guessed_new}"', guessed["suggestion"])
+        self.assertNotIn("--fix", guessed["suggestion"])
+        self.assertEqual(sc_by_path[str(sure_lnk)]["kind"], "same-name")
+        self.assertIn([str(sure_old), str(sure_new)], report["sure_moves"])
+        self.assertNotIn([str(guessed_old), str(guessed_new)], report["sure_moves"])
+        self.assertEqual(report["fixable_count"], 1)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows shortcuts (.lnk) are read on Windows only")
+    def test_08_fix_never_repoints_a_shortcut_matched_by_its_name_alone(self) -> None:
+        old, new = self.drive / "tool", self.drive / "04_Apps" / "tool"
+        new.mkdir(parents=True)
+        desktop = self.fake_home / "Desktop"
+        desktop.mkdir(parents=True, exist_ok=True)
+        lnk = desktop / "Tool.lnk"
+        lnk.write_bytes(_build_lnk_bytes(str(old), use_unicode=True))
+        original = lnk.read_bytes()
+        reader = RegistryReader(tree={})
+
+        rc, text = self._paths_cli(reader)
+        self.assertEqual(rc, 0, text)
+        self.assertIn(f"  ? {lnk}: {old} -> maybe moved to {new}  (", text)
+        self.assertNotIn("paths --broken --fix", text)
+
+        rc, out = self._paths_cli(reader, "--fix", "--json")
+        self.assertEqual(rc, 0, out)
+        payload = json.loads(out)
+        self.assertEqual(payload["fixable_count"], 0)
+        self.assertEqual(payload["relink"]["updated"], [])
+        self.assertEqual(lnk.read_bytes(), original)
+        self.assertIsNone(last_moves(str(self.drive)))
+
+    def test_09_agent_entry_matched_by_its_name_alone_is_listed_as_maybe_moved(self) -> None:
+        # Nothing is remembered inside drive/demo, so the demo folder found elsewhere may be another project
+        old, new = self.drive / "demo", self.drive / "02_Code" / "client" / "demo"
+        new.mkdir(parents=True)
+        (self.fake_home / ".claude.json").write_text(json.dumps({"projects": {str(old): {}}}), encoding="utf-8")
+
+        rc, text = self._paths_cli(RegistryReader(tree={}))
+
+        self.assertEqual(rc, 0, text)
+        self.assertIn(
+            f"  ? {old} -> maybe moved to {new}  (Claude Code; only the name matches; if you moved it there, run: "
+            f'smart-drive relink "{old}" "{new}")',
+            text,
+        )
+        self.assertNotIn(f"{old}: not found", text)
+        self.assertNotIn("paths --broken --fix", text)
 
 
 if __name__ == "__main__":

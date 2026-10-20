@@ -15,6 +15,15 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   `C:\Users\<you>\node_modules\playwright-core\bin`. The search now neither enters nor returns a folder named
   `node_modules`, `bower_components`, `jspm_packages`, `.pnpm-store`, `site-packages`, `dist-packages`,
   `__pypackages__`, `.venv`, `venv` or `vendor`, unless the missing folder itself lay inside one.
+- `paths --broken` no longer counts one folder of the same name as a sure match when nothing below the missing folder
+  can confirm it, as for a `PATH` folder or a shortcut to a folder. Such a shortcut was marked ✓, and
+  `paths --broken --fix` relinked the old folder to the match, and with it every agent and IDE path below the old
+  folder, although the match may be another program's folder and the old one deleted; such a `PATH` folder was
+  reported as "moved to" the match. These matches now have the kind `name-only` (also in `--json`), are shown with `?`
+  and "maybe moved to" next to the `smart-drive relink "OLD" "NEW"` command to run if you did move the folder there,
+  and `--fix` leaves them alone, as `relink --find --apply` does. A folder that holds what the shortcut or `PATH` entry
+  pointed to inside the old one is still `same-name`. Agent and IDE entries matched by their name alone, which the
+  report listed as "not found", are shown the same way.
 
 ## [1.4.1] - 2026-10-20
 
