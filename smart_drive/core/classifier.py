@@ -16,10 +16,11 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import shutil
 import struct
 import sys
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 import zipfile
 
 from smart_drive.core.config import (
@@ -60,6 +61,67 @@ def _exists(path: Path) -> bool:
         return path.exists()
     except (OSError, ValueError):
         return False
+
+
+# What makes a folder a bundle (see bundle_marker). Compared in lower case against the entries a folder holds directly.
+_BUNDLE_PROGRAM_EXTS = frozenset({".exe", ".dll", ".sys", ".msi", ".so", ".dylib", ".jar"})
+_BUNDLE_LAUNCHER_EXTS = frozenset({".bat", ".cmd", ".ps1", ".sh", ".command", ".vbs", ".phar"})
+_BUNDLE_MANIFEST_NAMES = frozenset({
+    "package.json", "pyproject.toml", "setup.py", "setup.cfg", "cargo.toml", "go.mod", "pom.xml",
+    "build.gradle", "build.gradle.kts", "cmakelists.txt", "makefile", "composer.json", "gemfile",
+})
+_BUNDLE_MANIFEST_EXTS = frozenset({".csproj", ".sln"})
+_VERSIONED_SO = re.compile(r"\.so(?:\.\d+)+$")  # libz.so.1.2.11 (a plain .so is in the extension set above)
+
+
+def bundle_marker(dir_names: Iterable[str], file_names: Iterable[str]) -> Optional[str]:
+    """Why a folder holding exactly these entries is a bundle, or None for a plain folder.
+
+    A bundle directly holds programs or libraries (.exe .dll .sys .msi .so .dylib .jar, a *.app folder), launcher
+    scripts (.bat .cmd .ps1 .sh .command .vbs .phar), a project manifest (package.json, pyproject.toml, pom.xml,
+    *.csproj, Makefile...) or a .git entry. Its files only work together: the DLLs an .exe loads, the .phar a
+    composer.bat runs, the cert folder a launcher script hands over. Sorting each one to wherever its own format
+    would go takes the app apart, so a bundle is never entered or sorted file by file. An Obsidian vault (.obsidian)
+    counts too: its notes link to each other.
+
+    The answer names the entry that decided it: the first of the strongest kind in name order, so it does not depend
+    on the order in which the filesystem lists the folder. Names compare case-insensitively; the ._* sidecar files
+    macOS leaves in zip archives are not scripts and do not count.
+    """
+
+    def first(names: List[str]) -> str:
+        return min(names, key=lambda name: (name.lower(), name))
+
+    folders = list(dir_names)
+    lowered_folders = {name.lower() for name in folders}
+    programs = [name for name in folders if name.lower().endswith(".app")]
+    launchers: List[str] = []
+    manifests: List[str] = []
+    has_git = ".git" in lowered_folders
+    for name in file_names:
+        lowered = name.lower()
+        if lowered.startswith("._"):
+            continue
+        ext = os.path.splitext(lowered)[1]
+        if ext in _BUNDLE_PROGRAM_EXTS or _VERSIONED_SO.search(lowered):
+            programs.append(name)
+        elif ext in _BUNDLE_LAUNCHER_EXTS:
+            launchers.append(name)
+        elif lowered in _BUNDLE_MANIFEST_NAMES or ext in _BUNDLE_MANIFEST_EXTS:
+            manifests.append(name)
+        elif lowered == ".git":
+            has_git = True  # a worktree or a submodule keeps .git as a file
+    if programs:
+        return f"program or library {first(programs)}"
+    if launchers:
+        return f"launcher script {first(launchers)}"
+    if manifests:
+        return f"project manifest {first(manifests)}"
+    if has_git:
+        return "repository folder .git"
+    if ".obsidian" in lowered_folders:
+        return "Obsidian vault folder .obsidian"
+    return None
 
 
 @dataclass
@@ -142,6 +204,7 @@ class ClassificationReport:
     actions: List[RelocationAction] = field(default_factory=list)
     protected_by_system: List[Dict[str, Any]] = field(default_factory=list)
     recursive: bool = False       # False: only the files directly in the scanned folder were looked at
+    skipped_bundles: List[Dict[str, str]] = field(default_factory=list)  # [{"path", "reason"}]: folders kept whole
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -155,6 +218,7 @@ class ClassificationReport:
             "results": [r.to_dict() for r in self.results],
             "actions": [a.to_dict() for a in self.actions],
             "protected_by_system": self.protected_by_system,
+            "skipped_bundles": self.skipped_bundles,
         }
 
 
@@ -178,6 +242,7 @@ class ClassifierEngine:
         self._protected_by_system_keys: Set[str] = set()
         self._protected_summaries: Dict[str, str] = {}
         self.skipped_links: List[Path] = []  # symlinks/junctions left alone by the last scan
+        self.skipped_bundles: List[Dict[str, str]] = []  # folders the last recursive scan kept whole, with the reason
         self.scanned_recursively: bool = False  # whether the last scan also looked inside subfolders
         # "Is this folder under the root" answers, kept only while one scan runs (files in the same folder share
         # them). Never used to decide a move: execute_relocation re-checks everything right before it.
@@ -818,6 +883,7 @@ class ClassifierEngine:
     def _scan_and_classify(self, target_dir: Optional[Union[str, Path]], recursive: bool) -> List[ClassificationResult]:
         results: List[ClassificationResult] = []
         self.skipped_links = []
+        self.skipped_bundles = []
         self.protected_by_system = []
         self._protected_by_system_keys = set()
         self._protected_summaries = {}
@@ -851,6 +917,7 @@ class ClassifierEngine:
             curr_dir = Path(root)
             if not recursive:
                 dirs.clear()  # only the files directly in the scanned folder count: no subfolder is entered or reported
+            entry_dirs = list(dirs)  # as listed: the pruning below drops a hidden .git, which still marks a bundle
 
             # Prune hidden, system, cache, and protected directories
             dirs[:] = [
@@ -872,8 +939,13 @@ class ClassifierEngine:
             sys_protected_dirs = [d for d in dirs if self._is_protected_by_system(curr_dir / d)]
             if sys_protected_dirs:
                 dirs[:] = [d for d in dirs if d not in sys_protected_dirs]
+                for d in sys_protected_dirs:  # the system depends on them, so they are bundles as well
+                    self.skipped_bundles.append({
+                        "path": str(curr_dir / d),
+                        "reason": f"used by the system: {self.describe_protected_by_system(curr_dir / d)}",
+                    })
 
-            # Check if curr_dir itself is a learning unit or project repo
+            # Check if curr_dir itself is a learning unit, a project repo or a bundle
             if curr_dir != scan_root:
                 unit_root = find_unit_root(curr_dir, self.root)
                 if unit_root is not None:
@@ -915,6 +987,14 @@ class ClassifierEngine:
                         metadata=repo_res.metadata,
                     ))
                     dirs.clear()  # Do not recurse into already classified project repo
+                    continue
+
+                # An app, a tool or a project that is not a repo of its own: its files only work together, so none
+                # of them is sorted by itself and nothing below it is looked at.
+                bundle = "macOS app folder" if curr_dir.name.lower().endswith(".app") else bundle_marker(entry_dirs, files)
+                if bundle:
+                    self.skipped_bundles.append({"path": str(curr_dir), "reason": bundle})
+                    dirs.clear()
                     continue
 
             # Inspect loose files
@@ -1097,4 +1177,5 @@ class ClassifierEngine:
             actions=actions,
             protected_by_system=list(self.protected_by_system),
             recursive=self.scanned_recursively,
+            skipped_bundles=list(self.skipped_bundles),
         )

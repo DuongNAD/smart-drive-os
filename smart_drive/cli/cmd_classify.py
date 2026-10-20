@@ -33,8 +33,19 @@ def _format_size(size_bytes: int) -> str:
 def _scope_note(recursive: bool) -> str:
     """One line saying how far the scan reached, so an empty result is not mistaken for 'nothing to sort'."""
     if recursive:
-        return "Scope: the scanned folder and its subfolders."
+        return "Scope: the scanned folder and its subfolders; app, library and project folders are kept whole."
     return "Scope: only the files directly in the scanned folder. Add '--recursive' to look inside subfolders too."
+
+
+def _print_skipped(engine: ClassifierEngine) -> None:
+    """Says what the scan left alone and why: what the system depends on, then the folders kept whole."""
+    for item in engine.protected_by_system:
+        p = item["path"]
+        print(f"  Skipped {p} — used by {engine.describe_protected_by_system(p)}")
+    listed = {item["path"] for item in engine.protected_by_system}
+    for bundle in engine.skipped_bundles:
+        if bundle["path"] not in listed:  # the folders used by the system were just listed
+            print(f"  Skipped {bundle['path']} — kept whole ({bundle['reason']})")
 
 
 def cmd_classify(args: argparse.Namespace) -> int:
@@ -80,6 +91,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             actions=actions,
             protected_by_system=list(engine.protected_by_system),
             recursive=recursive,
+            skipped_bundles=list(engine.skipped_bundles),
         )
 
         if as_json:
@@ -96,9 +108,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
         print(f"\nSmartDrive-OS Classification & Auto-Tagging [APPLIED]")
         print("=" * 90)
         print(_scope_note(recursive))
-        for item in engine.protected_by_system:
-            p = item["path"]
-            print(f"  Skipped {p} — used by {engine.describe_protected_by_system(p)}")
+        _print_skipped(engine)
         for a in moved:
             suffix = " (Renamed to prevent overwrite)" if a.collision_resolved else ""
             print(f"  ✓ Moved: {os.path.basename(str(a.source_path))} -> {a.relative_target}{suffix}")
@@ -130,6 +140,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             actions=actions,
             protected_by_system=list(engine.protected_by_system),
             recursive=recursive,
+            skipped_bundles=list(engine.skipped_bundles),
         )
 
         if as_json:
@@ -139,9 +150,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
         print(f"\nSmartDrive-OS Classification & Auto-Tagging [DRY-RUN SIMULATION]")
         print("=" * 90)
         print(_scope_note(recursive))
-        for item in engine.protected_by_system:
-            p = item["path"]
-            print(f"  Skipped {p} — used by {engine.describe_protected_by_system(p)}")
+        _print_skipped(engine)
         print(f"{'Source File':<36} {'-> Target Destination':<40} {'Status'}")
         print("-" * 90)
         for a in actions:
@@ -166,6 +175,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             actions=[],
             protected_by_system=list(engine.protected_by_system),
             recursive=recursive,
+            skipped_bundles=list(engine.skipped_bundles),
         )
 
         if as_json:
@@ -176,9 +186,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
         print(f"Scan Root: {target} (Total Items: {len(results)})")
         print("=" * 95)
         print(_scope_note(recursive))
-        for item in engine.protected_by_system:
-            p = item["path"]
-            print(f"  Skipped {p} — used by {engine.describe_protected_by_system(p)}")
+        _print_skipped(engine)
         print(f"{'File / Directory':<34} {'Format':<18} {'Confidence':<12} {'Target Taxonomy'}")
         print("-" * 95)
         for r in results:
