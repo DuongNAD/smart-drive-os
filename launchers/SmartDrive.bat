@@ -63,15 +63,15 @@ if defined SMART_DRIVE_ROOT (
 )
 echo ========================================================
 echo.
-echo   [1] Initialize Drive & Presets (smart-drive init)
-echo   [2] Sentinel & Integrity Health Check (smart-drive sentinel)
+echo   [1] Initialize Drive ^& Presets (smart-drive init)
+echo   [2] Sentinel ^& Integrity Health Check (smart-drive sentinel)
 echo   [3] SQLite FTS5 File Search (smart-drive search)
-echo   [4] Storage & Cluster Slack Audit (smart-drive audit)
+echo   [4] Storage ^& Cluster Slack Audit (smart-drive audit)
 echo   [5] Safe Junk Cleaner (smart-drive clean)
-echo   [6] Auto-Zoning & Anti-Slack Rebalancer (smart-drive organize)
+echo   [6] Auto-Zoning ^& Anti-Slack Rebalancer (smart-drive organize)
 echo   [7] Register AI Coding Agents MCP (smart-drive mcp register)
 echo   [8] Relink Coding Agents After Moving Folders (smart-drive relink --find)
-echo   [9] Drive Health Checkup & Score (smart-drive checkup)
+echo   [9] Drive Health Checkup ^& Score (smart-drive checkup)
 echo   [10] Safe Guided Organizer (Smart_Organize)
 echo   [11] Relink Coding Agents to the Latest Move (smart-drive relink)
 echo   [0] Exit
