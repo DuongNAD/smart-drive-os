@@ -82,6 +82,20 @@ def _is_client_error(error: BaseException) -> bool:
     """True for a deliberate refusal; encoding and JSON decoding failures are ValueErrors too, but are bugs."""
     return isinstance(error, _CLIENT_ERRORS) and not isinstance(error, (UnicodeError, json.JSONDecodeError))
 
+
+def _is_inside(root: str, path: str) -> bool:
+    """True when `path` is `root` itself or lies below it; both absolute and resolved, as os.path.realpath gives them.
+
+    Whole path components are compared (os.path.commonpath), so a root that already ends in a separator (a drive root
+    such as `E:\\` or `/`) needs no special case, `/data2` is not inside `/data`, the letter case of a Windows path
+    does not matter, and a path on another drive is simply outside instead of an error.
+    """
+    try:
+        return os.path.normcase(os.path.commonpath([root, path])) == os.path.normcase(root)
+    except ValueError:
+        return False
+
+
 logger = logging.getLogger("smart_drive.mcp.server")
 logger.setLevel(logging.INFO)
 stderr_handler = logging.StreamHandler(sys.stderr)
@@ -619,7 +633,8 @@ class SmartDriveMCPServer:
         - If sub_path is empty or None, returns self.root.
         - Rejects null bytes (\\x00).
         - Rejects UNC / device namespace paths (//, \\, etc.).
-        - Rejects Windows drive letters escaping root (^[a-zA-Z]:).
+        - Accepts absolute paths inside the root: any drive-letter case, / or \\ separators, a drive-root or a folder root.
+        - Rejects Windows drive letters escaping root (^[a-zA-Z]:), and drive-relative or drive-less paths (E:x, \\x).
         - Rejects POSIX root escapes (/...).
         - Normalizes backslashes to / before joining and checking boundary containment.
         - If must_exist and not os.path.exists(target), raises FileNotFoundError.
@@ -647,7 +662,6 @@ class SmartDriveMCPServer:
 
         # Normalize backslashes to forward slashes for universal boundary check
         clean_norm = sub_path_str.replace("\\", "/")
-        c_root_fwd = canonical_root.replace("\\", "/")
 
         # Check for Windows drive letter (e.g. C:, D:)
         if re.match(r"^[a-zA-Z]:", sub_path_str):
@@ -655,24 +669,21 @@ class SmartDriveMCPServer:
             path_drive = sub_path_str[:2].upper()
             if not root_drive or path_drive != root_drive:
                 raise ValueError("Access denied: path escapes storage root")
-            if not (clean_norm == c_root_fwd or clean_norm.startswith(c_root_fwd + "/")):
+            # "E:x" is relative to the drive's working directory, which is process state, not a place on the drive
+            if clean_norm[2:3] != "/":
                 raise ValueError("Access denied: path escapes storage root")
             target = os.path.realpath(os.path.abspath(clean_norm))
         elif clean_norm.startswith("/"):
-            if clean_norm == c_root_fwd or clean_norm.startswith(c_root_fwd + "/"):
-                target = os.path.realpath(os.path.abspath(clean_norm))
-            else:
+            # Windows reads a drive-less "\x" against the process' current drive, which says nothing about the root
+            if sys.platform == "win32":
                 raise ValueError("Access denied: path escapes storage root")
+            target = os.path.realpath(os.path.abspath(clean_norm))
         else:
             target = os.path.realpath(os.path.abspath(os.path.join(canonical_root, clean_norm)))
 
-        # Verify boundary containment
-        try:
-            common = os.path.commonpath([canonical_root, target])
-            if os.path.normcase(common) != os.path.normcase(canonical_root):
-                raise ValueError("Access denied: path escapes storage root")
-        except ValueError as err:
-            raise ValueError("Access denied: path escapes storage root") from err
+        # Verify boundary containment on the resolved path, which is where `..` and links show what they point at
+        if not _is_inside(canonical_root, target):
+            raise ValueError("Access denied: path escapes storage root")
 
         if must_exist and not os.path.exists(target):
             raise FileNotFoundError(f"Path does not exist: {target}")
@@ -1078,22 +1089,20 @@ class SmartDriveMCPServer:
                 "error": "Path is on a different drive mount or escapes drive root",
             }
 
-        c_root_fwd = canonical_root.replace("\\", "/")
         if norm_sub.startswith("/"):
-            raw_target = norm_sub
-            if norm_sub == c_root_fwd or norm_sub.startswith(c_root_fwd + "/"):
-                escapes_root = False
-                normalized_target = os.path.realpath(os.path.abspath(norm_sub))
-            else:
+            # Absolute: the drive letter dropped from norm_sub for the segment audit is part of where it points
+            raw_target = clean_path.replace("\\", "/")
+            if sys.platform == "win32" and not path_drive:
+                # Windows reads a drive-less "\x" against the process' current drive, which says nothing about the root
                 escapes_root = True
                 normalized_target = canonical_root
+            else:
+                normalized_target = os.path.realpath(os.path.abspath(raw_target))
+                escapes_root = not _is_inside(canonical_root, normalized_target)
         else:
             raw_target = os.path.join(canonical_root, norm_sub)
             normalized_target = os.path.realpath(os.path.abspath(raw_target))
-            try:
-                escapes_root = (os.path.commonpath([canonical_root, normalized_target]) != canonical_root)
-            except ValueError:
-                escapes_root = True
+            escapes_root = not _is_inside(canonical_root, normalized_target)
 
         if escapes_root:
             rel_path = clean_path
