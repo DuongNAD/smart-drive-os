@@ -208,11 +208,14 @@ def cmd_clean(args: argparse.Namespace) -> int:
         return 0 if res.get("failed_count", 0) == 0 else 1
 
     tier_map = {1: JunkTier.TIER_1_SAFE, 2: JunkTier.TIER_2_DEV_CACHE, 3: JunkTier.TIER_3_SENSITIVE}
-    raw_tier = getattr(args, "tier", 1)
+    only_tier = getattr(args, "only_tier", None) or None  # that tier alone; `--tier N` means tiers 1 to N
+    raw_tier = only_tier or getattr(args, "tier", 1)
     max_tier = tier_map.get(raw_tier, JunkTier.TIER_1_SAFE)
 
     detector = JunkDetector(root, max_tier=max_tier)
     junk_items = detector.find_junk()
+    if only_tier:
+        junk_items = [j for j in junk_items if int(j.tier) == only_tier]
     kept = detector.get_kept_summary()
 
     is_dry_run = not getattr(args, "apply", False)
@@ -225,6 +228,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
             "root": root,
             "dry_run": is_dry_run,
             "quarantine": quarantine,
+            "only_tier": only_tier,
             "junk_count": len(junk_items),
             "junk_items": junk_dicts,
             "total_reclaimable_bytes": sum(j["size"] for j in junk_items),
@@ -255,7 +259,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
         return 0
 
     print(f"\nScanning for system junk in: {root}")
-    print(f"Junk Tier: {max_tier.name} | Mode: {'DRY RUN (Simulation)' if is_dry_run else 'APPLY (Purge)'}")
+    print(f"Junk Tier: {max_tier.name}{' only' if only_tier else ''} | Mode: {'DRY RUN (Simulation)' if is_dry_run else 'APPLY (Purge)'}")
     print("-" * 70)
 
     if not junk_items:
@@ -281,7 +285,11 @@ def cmd_clean(args: argparse.Namespace) -> int:
 
     if is_dry_run:
         print("\n[DRY RUN] No files were deleted. Run with --apply to execute purge.")
-        if quarantine:
+        if only_tier == 3 and quarantine:
+            print("--only-tier 3: --apply moves these items to the quarantine (restore with --restore) and deletes nothing else.")
+        elif only_tier in (1, 2):
+            print(f"--only-tier {only_tier}: --apply deletes these Tier {only_tier} items permanently (no quarantine) and leaves the other tiers alone.")
+        elif quarantine:
             print("Tier 1-2 items are deleted permanently (no quarantine); only Tier 3 items can be restored (--restore).")
         else:
             print("--no-quarantine: every item is deleted permanently.")

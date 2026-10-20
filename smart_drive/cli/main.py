@@ -284,7 +284,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_clean.add_argument("--restore", metavar="BATCH", help="Restore a quarantine batch by ID or 'latest' without overwriting")
     p_clean.add_argument("--purge-quarantine", action="store_true", help="Preview (or with --apply permanently delete) quarantine batches older than --older-than days (default 30)")
     p_clean.add_argument("--older-than", type=float, default=None, metavar="DAYS", help="With --purge-quarantine: only batches older than DAYS days (default: 30; 0 purges every batch)")
-    p_clean.add_argument("--tier", type=int, default=1, choices=[1, 2, 3], help="Junk tier severity (1=Safe, 2=Caches, 3=Dumps)")
+    p_clean_tier = p_clean.add_mutually_exclusive_group()
+    p_clean_tier.add_argument("--tier", type=int, default=1, choices=[1, 2, 3], help="Junk tier severity (1=Safe, 2=Caches, 3=Dumps)")
+    p_clean_tier.add_argument("--only-tier", type=int, default=None, choices=[1, 2, 3], help="Only this junk tier (e.g. --only-tier 3 quarantines temp files and dumps without deleting Tier 1-2 junk)")
     p_clean.add_argument("--log", help="Path to export JSON audit log")
     p_clean.add_argument("--json", action="store_true", help="Output junk report in JSON format")
 

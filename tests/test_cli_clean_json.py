@@ -540,5 +540,153 @@ class TestCleanQuarantineCLI(unittest.TestCase):
         self.assertIn("default: 30", " ".join(out.getvalue().split()))
 
 
+class TestCleanOnlyTier(unittest.TestCase):
+    """`--only-tier N` lists and applies one junk tier. `--tier N` means tiers 1 to N, so `--tier 3 --apply` also deleted
+    every Tier 1-2 item for good and nothing could send the Tier 3 junk alone to the quarantine."""
+
+    TIER_1 = (".DS_Store", "Thumbs.db")
+    TIER_2 = (".pytest_cache",)
+    TIER_3 = ("scratch.tmp", "x.tmp")
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="sd_clean_only_")).resolve()
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        for rel in self.TIER_1 + (".pytest_cache/state",) + self.TIER_3 + ("notes.txt",):
+            path = self.root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("content_" + rel.replace("/", "_"), encoding="utf-8")
+
+    def run_cmd(self, *args: str) -> Tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["clean", "--root", str(self.root), *args])
+        return code, out.getvalue(), err.getvalue()
+
+    def present(self, names: Tuple[str, ...]) -> List[str]:
+        return [n for n in names if (self.root / n).exists()]
+
+    def test_only_tier_3_apply_quarantines_just_the_tier_3_files(self) -> None:
+        code, out, _ = self.run_cmd("--only-tier", "3", "--apply", "--json")
+        report = json.loads(out)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(report["only_tier"], 3)
+        self.assertEqual((report["deleted_count"], report["quarantined_count"], report["failed_count"]), (0, 2, 0))
+        batch_dir = self.root / ".smart_drive" / "quarantine" / report["batch_id"]
+        manifest = json.loads((batch_dir / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual({m["original"] for m in manifest}, set(self.TIER_3))
+        self.assertEqual({p.name for p in batch_dir.iterdir()}, {"manifest.json", *self.TIER_3})
+        self.assertEqual(self.present(self.TIER_3), [])
+        # the Tier 1-2 entries are where they were: not deleted, and not in the quarantine either
+        self.assertEqual(self.present(self.TIER_1 + self.TIER_2), list(self.TIER_1 + self.TIER_2))
+        self.assertTrue((self.root / "notes.txt").is_file())
+
+    def test_only_tier_3_dry_run_lists_only_the_tier_3_items(self) -> None:
+        code, out, _ = self.run_cmd("--only-tier", "3", "--json")
+        report = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertTrue(report["dry_run"])
+        self.assertEqual(report["only_tier"], 3)
+        self.assertEqual({j["rel_path"] for j in report["junk_items"]}, set(self.TIER_3))
+        self.assertEqual({j["tier"] for j in report["junk_items"]}, {3})
+        self.assertEqual(report["junk_count"], 2)
+        self.assertEqual(report["total_reclaimable_bytes"], sum((self.root / n).stat().st_size for n in self.TIER_3))
+        everything = self.TIER_1 + self.TIER_2 + self.TIER_3
+        self.assertEqual(self.present(everything), list(everything))
+
+    def test_only_tier_1_apply_deletes_the_tier_1_files_and_leaves_the_other_tiers(self) -> None:
+        code, out, _ = self.run_cmd("--only-tier", "1", "--apply", "--json")
+        report = json.loads(out)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((report["only_tier"], report["deleted_count"], report["quarantined_count"]), (1, 2, 0))
+        self.assertEqual(self.present(self.TIER_1), [])
+        self.assertEqual(self.present(self.TIER_2 + self.TIER_3), list(self.TIER_2 + self.TIER_3))
+        self.assertFalse((self.root / ".smart_drive" / "quarantine").exists())
+
+    def test_only_tier_2_apply_deletes_the_cache_folder_and_leaves_the_other_tiers(self) -> None:
+        code, out, _ = self.run_cmd("--only-tier", "2", "--apply", "--json")
+        report = json.loads(out)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((report["only_tier"], report["deleted_count"], report["quarantined_count"]), (2, 1, 0))
+        self.assertEqual(self.present(self.TIER_2), [])
+        self.assertEqual(self.present(self.TIER_1 + self.TIER_3), list(self.TIER_1 + self.TIER_3))
+        self.assertFalse((self.root / ".smart_drive" / "quarantine").exists())
+
+    def test_only_tier_3_with_no_quarantine_deletes_just_the_tier_3_files_for_good(self) -> None:
+        code, out, _ = self.run_cmd("--only-tier", "3", "--no-quarantine", "--apply", "--json")
+        report = json.loads(out)
+        self.assertEqual(code, 0, out)
+        self.assertEqual((report["deleted_count"], report["quarantined_count"]), (2, 0))
+        self.assertEqual(self.present(self.TIER_3), [])
+        self.assertEqual(self.present(self.TIER_1 + self.TIER_2), list(self.TIER_1 + self.TIER_2))
+        self.assertFalse((self.root / ".smart_drive" / "quarantine").exists())
+
+    def test_only_tier_3_apply_in_text_mode_reports_a_quarantine_and_no_deletion(self) -> None:
+        code, out, _ = self.run_cmd("--only-tier", "3", "--apply")
+        self.assertEqual(code, 0)
+        self.assertIn("Quarantined 2 item(s)", out)
+        self.assertNotIn("Deleted", out)
+        self.assertIn("Restore with: smart-drive clean --restore", out)
+
+    def test_tier_and_only_tier_cannot_be_combined(self) -> None:
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as raised:
+            main(["clean", "--root", str(self.root), "--tier", "3", "--only-tier", "3"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("not allowed with", err.getvalue())
+        everything = self.TIER_1 + self.TIER_2 + self.TIER_3
+        self.assertEqual(self.present(everything), list(everything))
+
+    def test_the_text_dry_run_of_only_tier_3_names_the_tier_and_says_what_apply_does(self) -> None:
+        code, out, _ = self.run_cmd("--only-tier", "3")
+        self.assertEqual(code, 0)
+        self.assertIn("Junk Tier: TIER_3_SENSITIVE only | Mode: DRY RUN (Simulation)", out)
+        self.assertIn("Found 2 junk items.", out)
+        self.assertIn(
+            "--only-tier 3: --apply moves these items to the quarantine (restore with --restore) and deletes nothing else.",
+            out,
+        )
+        self.assertNotIn("Tier 1-2 items are deleted permanently", out)
+        self.assertNotIn(".DS_Store", out)
+        self.assertNotIn(".pytest_cache", out)
+
+    def test_the_footer_of_the_text_dry_run_follows_the_tier_and_no_quarantine(self) -> None:
+        for argv, tier_name, footer in (
+            (
+                ("--only-tier", "1"),
+                "TIER_1_SAFE",
+                "--only-tier 1: --apply deletes these Tier 1 items permanently (no quarantine) and leaves the other tiers alone.",
+            ),
+            (
+                ("--only-tier", "2"),
+                "TIER_2_DEV_CACHE",
+                "--only-tier 2: --apply deletes these Tier 2 items permanently (no quarantine) and leaves the other tiers alone.",
+            ),
+            (("--only-tier", "3", "--no-quarantine"), "TIER_3_SENSITIVE", "--no-quarantine: every item is deleted permanently."),
+        ):
+            with self.subTest(argv=argv):
+                _, out, _ = self.run_cmd(*argv)
+                self.assertIn(f"Junk Tier: {tier_name} only | Mode: DRY RUN (Simulation)", out)
+                self.assertIn(footer, out)
+                self.assertNotIn("Tier 1-2 items are deleted permanently", out)
+
+    def test_without_only_tier_the_report_and_the_text_are_as_before(self) -> None:
+        _, out, _ = self.run_cmd("--tier", "3", "--json")
+        self.assertIsNone(json.loads(out)["only_tier"])
+        _, out, _ = self.run_cmd("--tier", "3")
+        self.assertIn("Junk Tier: TIER_3_SENSITIVE | Mode: DRY RUN (Simulation)", out)
+        self.assertIn("Tier 1-2 items are deleted permanently (no quarantine); only Tier 3 items can be restored (--restore).", out)
+        _, out, _ = self.run_cmd("--tier", "1", "--apply", "--json")
+        self.assertIsNone(json.loads(out)["only_tier"])
+
+    def test_the_kept_summary_stays_the_one_the_detector_reports(self) -> None:
+        installed = self.root / "node_modules" / "pkg"
+        installed.mkdir(parents=True)
+        (installed / "y.tmp").write_text("x", encoding="utf-8")
+        _, out, _ = self.run_cmd("--only-tier", "3", "--json")
+        report = json.loads(out)
+        self.assertEqual(report["kept"]["total"], 1)
+        self.assertEqual({j["rel_path"] for j in report["junk_items"]}, set(self.TIER_3))
+
+
 if __name__ == "__main__":
     unittest.main()
