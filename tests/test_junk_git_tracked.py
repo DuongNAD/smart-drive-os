@@ -138,9 +138,9 @@ class TestTrackedEntriesAreKept(TreeCase):
 
     def test_a_tracked_file_named_like_a_core_dump_is_kept_at_tier_3(self) -> None:
         repo = self.make_repo()
-        self.write("repo/core.py", "print()")
+        self.write("repo/core.4321", "a core file a debugger test suite keeps as a fixture")
         self.write("repo/scratch.tmp")
-        self.commit(repo, "core.py")
+        self.commit(repo, "core.4321")
         detector = self.detect()
         self.assertEqual(self.found, {"repo/scratch.tmp"})
         self.assertEqual(detector.kept, {KEPT_GIT_TRACKED: 1})
@@ -219,7 +219,7 @@ class TestWhatIsAskedOfGit(TreeCase):
     def test_the_number_of_questions_put_to_git_in_one_scan_is_bounded(self) -> None:
         fake_repository(self.root / "repo")
         for i in range(6):
-            self.write(f"repo/d{i}/core.js")  # matches the `core.*` core-dump rule, and may well be tracked
+            self.write(f"repo/d{i}/fixture.tmp")  # matches the `*.tmp` rule, and may well be tracked
         with patch.object(junk_detector, "MAX_GIT_QUERIES", 4):
             with patch.object(junk_detector, "_git_tracks", return_value=False) as asked:
                 detector = self.detect()

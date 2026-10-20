@@ -53,7 +53,8 @@ KEPT_GIT_UNVERIFIED = "git_unverified"  # inside a git work tree that git could 
 
 GIT_TIMEOUT = 20  # seconds for one `git ls-files`
 # Questions put to git in one scan. A process per entry would take minutes when a repository holds hundreds of files
-# named like junk (`core.py` matches `core.*`); past the limit the entries left in a work tree are kept unverified.
+# named like junk (`*.tmp` fixtures, `dist` folders of a monorepo); past the limit the entries left in a work tree
+# are kept unverified.
 MAX_GIT_QUERIES = 300
 # Set when this runs from a git hook; they would send `git -C <folder>` to the wrong repository
 _GIT_ENV_UNSET = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_PREFIX")
@@ -259,6 +260,9 @@ class JunkDetector:
         always_check = {False: False, True: False}
         for rule in JUNK_RULES:
             if rule.tier > max_tier:
+                continue
+            if rule.name_regex is not None:  # `pattern` is only its label; the regex decides, on the whole name
+                patterns[rule.is_directory].append(f"(?:{rule.name_regex})\\Z")
                 continue
             pattern = rule.pattern.lower()
             if "/" in pattern:

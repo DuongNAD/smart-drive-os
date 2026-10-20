@@ -538,6 +538,10 @@ class JunkRule:
     ``dist``, ``.cache``) and ordinary folders anywhere else: the rule counts only when the folder holding the match
     also holds a project manifest (see ``is_project_manifest``). Matching a name cannot tell, as it takes a look at
     the disk: JunkDetector does that.
+
+    ``name_regex`` is for a name no glob can describe (a core dump is ``core.<digits>``, never ``core.py``): when
+    set, the whole lowercase name must match it, and ``pattern`` is only how the rule is listed (README, tests),
+    never matched as a glob.
     """
     pattern: str
     is_directory: bool
@@ -545,6 +549,7 @@ class JunkRule:
     description: str
     os_source: str
     project_root_only: bool = False
+    name_regex: Optional[str] = None
 
 
 JUNK_RULES: Tuple[JunkRule, ...] = (
@@ -591,7 +596,10 @@ JUNK_RULES: Tuple[JunkRule, ...] = (
     # TIER 3: SENSITIVE / OPT-IN (Crash Dumps, Diagnostics, Temp)
     # --------------------------------------------------------------------------
     JunkRule("*.dmp", False, JunkTier.TIER_3_SENSITIVE, "Windows crash dump", "Windows"),
-    JunkRule("core.*", False, JunkTier.TIER_3_SENSITIVE, "Unix core dump", "Dev"),
+    # The kernel names a core dump `core` or `core.<pid>`. `core.*` also took core.py, core.js, core.css and
+    # core.min.js: source files that a Tier 3 clean quarantined unless git happened to track them.
+    JunkRule("core", False, JunkTier.TIER_3_SENSITIVE, "Unix core dump", "Dev"),
+    JunkRule("core.<pid>", False, JunkTier.TIER_3_SENSITIVE, "Unix core dump", "Dev", name_regex=r"core\.[0-9]+"),
     JunkRule("hs_err_pid*.log", False, JunkTier.TIER_3_SENSITIVE, "Java crash log", "Dev"),
     JunkRule("*.tmp", False, JunkTier.TIER_3_SENSITIVE, "Temporary scratch file", "All"),
     JunkRule("*.temp", False, JunkTier.TIER_3_SENSITIVE, "Temporary scratch file", "All"),
@@ -703,6 +711,10 @@ def match_junk_rule(
         if rule.is_directory != is_dir:
             continue
         if rule.tier > max_tier:
+            continue
+        if rule.name_regex is not None:
+            if re.fullmatch(rule.name_regex, name_lower):
+                return rule
             continue
         pattern_lower = rule.pattern.lower()
         if fnmatch.fnmatch(name_lower, pattern_lower):
