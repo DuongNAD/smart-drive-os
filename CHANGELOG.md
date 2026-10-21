@@ -39,6 +39,10 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 - `checkup` gave the drive's cluster size in its text report (the `Filesystem:` line, `Hệ tệp & Cluster:` in
   Vietnamese) in whole KB, so a cluster of 512 B or of 1536 B read "1 KB". It now names it the way `audit` does
   (`fsinfo.cluster_size_text`: `4 KB`, `512 KB`, `512 B`, `1536 B`); `checkup --json` is unchanged.
+- The `Cluster Size:` line of `smart-drive health` said "512 bytes (512 KB)" for a cluster of 512 B and
+  "1,536 bytes (1 KB)" for one of 1536 B: below 1 KB it put KB after the byte count, and above it dropped what was
+  left over. The part in brackets now names the size the way `audit` does (`512 B`, `1536 B`, `4 KB`, `512 KB`);
+  `health --json` is unchanged.
 
 ## [1.4.3] - 2026-10-21
 

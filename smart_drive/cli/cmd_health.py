@@ -7,6 +7,7 @@ import json
 import sys
 from typing import Optional
 
+from smart_drive.core.fsinfo import cluster_size_text
 from smart_drive.core.health import check_drive_health
 
 
@@ -53,14 +54,13 @@ def cmd_health(args: argparse.Namespace) -> int:
 
     # Human-readable formatted terminal output
     used_bytes = max(0, report.total_bytes - report.free_bytes)
-    cluster_kb = report.cluster_size_bytes // 1024 if report.cluster_size_bytes >= 1024 else report.cluster_size_bytes
 
     print("=" * 70)
     print("  SmartDrive-OS SSD Health, TRIM & Partition Diagnostics")
     print("=" * 70)
     print(f"Drive Volume:        {report.drive_letter}")
     print(f"Filesystem:          {report.filesystem}")
-    print(f"Cluster Size:        {report.cluster_size_bytes:,} bytes ({cluster_kb} KB)")
+    print(f"Cluster Size:        {report.cluster_size_bytes:,} bytes ({cluster_size_text(report.cluster_size_bytes)})")
     print(f"Total Capacity:      {format_bytes_human(report.total_bytes)}")
     print(f"Used Space:          {format_bytes_human(used_bytes)}")
     print(f"Free Space:          {format_bytes_human(report.free_bytes)} ({report.free_percent:.1f}% free)")
