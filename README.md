@@ -404,7 +404,7 @@ High-capacity external SSDs (such as the Kingston XS2000 2 TB) format exFAT with
 ## CLI reference
 
 <details>
-<summary>All 25 commands and their key arguments</summary>
+<summary>All 26 commands and their key arguments</summary>
 
 All commands run via `smart-drive <command>`, `python -m smart_drive <command>`, or `py -m smart_drive <command>` (Windows when `python` is not on `PATH`):
 
@@ -412,6 +412,7 @@ All commands run via `smart-drive <command>`, `python -m smart_drive <command>`,
 |---|---|---|
 | `self-path-check` | *(none)* | Inspects Python CLI script paths on system `PATH` and outputs 1-click setup commands. |
 | `checkup` | `--root <path>`, `--dup`, `--lang {en,vi}`, `--json` | 1-screen drive health score (`0–100`), comparison against previous run, and prioritized next-step commands. Writes only its last report, `.smart_drive/checkup.json` (overwritten on each run), and reads it back for that comparison. |
+| `doctor` | `--root <path>`, `--report`, `--json` | Read-only, offline environment report for bug reports: SmartDrive-OS version and install method, Python and SQLite FTS5, OS, the drive's filesystem and cluster size, which coding agents and IDEs are installed and whether each has the smart-drive MCP entry, the latest move batches and the last checkup score. Works without a drive root (that is then part of the report) and never scans the drive. Plain text by default; `--report` prints a Markdown block to paste into a GitHub issue; `--json` prints the same data as JSON and wins over `--report`. Paths show the home folder as `~` and the user name as `<user>`; no file names from the drive, tokens or config contents are included. |
 | `init` | `--profile <name>`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
 | `status` | `--root <path>`, `--json` | Inspect SSD mount point, detected filesystem, geometry, shield health, and taxonomy status. |
 | `audit` | `--root <path>`, `--html [file]`, `--json`, `--markdown`, `--export <file>` | Storage & cluster slack audit using the drive's real cluster size (4 KB NTFS, 512 KB exFAT, etc.). `--html` exports a self-contained offline treemap report (default `<root>/.smart_drive/reports/audit.html`). Hard links counted once; symlinks/junctions skipped and counted. |
