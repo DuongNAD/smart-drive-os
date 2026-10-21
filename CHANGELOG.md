@@ -24,6 +24,14 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   gained `cluster_size`, `cluster_size_source` (`"detected"`, or `"assumed"` when the 512 KB cluster was used because
   the size could not be read), `filesystem` and `slack_model_note`; `audit --json` gained `cluster_size_source`; and the
   tool description no longer claims 512 KB.
+- The MCP tool `ssd_find_duplicates` still described its savings as "512KB physical cluster space savings" although
+  1.4.0 made it work them out at the drive's real cluster size (`cluster_size`, 4096 on an NTFS drive), with 512 KB only
+  as the fallback when that size cannot be read. Agents read a tool's description to decide what its numbers mean, so on
+  a 4 KB drive they were told the savings were 512 KB ones. The description now says what the tool computes: the
+  nominal bytes the redundant copies hold and the cluster slack they waste at the drive's real cluster size
+  (`cluster_size_source` is `"detected"`, or `"assumed"` when the 512 KB exFAT cluster was used), how it compares files
+  (by size, then by their first 8 KB and, above 16 KB, their last 8 KB, then in full), and which folders it does not
+  enter.
 
 ## [1.4.2] - 2026-10-21
 

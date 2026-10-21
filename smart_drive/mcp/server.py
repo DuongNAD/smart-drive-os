@@ -273,7 +273,14 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "ssd_find_duplicates",
-        "description": "Detects identical duplicate files using 3-phase cascade (Size -> 8KB Hash -> Full SHA-256) and returns exact nominal and 512KB physical cluster space savings with pagination controls.",
+        "description": (
+            "Detects identical duplicate files using a 3-phase cascade (size -> SHA-256 of the first 8KB and, above "
+            "16KB, the last 8KB -> full SHA-256), without entering dependency or cache trees or folders Windows or "
+            "installed apps depend on. Returns the nominal bytes the redundant copies hold (total_reclaimable_bytes) "
+            "and the cluster slack they waste (total_reclaimable_slack) at the drive's real cluster size "
+            "(cluster_size; cluster_size_source is 'detected', or 'assumed' when it could not be read and the 512KB "
+            "exFAT cluster was used), with pagination controls."
+        ),
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,

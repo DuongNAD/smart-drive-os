@@ -227,7 +227,9 @@ class TestToolSchemaAndBehaviorAccuracy(SmartDriveTestCase):
         desc = tool["description"]
         self.assertIn("3-phase cascade", desc)
         self.assertIn("nominal", desc)
-        self.assertIn("512KB physical cluster space savings", desc)
+        self.assertIn("drive's real cluster size", desc)
+        self.assertIn("cluster_size_source", desc)
+        self.assertNotIn("512KB physical cluster space savings", desc)
 
         # Schema property verification
         props = tool["inputSchema"]["properties"]

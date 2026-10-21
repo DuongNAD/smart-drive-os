@@ -3,7 +3,8 @@
 Regression: `dup`, `checkup --dup` and the MCP tool `ssd_find_duplicates` built their DuplicateDetector with the default
 512 KB exFAT cluster, so `total_reclaimable_slack` was a made-up figure on an NTFS volume (4 KB clusters), while `audit`
 and `checkup` already used the detected allocation unit. They now ask `detect_filesystem` and fall back to 512 KB only
-when the cluster size cannot be read.
+when the cluster size cannot be read. The description of `ssd_find_duplicates` kept promising "512KB physical cluster
+space savings" after that; it now says what the tool returns, and a test holds it to the result.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import contextlib
 import importlib
 import io
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -25,7 +27,7 @@ from smart_drive.core.config import CLUSTER_SIZE_BYTES, calculate_slack_bytes
 from smart_drive.core.duplicates import DuplicateDetector
 from smart_drive.core.fsinfo import FilesystemInfo
 from smart_drive.core.system_refs import RegistryReader, SystemRefIndex
-from smart_drive.mcp.server import SmartDriveMCPServer
+from smart_drive.mcp.server import TOOLS, SmartDriveMCPServer
 from tests.helpers import SmartDriveTestCase
 
 # `smart_drive.cli` re-exports the `main` function, so the attribute `smart_drive.cli.main` is that function and not the
@@ -208,6 +210,20 @@ class TestMcpFindDuplicates(_Drive):
         res = self.find(volume(self.root, 4096), limit=5)
         self.assertEqual((res["limit"], res["offset"], res["total_groups"], res["duplicate_file_count"]), (5, 0, 1, 2))
         self.assertEqual((res["has_more"], res["next_offset"], res["total_reclaimable_bytes"]), (False, None, 5000))
+
+    def test_the_description_says_what_the_result_holds(self) -> None:
+        """An agent reads the description to decide what the numbers mean, so it must match the result."""
+        tool = next(tool for tool in TOOLS if tool["name"] == "ssd_find_duplicates")
+        description = tool["description"]
+        res = self.find(volume(self.root, 4096))
+        self.assertEqual((res["cluster_size"], res["cluster_size_source"]), (4096, "detected"))
+        self.assertNotIn("512KB physical", description)
+        self.assertIn("real cluster size", description)
+        # Every name it gives is a field of the result (or an argument of the tool), and it gives the ones that matter
+        named = set(re.findall(r"[a-z]+(?:_[a-z]+)+", description))
+        self.assertEqual(named - set(res) - set(tool["inputSchema"]["properties"]), set())
+        needed = {"total_reclaimable_bytes", "total_reclaimable_slack", "cluster_size", "cluster_size_source"}
+        self.assertEqual(needed - named, set())
 
 
 if __name__ == "__main__":
