@@ -237,7 +237,7 @@ def cluster_size_text(cluster_size: int) -> str:
 
 def slack_model_note(info: FilesystemInfo, model_cluster_size: int) -> Optional[str]:
     """Explains when the modelled cluster size is not this volume's real one; None when it is."""
-    model = f"{model_cluster_size // 1024} KB"
+    model = cluster_size_text(model_cluster_size)
     if not info.known:
         return f"Could not detect the filesystem; cluster-slack figures model {model} clusters."
     if info.block_size == model_cluster_size or (info.is_exfat and info.block_size == 0):
