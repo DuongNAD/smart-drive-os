@@ -542,11 +542,27 @@ Chạy thủ công trước mỗi bản phát hành; vượt ngân sách thì s�
   (các công cụ khác cũng nói như vậy thay vì "escapes storage root"), và coi chính gốc lưu trữ là được bảo vệ
   (`is_safe: false`, `is_protected_root_dir: true`, trường mới `is_storage_root`). Cùng đợt: `organize` khi chạy thử
   (`--dry-run`, mặc định, hay `--clean` không kèm `--apply`) không còn ghi `.metadata_never_index` và `.fseventsd/no_log`
-  vào gốc ổ (MCP `ssd_auto_organize` vốn đúng); `--json` báo thêm `anti_indexing_shields_to_create`. Còn: `clean`/
-  `ssd_clean`, `snapshot`, `backup` và phần rác của `checkup` vẫn tính dung lượng cấp phát theo cluster 512 KB mặc định
-  trên mọi ổ (CLI và MCP khớp nhau nhưng cùng sai trên NTFS 4 KB); báo cáo text/markdown của `audit` còn ghi cứng
-  "512KB" ở vài nhãn (`Allocated 512KB Clusters`, tiêu đề mục hotspot); bản xem trước của `Smart_Organize` vẫn ghi
-  `<gốc>/.smart_drive/smart-organize.log`.
+  vào gốc ổ (MCP `ssd_auto_organize` vốn đúng); `--json` báo thêm `anti_indexing_shields_to_create`. Các mục còn lại
+  của đợt này đã xong, xem mục kế tiếp.
+- **Cluster thật và bản xem trước** ✅ (sau 1.4.2, chưa phát hành; tái hiện trên `E:` ở chế độ chỉ đọc rồi mới sửa, mỗi
+  mục một commit có test). `clean`/`ssd_clean`, `snapshot`, bước dọn của `organize --clean`/`ssd_auto_organize`,
+  `backup` và phần rác của `checkup` từng dựng JunkDetector/PurgeEngine/SnapshotManager với cluster 512 KB mặc định: trên
+  `E:` `clean --json` (tier 1) cho 3.811 mục rác giữ 570 MB chiếm 15,99 GB, `ssd_clean` báo y hệt ở
+  `slack_bytes_reclaimed`; nay cả hai báo 639,8 MB ở cluster 4 KB. `clean --json`, `ssd_clean` và manifest snapshot có
+  thêm `cluster_size`, `cluster_size_source` (manifest cũ đọc là 512 KB `assumed`); `backup` không có số liệu cấp phát
+  nên không thêm trường; một test AST chặn mọi engine dựng trong `cli`/`mcp` mà thiếu `cluster_size=`. Báo cáo
+  text/markdown của `audit` ghi đúng cluster đã dùng (`Allocated Clusters: … (4 KB each)`, `Cluster Slack Hotspots
+  (4 KB clusters)`). Phần xem trước và `SD_SELFTEST` của `Smart_Organize` không còn ghi gì vào ổ: nhật ký
+  `smart-organize.log` chỉ được ghi khi người dùng gõ `YES` (lần chạy bị hủy không để lại dấu vết, có chủ đích).
+  `checkup` vẫn ghi `.smart_drive/checkup.json` (báo cáo lần trước để so điểm; nó đi theo ổ sang máy khác) và help/README
+  giờ nói đúng như vậy thay vì "chỉ đọc". `sentinel` (cả `--no-heal`) và `ssd_status` từng ghi lại `.git/index` của repo
+  có index cũ vì `git status` chạy không kèm `GIT_OPTIONAL_LOCKS=0`; nay đã kèm. `tests/test_previews_write_nothing.py`
+  chạy mọi bản xem trước (CLI, MCP, `Smart_Organize`) trên ổ tạm, cả trên một repo git thật, và so từng byte. Còn: JSON
+  của `organize` chưa có `cluster_size_source`; `ssd_clean` giữ tên `slack_bytes_reclaimed` dù đó là dung lượng cấp
+  phát (đổi tên sẽ làm hỏng agent đang đọc trường này; mô tả công cụ đã nói rõ); `sentinel` không kèm `--no-heal` vẫn
+  ghi khiên chống lập chỉ mục (đúng thiết kế); `status`/`sentinel` vẫn hiển thị mô hình 512 KB kèm `slack_model_note`;
+  `duplicates.py` còn import `CLUSTER_SIZE_BYTES` không dùng; bảng micro-file của báo cáo markdown có ô phân cách thừa
+  (`|:---||`).
 - **`dup`**: bản cài portable không đăng ký với Windows (ví dụ SonarQube trong `E:\tool`) vẫn có `.jar` trùng được liệt kê;
   cần dùng lại heuristic "thư mục ứng dụng" của `classify` hoặc cho người dùng tự loại trừ. ✅ Biểu thức "cluster đã phát
   hiện, nếu không thì 512 KB" (từng lặp ở `cmd_audit`, `cmd_checkup`, `cmd_dup`, `server.py` và `AutoZoner`) giờ chỉ nằm
