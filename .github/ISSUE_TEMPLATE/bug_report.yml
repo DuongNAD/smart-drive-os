@@ -1,0 +1,50 @@
+name: Bug report
+description: Something failed, or SmartDrive-OS did something you did not expect.
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing SmartDrive-OS. One problem per issue, please.
+
+        **Lost data, an MCP tool that reached outside the drive, a write outside the drive, or a damaged agent or IDE config?** Report it privately instead, as [SECURITY.md](https://github.com/DuongNAD/smart-drive-os/security/policy) explains.
+  - type: textarea
+    id: report
+    attributes:
+      label: Environment report
+      description: "Run `smart-drive doctor --report` and paste its output here. It shows your home folder as `~` and your user name as `<user>`, and holds no file names, tokens or config contents; read it before you post."
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command you ran, with every option, or the MCP tool and the arguments your agent sent.
+      placeholder: smart-drive organize --root /Volumes/T7 --apply
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, with the full output or error. Replace file names you do not want to make public.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: dropdown
+    id: changed
+    attributes:
+      label: Did it change anything on disk?
+      options:
+        - "No"
+        - "Yes, and undo or restore put it back"
+        - "Not sure"
+    validations:
+      required: true

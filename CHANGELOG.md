@@ -50,6 +50,9 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   which versions get fixes, and what counts as a security issue for SmartDrive-OS: data loss, a path escape in an MCP
   tool, writing outside the drive and corrupting a coding agent's or IDE's config. `README.md`, `README_VN.md` and
   `PRIVACY.md` link to it.
+- GitHub issue forms: a Bug report form that asks for the output of `smart-drive doctor --report`, the exact command,
+  what happened and what was expected, a Feature request form, and a link that sends security problems to
+  `SECURITY.md` instead of a public issue. `CONTRIBUTING.md` points to them.
 
 ### Changed
 

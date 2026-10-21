@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest something SmartDrive-OS should do, or do differently.
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The task, and where SmartDrive-OS gets in the way or falls short.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: The command, option, MCP tool or behaviour you would like. An example of the output is welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup
+      description: "Optional: your OS, filesystem and coding agents, or the output of `smart-drive doctor --report`."
