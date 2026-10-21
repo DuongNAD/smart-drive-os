@@ -528,7 +528,13 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "ssd_auto_organize",
-        "description": "Autonomous drive auto-zoning, anti-slack rebalancing, and organization. Classifies loose items into standard taxonomies, ensures shields, and syncs index. Moved folders stay usable by coding agents: the project and MCP server paths they remember are rewritten to the new places.",
+        "description": (
+            "Autonomous drive auto-zoning, anti-slack rebalancing, and organization. Classifies loose items into "
+            "standard taxonomies, ensures shields, and syncs index. Moved folders stay usable by coding agents: the "
+            "project and MCP server paths they remember are rewritten to the new places. Slack figures are worked out "
+            "at the drive's real cluster size (cluster_size; cluster_size_source is 'detected', or 'assumed' when it "
+            "could not be read and the 512KB exFAT cluster was used)."
+        ),
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": True,
@@ -1424,6 +1430,7 @@ class SmartDriveMCPServer:
             return {
                 "status": "applied",
                 "cluster_size": zoner.cluster_size,
+                "cluster_size_source": zoner.cluster_size_source,
                 "result": res,
                 "protected_by_system": zoner.protected_by_system,
                 "relink": relinked.to_dict() if relinked else None,
@@ -1434,6 +1441,7 @@ class SmartDriveMCPServer:
         return {
             "status": "dry_run",
             "cluster_size": zoner.cluster_size,
+            "cluster_size_source": zoner.cluster_size_source,
             "plan_count": len(plan),
             "actions": [a.to_dict() for a in plan],
             "protected_by_system": zoner.protected_by_system,

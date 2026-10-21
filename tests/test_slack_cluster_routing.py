@@ -19,6 +19,11 @@ manifests (`snapshot create --json`, `snapshot list --json`) say where the clust
 cluster as well. Each caller has to leave the drive as it found it (a snapshot and a checkup keep state below it), so
 that none shifts the figures of the next. A second static guard reads the source of `smart_drive/cli` and
 `smart_drive/mcp` and fails on a call that builds one of those engines without `cluster_size=`.
+
+`organize --json` and `ssd_auto_organize`, dry run and apply, reported that cluster without saying where it came from:
+AutoZoner, which looks it up for both, dropped the source `slack_cluster` gave it. It keeps it now
+(`cluster_size_source`; None when its caller gives the cluster size, as `checkup` does, which reports the source itself)
+and both report it, so every caller here says where its cluster size came from.
 """
 
 from __future__ import annotations
@@ -34,7 +39,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Set, Tuple
 from unittest.mock import patch
 
 from smart_drive.cli.cmd_checkup import run_checkup
@@ -79,8 +84,8 @@ THUMBS = b"T" * 3000     # a/Thumbs.db
 BYTECODE = b"C" * 6000   # a/__pycache__/m.pyc
 JUNK_BYTES = len(THUMBS) + len(BYTECODE)
 
-# What a caller worked at, and the source it reported (None where its output reports none)
-Worked = Tuple[int, Optional[str]]
+# What a caller worked at, and the source its output gave
+Worked = Tuple[int, str]
 
 # The fallback written out by hand, as it was: `info.block_size if info.block_size > 0 else CLUSTER_SIZE_BYTES`
 SPELLED_OUT = re.compile(r"block_size\s+if\s+[\w.]*block_size\s*>\s*0\s+else|block_size\s+or\s+CLUSTER_SIZE")
@@ -314,7 +319,7 @@ class _Drive(unittest.TestCase):
         cluster = data["cluster_size"]
         self.assertEqual(data["clean_preview"]["reclaimed_nominal_bytes"], JUNK_BYTES)
         self.assertEqual(data["clean_preview"]["reclaimed_slack_bytes"], junk_allocated(cluster))
-        return cluster, None
+        return cluster, data["cluster_size_source"]
 
     def ssd_auto_organize_clean(self, detected: FilesystemInfo) -> Worked:
         with self.quiet_machine(), \
@@ -327,29 +332,29 @@ class _Drive(unittest.TestCase):
         for built in (detector_class, engine_class):  # the clean step builds both at the cluster its plan reports
             (call,) = built.call_args_list
             self.assertEqual(call.kwargs["cluster_size"], cluster)
-        return cluster, None
+        return cluster, result["cluster_size_source"]
 
     def auto_zoner(self, detected: FilesystemInfo) -> Worked:
         with patch.object(AUTO_ZONER, "detect_filesystem", return_value=detected) as detect:
             zoner = AutoZoner(str(self.root), system_refs=SystemRefIndex([]))
         detect.assert_called_once_with(str(self.root))
-        return zoner.cluster_size, None
+        return zoner.cluster_size, zoner.cluster_size_source
 
-    def callers(self) -> List[Tuple[str, Callable[[FilesystemInfo], Worked], bool]]:
-        """Everything that works slack or allocated sizes out, and whether its output says where the cluster is from."""
+    def callers(self) -> List[Tuple[str, Callable[[FilesystemInfo], Worked]]]:
+        """Everything that works slack or allocated sizes out, as (name, call) pairs."""
         return [
-            ("audit --json", self.audit_json, True),
-            ("ssd_audit", self.ssd_audit, True),
-            ("dup --json", self.dup_json, True),
-            ("ssd_find_duplicates", self.ssd_find_duplicates, True),
-            ("checkup --json", self.checkup_json, True),
-            ("clean --json", self.clean_json, True),
-            ("ssd_clean", self.ssd_clean, True),
-            ("snapshot create --json", self.snapshot_create_json, True),
-            ("snapshot list --json", self.snapshot_list_json, True),
-            ("organize --clean --json", self.organize_clean_json, False),
-            ("ssd_auto_organize clean", self.ssd_auto_organize_clean, False),
-            ("AutoZoner", self.auto_zoner, False),
+            ("audit --json", self.audit_json),
+            ("ssd_audit", self.ssd_audit),
+            ("dup --json", self.dup_json),
+            ("ssd_find_duplicates", self.ssd_find_duplicates),
+            ("checkup --json", self.checkup_json),
+            ("clean --json", self.clean_json),
+            ("ssd_clean", self.ssd_clean),
+            ("snapshot create --json", self.snapshot_create_json),
+            ("snapshot list --json", self.snapshot_list_json),
+            ("organize --clean --json", self.organize_clean_json),
+            ("ssd_auto_organize clean", self.ssd_auto_organize_clean),
+            ("AutoZoner", self.auto_zoner),
         ]
 
 
@@ -357,20 +362,20 @@ class TestEveryCallerAsksTheHelper(_Drive):
     def test_a_cluster_that_cannot_be_read_is_worked_out_at_the_one_fallback(self) -> None:
         before = self.tree()
         with patch.object(FSINFO, "CLUSTER_SIZE_BYTES", FALLBACK):
-            for name, call, reports_source in self.callers():
+            for name, call in self.callers():
                 for fs_type in ("unknown", "ntfs"):
                     with self.subTest(caller=name, fs_type=fs_type):
                         worked = call(volume(self.root, 0, fs_type))
-                        self.assertEqual(worked, (FALLBACK, "assumed" if reports_source else None))
+                        self.assertEqual(worked, (FALLBACK, "assumed"))
                         self.assertEqual(self.tree(), before, "the caller left something on the drive")
 
     def test_a_detected_cluster_is_used_as_it_is_by_all_of_them(self) -> None:
         before = self.tree()
         with patch.object(FSINFO, "CLUSTER_SIZE_BYTES", FALLBACK):
-            for name, call, reports_source in self.callers():
+            for name, call in self.callers():
                 with self.subTest(caller=name):
                     worked = call(volume(self.root, DETECTED))
-                    self.assertEqual(worked, (DETECTED, "detected" if reports_source else None))
+                    self.assertEqual(worked, (DETECTED, "detected"))
                     self.assertEqual(self.tree(), before, "the caller left something on the drive")
 
     def test_an_explicit_cluster_size_is_used_without_asking_the_volume(self) -> None:
@@ -378,6 +383,92 @@ class TestEveryCallerAsksTheHelper(_Drive):
             zoner = AutoZoner(str(self.root), cluster_size=8192, system_refs=SystemRefIndex([]))
         detect.assert_not_called()
         self.assertEqual(zoner.cluster_size, 8192)
+        # Only the caller knows where a size it gives came from (checkup reports its own), so the zoner names no source
+        self.assertIsNone(zoner.cluster_size_source)
+
+
+class TestOrganizeSaysWhereItsClusterIsFrom(_Drive):
+    """`organize --json` and `ssd_auto_organize` gain `cluster_size_source` and keep every field they had."""
+
+    # The fields each output held before it gained the source
+    ORGANIZE_DRY_RUN = {
+        "status", "cluster_size", "clean_preview", "planned_actions", "protected_by_system", "busy_apps",
+        "busy_apps_unknown", "fsmonitor_to_stop", "relink_preview", "anti_indexing_shields",
+        "anti_indexing_shields_to_create", "note",
+    }
+    ORGANIZE_APPLY = {
+        "status", "cluster_size", "clean", "zoning", "protected_by_system", "busy_apps", "busy_apps_unknown", "relink",
+        "index_update", "anti_indexing_shields",
+    }
+    TOOL_DRY_RUN = {"status", "cluster_size", "plan_count", "actions", "protected_by_system", "relink_preview"}
+    TOOL_APPLY = {"status", "cluster_size", "result", "protected_by_system", "relink", "shields_created", "index_sync"}
+
+    # A model file loose in the drive root: the zoner moves it into 01_AI_Models, so an apply has something to move
+    LOOSE_MODEL = "weights.safetensors"
+
+    def check_fields(self, out: Dict[str, Any], before: Set[str], expected: Worked) -> None:
+        """``out`` keeps every field in ``before``, gains only the source, and gives the cluster ``expected``."""
+        self.assertEqual(set(out) - before, {"cluster_size_source"})
+        self.assertLessEqual(before, set(out))
+        self.assertEqual((out["cluster_size"], out["cluster_size_source"]), expected)
+
+    def test_the_organize_dry_run_only_gains_the_source(self) -> None:
+        with self.quiet_machine():
+            data = self.cli_json(AUTO_ZONER, volume(self.root, DETECTED), "organize", "--root", str(self.root))
+        self.assertEqual(data["status"], "dry_run")
+        self.check_fields(data, self.ORGANIZE_DRY_RUN, (DETECTED, "detected"))
+
+    def test_organize_apply_only_gains_the_source(self) -> None:
+        self.write_files((self.LOOSE_MODEL, b"W" * 100))
+        with patch.object(FSINFO, "CLUSTER_SIZE_BYTES", FALLBACK):
+            # The first apply moves the loose model file into 01_AI_Models (its relink step runs on the fake home of
+            # `quiet_machine`); the second finds nothing left to move. Both say where their cluster size came from.
+            for detected, expected, moved in (
+                (volume(self.root, DETECTED), (DETECTED, "detected"), 1),
+                (volume(self.root, 0, "unknown"), (FALLBACK, "assumed"), 0),
+            ):
+                with self.subTest(cluster=expected[0]):
+                    with self.quiet_machine():
+                        data = self.cli_json(AUTO_ZONER, detected, "organize", "--root", str(self.root), "--apply")
+                    self.assertEqual(data["status"], "applied")
+                    self.assertEqual(data["zoning"]["moved_count"], moved)
+                    self.check_fields(data, self.ORGANIZE_APPLY, expected)
+        self.assertFalse((self.root / self.LOOSE_MODEL).exists())
+
+    def test_ssd_auto_organize_only_gains_the_source(self) -> None:
+        self.write_files((self.LOOSE_MODEL, b"W" * 100))
+        with patch.object(FSINFO, "CLUSTER_SIZE_BYTES", FALLBACK):
+            # (as above: the first apply moves the loose model file and the second finds nothing left to move; the dry
+            # run before each plans what that apply moves)
+            for detected, expected, moved in (
+                (volume(self.root, DETECTED), (DETECTED, "detected"), 1),
+                (volume(self.root, 0, "unknown"), (FALLBACK, "assumed"), 0),
+            ):
+                with self.subTest(cluster=expected[0]):
+                    with self.quiet_machine(), patch.object(AUTO_ZONER, "detect_filesystem", return_value=detected):
+                        dry_run = self.call_tool("ssd_auto_organize")
+                        applied = self.call_tool("ssd_auto_organize", apply=True)
+                    self.assertEqual(dry_run["status"], "dry_run")
+                    self.assertEqual(dry_run["plan_count"], moved)
+                    self.check_fields(dry_run, self.TOOL_DRY_RUN, expected)
+                    self.assertEqual(applied["status"], "applied")
+                    self.assertEqual(applied["result"]["moved_count"], moved)
+                    self.check_fields(applied, self.TOOL_APPLY, expected)
+        self.assertFalse((self.root / self.LOOSE_MODEL).exists())
+
+    def test_the_ssd_auto_organize_description_says_what_the_cluster_fields_are(self) -> None:
+        """An agent reads the description to decide what the numbers mean, so it must match the result."""
+        tool = next(tool for tool in TOOLS if tool["name"] == "ssd_auto_organize")
+        description = tool["description"]
+        with self.quiet_machine(), \
+                patch.object(AUTO_ZONER, "detect_filesystem", return_value=volume(self.root, DETECTED)):
+            result = self.call_tool("ssd_auto_organize")
+        self.assertEqual((result["cluster_size"], result["cluster_size_source"]), (DETECTED, "detected"))
+        self.assertIn("real cluster size", description)
+        # Every name it gives is a field of the result (or an argument of the tool), and it gives the two that matter
+        named = set(re.findall(r"[a-z]+(?:_[a-z]+)+", description))
+        self.assertEqual(named - set(result) - set(tool["inputSchema"]["properties"]), set())
+        self.assertEqual({"cluster_size", "cluster_size_source"} - named, set())
 
 
 class TestCleanAndSsdClean(_Drive):

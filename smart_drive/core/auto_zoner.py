@@ -98,7 +98,14 @@ class ZoningAction:
 
 
 class AutoZoner:
-    """Intelligent autonomous drive organization and anti-slack rebalancing engine."""
+    """Intelligent autonomous drive organization and anti-slack rebalancing engine.
+
+    ``cluster_size`` is the allocation unit the plan's slack figures are worked out at. Given none, the zoner asks
+    ``fsinfo.slack_cluster`` for the volume's own and keeps where it came from as ``cluster_size_source``
+    (CLUSTER_SIZE_DETECTED or CLUSTER_SIZE_ASSUMED), which ``organize --json`` and ``ssd_auto_organize`` report. Given
+    one, ``cluster_size_source`` is None: the caller looked the size up and reports where it came from itself, as
+    ``checkup`` does.
+    """
 
     # 6 Standard Taxonomies on SSD
     TAXONOMIES = {
@@ -154,8 +161,10 @@ class AutoZoner:
     ) -> None:
         self.root = os.path.abspath(root)
         self.compat = ExFatEngine()
+        # None when the caller gives the cluster size: it looked the size up and reports where it came from itself
+        self.cluster_size_source: Optional[str] = None
         if cluster_size is None:
-            cluster_size, _source = slack_cluster(detect_filesystem(self.root))
+            cluster_size, self.cluster_size_source = slack_cluster(detect_filesystem(self.root))
         self.cluster_size = cluster_size
 
         self._system_refs: Optional[SystemRefIndex] = system_refs
