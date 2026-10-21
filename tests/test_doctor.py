@@ -1686,8 +1686,9 @@ class TestDocumentation(unittest.TestCase):
 
     def test_the_changelog_announces_it_first_under_added(self) -> None:
         text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        unreleased = text.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
-        added = unreleased.split("### Added", 1)[1].split("\n### ", 1)[0]
+        # The section that announces it: [Unreleased] until the release, then the release that shipped it
+        section = next(s for s in text.split("\n## [")[1:] if "- `smart-drive doctor`" in s)
+        added = section.split("### Added", 1)[1].split("\n### ", 1)[0]
         first_bullet = added.strip().splitlines()[0]
         self.assertTrue(first_bullet.startswith("- `smart-drive doctor`"), first_bullet)
 
