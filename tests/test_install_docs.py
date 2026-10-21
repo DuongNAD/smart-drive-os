@@ -34,6 +34,10 @@ RELEASING = ROOT / "docs" / "RELEASING.md"
 # The three ways in, as the install section types them.
 INSTALL_COMMANDS = ("uvx smart-drive-os", "pipx install smart-drive-os", "pip install -e .")
 
+# The notes the install section carried before the package reached PyPI (English, Vietnamese). It has been on PyPI since
+# 1.4.2, so uvx and pipx work today: a README that says they wait for a release sends the reader to a clone instead.
+WAITING_FOR_FIRST_RELEASE = ("after the first PyPI release", "sau bản phát hành PyPI đầu tiên")
+
 # What the owner types into PyPI and GitHub, the registry's tool, and the signing route the guide leaves to the owner.
 SETUP_TERMS = ("release.yml", "pypi", "pending publisher", "Required reviewers", "mcp-publisher", "SignPath")
 
@@ -69,6 +73,13 @@ class TestInstallSection(unittest.TestCase):
             for command in INSTALL_COMMANDS:
                 with self.subTest(readme=name, command=command):
                     self.assertIn(command, text)
+
+    def test_neither_readme_says_uvx_or_pipx_waits_for_the_first_pypi_release(self) -> None:
+        for name in README_NAMES:
+            text = read(name).lower()
+            waiting = [note for note in WAITING_FOR_FIRST_RELEASE if note.lower() in text]
+            with self.subTest(readme=name):
+                self.assertEqual(waiting, [], "the package is on PyPI since 1.4.2: uvx and pipx wait for no release")
 
 
 class TestMcpEntries(unittest.TestCase):

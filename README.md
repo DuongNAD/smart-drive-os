@@ -45,12 +45,12 @@ SmartDrive-OS is a zero-dependency drive operating suite and sub-10ms SQLite FTS
 ## Quickstart
 
 ### 1. Install (or run without installing)
-**uvx** (after the first PyPI release): needs only [uv](https://docs.astral.sh/uv/), which also downloads a Python when the machine has none.
+**uvx**: needs only [uv](https://docs.astral.sh/uv/), which also downloads a Python when the machine has none.
 ```bash
 uvx smart-drive-os <subcommand>        # runs any subcommand, installs nothing
 uvx smart-drive-os mcp register --all  # registers `uvx smart-drive-os mcp` with your coding agents
 ```
-**pipx** (after the first PyPI release; Python 3.9+):
+**pipx** (Python 3.9+):
 ```bash
 pipx install smart-drive-os
 smart-drive <subcommand>
