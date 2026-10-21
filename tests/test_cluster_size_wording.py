@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import io
+import json
 import shutil
 import tempfile
 import unittest
@@ -19,13 +20,16 @@ from typing import Any, Dict, List
 from unittest.mock import patch
 
 from smart_drive.cli.cmd_checkup import run_checkup
+from smart_drive.cli.main import main
 from smart_drive.core.fsinfo import FilesystemInfo
+from smart_drive.core.health import SSDHealthReport
 from smart_drive.core.system_refs import RegistryReader
 
 # The modules whose names the code under test looks up are patched through the module objects and not through dotted
 # strings: `smart_drive.cli` re-exports the `main` function, so a string target that goes through the package can end
 # at a function and not at the module.
 CLI_CHECKUP = importlib.import_module("smart_drive.cli.cmd_checkup")
+CLI_HEALTH = importlib.import_module("smart_drive.cli.cmd_health")
 RELINK = importlib.import_module("smart_drive.core.relink")
 
 # The text each cluster has to be given. It is written out here and not taken from `cluster_size_text`, the helper under
@@ -95,6 +99,42 @@ class TestCheckupTextReport(unittest.TestCase):
                     # `checkup --json` prints this report as it is: it still gives the cluster in bytes
                     self.assertEqual(report["filesystem"]["cluster_size_bytes"], cluster)
                     self.assertIn(line.format(wording), self.printed(report))
+
+
+class TestHealthCommand(unittest.TestCase):
+    """The `Cluster Size:` line of `health` put KB after the byte count below 1 KB and dropped the rest above it.
+
+    A cluster of 512 B read "512 bytes (512 KB)" and one of 1536 B read "1,536 bytes (1 KB)".
+    """
+
+    def health(self, cluster: int, *flags: str) -> str:
+        """What `smart-drive health E:` prints for a volume with this cluster (the volume is the patched report)."""
+        report = SSDHealthReport(
+            drive_letter="E:",
+            filesystem="exFAT",
+            trim_enabled=True,
+            trim_status_message="TRIM is enabled (DisableDeleteNotify = 0)",
+            total_bytes=2000 * 1024 ** 3,
+            free_bytes=1400 * 1024 ** 3,
+            free_percent=70.0,
+            cluster_size_bytes=cluster,
+            warnings=[],
+        )
+        out = io.StringIO()
+        with patch.object(CLI_HEALTH, "check_drive_health", return_value=report):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(main(["health", "E:", *flags]), 0, out.getvalue())
+        return out.getvalue()
+
+    def test_the_cluster_size_line_names_the_cluster(self) -> None:
+        for cluster, wording in WORDING.items():
+            with self.subTest(cluster=cluster):
+                self.assertIn(f"Cluster Size:        {cluster:,} bytes ({wording})", self.health(cluster).splitlines())
+
+    def test_the_json_report_still_gives_the_cluster_in_bytes(self) -> None:
+        for cluster in WORDING:
+            with self.subTest(cluster=cluster):
+                self.assertEqual(json.loads(self.health(cluster, "--json"))["cluster_size_bytes"], cluster)
 
 
 if __name__ == "__main__":
