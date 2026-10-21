@@ -9,6 +9,15 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ### Added
 
+- `smart-drive doctor` prints a read-only, offline report of the environment for bug reports: the SmartDrive-OS version
+  and how it was installed (pipx, uvx, uv tool, pip or a source checkout), Python and whether its SQLite has FTS5, the
+  operating system, the drive root with its filesystem and allocation unit, which coding agents and IDEs are installed
+  and whether each has the smart-drive MCP entry (and whether the command that entry starts exists), the five latest
+  move batches and the last checkup score. It prints plain text, `--report` prints a Markdown block to paste into a
+  GitHub issue, and `--json` prints the same data as JSON (it wins over `--report`). It works when no drive root can be
+  found, where `status` and `checkup` exit with 2: the report says so and the exit code stays 0. It never scans the
+  drive, writes nothing and makes no network call; it shows the home folder as `~` and the user name as `<user>`, and
+  never prints a file name from the drive, a token, or any content of an agent's config file.
 - `dup --json`, `checkup --json` (in its `filesystem` block) and the MCP tool `ssd_find_duplicates` now say whether the
   cluster size their slack figures are worked out at was read from the drive or assumed: `cluster_size_source` is
   `"detected"`, or `"assumed"` when it could not be read and the 512 KB exFAT cluster is used, as in `audit --json` and

@@ -19,6 +19,7 @@ Provides subcommands:
 - backup: Safe incremental backup to target directory or drive.
 - repos: Duplicate git clones in one place, and sync state of portable-SSD mirrors (read-only).
 - relink: Rewrite project and MCP server paths remembered by coding agents after folders move.
+- doctor: Read-only, offline environment report for bug reports (--report prints Markdown to paste into an issue).
 """
 
 from __future__ import annotations
@@ -48,6 +49,7 @@ from smart_drive.cli.cmd_backup import cmd_backup
 from smart_drive.cli.cmd_checkup import cmd_checkup
 from smart_drive.cli.cmd_classify import cmd_classify
 from smart_drive.cli.cmd_clean import cmd_clean
+from smart_drive.cli.cmd_doctor import cmd_doctor
 from smart_drive.cli.cmd_gitignore import cmd_gitignore
 from smart_drive.cli.cmd_health import cmd_health
 from smart_drive.cli.cmd_init import cmd_init
@@ -661,6 +663,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_checkup.add_argument("--lang", choices=["vi", "en"], help="Output language ('vi' or 'en')")
     p_checkup.add_argument("--json", action="store_true", help="Output checkup report in JSON format")
 
+    # 25. doctor
+    p_doctor = subparsers.add_parser(
+        "doctor",
+        help=(
+            "Read-only, offline environment report for bug reports: version, install method, Python, OS, the drive's "
+            "filesystem, coding agents and their MCP entries; --report prints Markdown to paste into an issue"
+        ),
+    )
+    p_doctor.add_argument("--root", help="Root directory of the SSD (a root that cannot be found is part of the report)")
+    p_doctor.add_argument("--report", action="store_true", help="Print a Markdown report to paste into a GitHub issue")
+    p_doctor.add_argument("--json", action="store_true", help="Print the same data as JSON (wins over --report)")
+
     # self-path-check subcommand
     p_path_check = subparsers.add_parser(
         "self-path-check",
@@ -707,6 +721,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "undo": cmd_undo,
         "paths": cmd_paths,
         "checkup": cmd_checkup,
+        "doctor": cmd_doctor,
         "self-path-check": cmd_path_check,
         "path-check": cmd_path_check,
         "self_path_check": cmd_path_check,

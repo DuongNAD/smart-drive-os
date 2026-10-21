@@ -403,7 +403,7 @@ Các ổ SSD di động dung lượng lớn (như Kingston XS2000 2 TB) định 
 ## Bảng Tra Cứu Lệnh CLI
 
 <details>
-<summary>Toàn bộ 25 lệnh và tham số chính</summary>
+<summary>Toàn bộ 26 lệnh và tham số chính</summary>
 
 Mọi lệnh chạy qua `smart-drive <lệnh>`, `python -m smart_drive <lệnh>` hoặc `py -m smart_drive <lệnh>` (trên Windows khi `python` không có trong `PATH`):
 
@@ -411,6 +411,7 @@ Mọi lệnh chạy qua `smart-drive <lệnh>`, `python -m smart_drive <lệnh>`
 |---|---|---|
 | `self-path-check` | *(không có)* | Kiểm tra `PATH` hệ thống và in câu lệnh cấu hình 1-chạm. |
 | `checkup` | `--root <đd>`, `--dup`, `--lang {en,vi}`, `--json` | Khám tổng quát 1 màn hình: chấm điểm sức khỏe ổ đĩa (`0–100`), so với lần chạy trước và gợi ý bước tiếp theo. Chỉ ghi báo cáo lần chạy gần nhất vào `.smart_drive/checkup.json` (ghi đè mỗi lần chạy) và đọc lại tệp đó để so sánh. |
+| `doctor` | `--root <đd>`, `--report`, `--json` | Báo cáo môi trường chỉ đọc, chạy offline, để đính kèm khi báo lỗi: phiên bản và cách cài SmartDrive-OS, Python và SQLite FTS5, hệ điều hành, hệ tệp và kích thước cụm của ổ đĩa, coding agent và IDE nào đã cài và đã có mục MCP smart-drive chưa, các đợt dời gần nhất và điểm checkup gần nhất. Chạy được cả khi không tìm thấy gốc ổ đĩa (việc đó nằm trong báo cáo) và không bao giờ quét ổ đĩa. Mặc định in văn bản; `--report` in khối Markdown để dán vào issue GitHub; `--json` in cùng dữ liệu dạng JSON và được ưu tiên hơn `--report`. Đường dẫn hiện thư mục home thành `~` và tên người dùng thành `<user>`; báo cáo không chứa tên tệp trên ổ, token hay nội dung tệp cấu hình. |
 | `init` | `--profile <tên>`, `--root <đd>`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo 6 nhóm thư mục, cài khiên bảo vệ và gieo chỉ mục FTS5. |
 | `status` | `--root <đd>`, `--json` | Kiểm tra điểm gắn ổ đĩa, hệ tệp nhận diện, cấu trúc hình học, khiên bảo vệ và phân vùng. |
 | `audit` | `--root <đd>`, `--html [tệp]`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán dung lượng và cluster slack theo kích thước cụm thật của ổ đĩa (4 KB NTFS, 512 KB exFAT…). `--html` xuất báo cáo treemap tự chứa chạy offline (mặc định `<root>/.smart_drive/reports/audit.html`). Hard link tính một lần; symlink/junction bỏ qua và đếm. |

@@ -379,7 +379,7 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
             "__future__", "abc", "argparse", "array", "ast", "asyncio", "base64", "binascii",
             "collections", "concurrent", "contextlib", "copy", "csv", "ctypes", "dataclasses", "datetime",
             "decimal", "difflib", "dis", "enum", "errno", "fnmatch", "fractions", "functools",
-            "gc", "glob", "gzip", "hashlib", "heapq", "hmac", "html", "http", "importlib",
+            "gc", "getpass", "glob", "gzip", "hashlib", "heapq", "hmac", "html", "http", "importlib",
             "inspect", "io", "itertools", "json", "logging", "math", "mimetypes", "mmap",
             "multiprocessing", "operator", "os", "pathlib", "pickle", "platform", "posixpath",
             "pprint", "queue", "random", "re", "select", "shlex", "shutil", "signal",
