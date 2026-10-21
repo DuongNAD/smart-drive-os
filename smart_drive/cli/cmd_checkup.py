@@ -23,7 +23,7 @@ from smart_drive.core.auditor import StorageAuditor
 from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.config import JunkTier, verify_anti_indexing_markers
 from smart_drive.core.duplicates import DuplicateDetector
-from smart_drive.core.fsinfo import detect_filesystem, slack_cluster
+from smart_drive.core.fsinfo import cluster_size_text, detect_filesystem, slack_cluster
 from smart_drive.core.health import check_drive_health
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.offloader import get_scan_summary
@@ -566,7 +566,7 @@ def _print_checkup(report: Dict[str, Any]) -> None:
     print("=" * 64)
 
     if lang == "vi":
-        print(f"  - Hệ tệp & Cluster:   {fs['display_name']} (cluster {fs['cluster_size_bytes'] // 1024 or 1} KB)")
+        print(f"  - Hệ tệp & Cluster:   {fs['display_name']} (cluster {cluster_size_text(fs['cluster_size_bytes'])})")
         print(
             f"  - Dung lượng trống:   {_format_bytes(health['free_bytes'])} / "
             f"{_format_bytes(health['total_bytes'])} ({health['free_percent']:.1f}%)"
@@ -587,7 +587,7 @@ def _print_checkup(report: Dict[str, Any]) -> None:
         print(f"  - Được bảo vệ (OS):   {len(prot)} thư mục")
         print("\n3 việc nên làm tiếp theo:")
     else:
-        print(f"  - Filesystem:         {fs['display_name']} ({fs['cluster_size_bytes'] // 1024 or 1} KB cluster)")
+        print(f"  - Filesystem:         {fs['display_name']} ({cluster_size_text(fs['cluster_size_bytes'])} cluster)")
         print(
             f"  - Free Space:         {_format_bytes(health['free_bytes'])} / "
             f"{_format_bytes(health['total_bytes'])} ({health['free_percent']:.1f}%)"
