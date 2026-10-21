@@ -450,6 +450,8 @@ SmartDrive-OS tuân thủ nguyên tắc **Local-First & Quyền Riêng Tư Tối
 
 Xem chi tiết tại [PRIVACY.md](PRIVACY.md).
 
+Báo lỗi bảo mật (mất dữ liệu, tool MCP truy cập ra ngoài ổ, ghi ra ngoài ổ, làm hỏng cấu hình agent) một cách riêng tư: xem [SECURITY.md](SECURITY.md).
+
 ## Kiểm Thử
 
 2.000+ bài kiểm thử tự động chạy trên CI với Windows, macOS và Linux (Python 3.9 và 3.13) bằng `unittest`:

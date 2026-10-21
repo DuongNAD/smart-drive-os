@@ -46,6 +46,10 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   still negotiated through `initialize` in the same process, and a `2026-07-28` request neither reads nor changes the
   revision `initialize` chose. A `server/discover` sent without the `_meta` entries now gets `-32602` instead of
   `-32601`.
+- `SECURITY.md` says how to report a security problem privately (GitHub's private vulnerability reporting, or email),
+  which versions get fixes, and what counts as a security issue for SmartDrive-OS: data loss, a path escape in an MCP
+  tool, writing outside the drive and corrupting a coding agent's or IDE's config. `README.md`, `README_VN.md` and
+  `PRIVACY.md` link to it.
 
 ### Changed
 

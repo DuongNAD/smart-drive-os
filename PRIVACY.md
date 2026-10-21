@@ -101,11 +101,12 @@ In compliance with the Anthropic Model Context Protocol specification, all 8 MCP
 
 ## 6. Security Vulnerability Reporting
 
-We treat the security and privacy of developer workspaces with paramount seriousness. If you discover a potential vulnerability, bug, or security concern in SmartDrive-OS:
+We treat the security and privacy of developer workspaces with paramount seriousness. [SECURITY.md](SECURITY.md) explains what counts as a security issue for this tool (data loss, a path escape in an MCP tool, a write outside the drive, a corrupted agent config), which versions get fixes, and how to report one. If you discover a potential vulnerability or security concern in SmartDrive-OS:
 
-1. **GitHub Issues**: Open a ticket at [https://github.com/DuongNAD/smart-drive-os/issues](https://github.com/DuongNAD/smart-drive-os/issues) (for non-sensitive bug reports).
-2. **Direct Security Contact**: For sensitive security disclosures, email [smartdrive.os@proton.me](mailto:smartdrive.os@proton.me).
-3. **Response SLA**: We commit to acknowledging reported security issues within 48 hours and delivering patches in subsequent maintenance releases.
+1. **Private report (preferred)**: Use GitHub's private vulnerability reporting, [Report a vulnerability](https://github.com/DuongNAD/smart-drive-os/security/advisories/new). Only you and the maintainer can see it.
+2. **Direct Security Contact**: If you cannot use GitHub, email [smartdrive.os@proton.me](mailto:smartdrive.os@proton.me).
+3. **GitHub Issues**: Only for bugs that are not security issues: [https://github.com/DuongNAD/smart-drive-os/issues](https://github.com/DuongNAD/smart-drive-os/issues).
+4. **Response SLA**: We commit to acknowledging reported security issues within 48 hours and delivering patches in subsequent maintenance releases.
 
 ---
 
