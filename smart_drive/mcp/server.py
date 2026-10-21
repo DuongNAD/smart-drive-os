@@ -28,7 +28,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from smart_drive.core.auditor import StorageAuditor, format_bytes
 from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.config import (
-    CLUSTER_SIZE_BYTES,
     SCAN_SKIPPED_PROTECTED_BY_SYSTEM,
     JunkTier,
     ensure_anti_indexing_markers,
@@ -1003,8 +1002,7 @@ class SmartDriveMCPServer:
         # min_size is the detector's, so that small files are dropped before anything is hashed. Slack is modelled at
         # the volume's real allocation unit (as `audit` does), 512 KB exFAT when it cannot be read.
         storage_root = self._resolve_safe_path(None)
-        fs_info = detect_filesystem(storage_root)
-        cluster_size = fs_info.block_size if fs_info.block_size > 0 else CLUSTER_SIZE_BYTES
+        cluster_size, cluster_size_source = slack_cluster(detect_filesystem(storage_root))
         detector = DuplicateDetector(target_root, cluster_size=cluster_size, drive_root=storage_root, min_size=min_size)
         plan = detector.generate_reclamation_plan()
         all_groups = plan.get("duplicate_groups", [])
@@ -1039,6 +1037,7 @@ class SmartDriveMCPServer:
             "returned_group_count": len(capped_groups),
             "duplicate_file_count": total_dup_files,
             "cluster_size": cluster_size,
+            "cluster_size_source": cluster_size_source,
             "total_reclaimable_bytes": total_reclaimable_bytes,
             "total_reclaimable_slack": total_reclaimable_slack,
             "total_reclaimable_physical": total_reclaimable_physical,

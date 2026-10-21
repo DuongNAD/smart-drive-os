@@ -7,6 +7,14 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `dup --json`, `checkup --json` (in its `filesystem` block) and the MCP tool `ssd_find_duplicates` now say whether the
+  cluster size their slack figures are worked out at was read from the drive or assumed: `cluster_size_source` is
+  `"detected"`, or `"assumed"` when it could not be read and the 512 KB exFAT cluster is used, as in `audit --json` and
+  `ssd_audit`. `audit`, `dup`, `checkup`, `organize`'s plan and the MCP tools all take that cluster size from one place
+  now, `fsinfo.slack_cluster`.
+
 ### Fixed
 
 - The MCP tool `ssd_audit` worked out cluster slack at an assumed 512 KB exFAT cluster on every drive, so on a 4 KB NTFS
