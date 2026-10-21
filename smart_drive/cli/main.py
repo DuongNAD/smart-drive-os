@@ -65,9 +65,8 @@ from smart_drive.cli.cmd_setup import cmd_setup
 from smart_drive.cli.cmd_snapshot import cmd_snapshot
 from smart_drive.cli.cmd_status import cmd_status
 from smart_drive.cli.cmd_undo import cmd_undo
-from smart_drive.core.config import CLUSTER_SIZE_BYTES
 from smart_drive.core.duplicates import DuplicateDetector
-from smart_drive.core.fsinfo import detect_filesystem
+from smart_drive.core.fsinfo import detect_filesystem, slack_cluster
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
@@ -110,12 +109,12 @@ def cmd_dup(args: argparse.Namespace) -> int:
         return 2
 
     # Slack is modelled at the volume's real allocation unit (as `audit` does), 512 KB exFAT when it cannot be read
-    fs_info = detect_filesystem(root)
-    real_cluster = fs_info.block_size if fs_info.block_size > 0 else CLUSTER_SIZE_BYTES
+    real_cluster, cluster_size_source = slack_cluster(detect_filesystem(root))
     detector = DuplicateDetector(
         root, cluster_size=real_cluster, min_size=getattr(args, "min_size", 0) or 0, progress=_print_dup_progress
     )
     plan = detector.generate_reclamation_plan()
+    plan["cluster_size_source"] = cluster_size_source
 
     if getattr(args, "json", False):
         print(json.dumps(plan, indent=2, ensure_ascii=False))

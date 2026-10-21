@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from smart_drive.core.config import (
-    CLUSTER_SIZE_BYTES,
     calculate_allocated_bytes,
     calculate_slack_bytes,
     is_protected_root_dir,
@@ -29,7 +28,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.academic_classifier import AcademicClassifier
 from smart_drive.core.exfat_compat import ExFatEngine
-from smart_drive.core.fsinfo import detect_filesystem
+from smart_drive.core.fsinfo import detect_filesystem, slack_cluster
 from smart_drive.core.git_locks import release_git_locks
 from smart_drive.core.learning_units import find_unit_root
 from smart_drive.core.move_hint import inspect_refused_move
@@ -156,10 +155,8 @@ class AutoZoner:
         self.root = os.path.abspath(root)
         self.compat = ExFatEngine()
         if cluster_size is None:
-            info = detect_filesystem(self.root)
-            self.cluster_size = info.block_size if info.block_size > 0 else CLUSTER_SIZE_BYTES
-        else:
-            self.cluster_size = cluster_size
+            cluster_size, _source = slack_cluster(detect_filesystem(self.root))
+        self.cluster_size = cluster_size
 
         self._system_refs: Optional[SystemRefIndex] = system_refs
         self.protected_by_system: List[Dict[str, Any]] = []

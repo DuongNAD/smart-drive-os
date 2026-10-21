@@ -15,13 +15,9 @@ from typing import Any, Dict, List, Mapping, Optional, Union
 from smart_drive.cli.cmd_paths import inspect_broken_paths
 from smart_drive.core.auditor import StorageAuditor
 from smart_drive.core.auto_zoner import AutoZoner
-from smart_drive.core.config import (
-    CLUSTER_SIZE_BYTES,
-    JunkTier,
-    verify_anti_indexing_markers,
-)
+from smart_drive.core.config import JunkTier, verify_anti_indexing_markers
 from smart_drive.core.duplicates import DuplicateDetector
-from smart_drive.core.fsinfo import detect_filesystem
+from smart_drive.core.fsinfo import detect_filesystem, slack_cluster
 from smart_drive.core.health import check_drive_health
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.offloader import get_scan_summary
@@ -117,7 +113,7 @@ def run_checkup(
 
     # 2. Filesystem & real cluster geometry
     fs_info = detect_filesystem(root_abs)
-    real_cluster = fs_info.block_size if fs_info.block_size > 0 else CLUSTER_SIZE_BYTES
+    real_cluster, cluster_size_source = slack_cluster(fs_info)
 
     # 3. Capacity & SSD health (read-only)
     try:
@@ -466,6 +462,7 @@ def run_checkup(
             "type": fs_info.fs_type,
             "display_name": fs_info.display_name,
             "cluster_size_bytes": real_cluster,
+            "cluster_size_source": cluster_size_source,
             "summary": fs_info.summary(),
         },
         "health": {
