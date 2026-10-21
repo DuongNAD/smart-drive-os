@@ -21,6 +21,7 @@ from unittest.mock import patch
 
 from smart_drive.cli.cmd_checkup import run_checkup
 from smart_drive.cli.main import main
+from smart_drive.core.auditor import StorageAuditor
 from smart_drive.core.drive_detector import FilesystemAdapter, FilesystemType
 from smart_drive.core.fsinfo import FilesystemInfo
 from smart_drive.core.health import SSDHealthReport, evaluate_health_warnings
@@ -29,6 +30,8 @@ from smart_drive.core.system_refs import RegistryReader
 # The modules whose names the code under test looks up are patched through the module objects and not through dotted
 # strings: `smart_drive.cli` re-exports the `main` function, so a string target that goes through the package can end
 # at a function and not at the module.
+AUDITOR = importlib.import_module("smart_drive.core.auditor")
+CLI_AUDIT = importlib.import_module("smart_drive.cli.cmd_audit")
 CLI_CHECKUP = importlib.import_module("smart_drive.cli.cmd_checkup")
 CLI_HEALTH = importlib.import_module("smart_drive.cli.cmd_health")
 CLI_SENTINEL = importlib.import_module("smart_drive.cli.cmd_sentinel")
@@ -227,6 +230,48 @@ class TestSentinelRootLine(unittest.TestCase):
                 main(["sentinel", "--root", str(root), "--no-heal"])
         printed = out.getvalue()
         self.assertTrue(any(line.endswith("(exFAT, 512 B allocation unit)") for line in printed.splitlines()), printed)
+
+
+class TestAuditHtmlReport(unittest.TestCase):
+    """The HTML report of `audit --html` gave its cluster in tenths of a KB, not as the other reports of the audit do.
+
+    A cluster of 512 B read `Cluster: 0.5 KB (512 B)` and one of 1536 B read `1.5 KB (1,536 B)`, where the text and
+    markdown reports say `512 B` and `1536 B`; a size that is not a multiple of a tenth of a KB was rounded (1,000 B
+    read "1 KB").
+    """
+
+    def setUp(self) -> None:
+        self.base = Path(tempfile.mkdtemp(prefix="sd_cluster_wording_")).resolve()
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.root = self.base / "drive"
+        for rel, size in (("notes/a.txt", 20), ("notes/b.txt", 20), ("data/big.bin", 70_000)):
+            path = self.root.joinpath(*rel.split("/"))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"x" * size)
+
+    def test_the_cluster_card_names_the_cluster(self) -> None:
+        for cluster, wording in WORDING.items():
+            with self.subTest(cluster=cluster):
+                # (the page goes outside the drive, so that the audit does not count it)
+                page = self.base / "out" / f"audit_{cluster}.html"
+                detected = volume(self.root, cluster)
+                out = io.StringIO()
+                with patch.object(CLI_AUDIT, "detect_filesystem", return_value=detected), \
+                        patch.object(AUDITOR, "detect_filesystem", return_value=detected):
+                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                        argv = ["audit", "--root", str(self.root), "--html", str(page)]
+                        self.assertEqual(main(argv), 0, out.getvalue())
+                html = page.read_text(encoding="utf-8")
+                self.assertIn(f"Cluster: {wording} ({cluster:,} B)", html)
+                for tenths in ("0.5 KB", "1.5 KB"):
+                    self.assertNotIn(tenths, html)
+
+    def test_the_header_of_a_report_without_a_filesystem_block_names_the_cluster(self) -> None:
+        # (1,000 B is not a whole number of KB: it read "1 KB")
+        for cluster, wording in {**WORDING, 1000: "1000 B"}.items():
+            with self.subTest(cluster=cluster):
+                html = StorageAuditor(str(self.root)).generate_html_report({"cluster_size": cluster})
+                self.assertIn(f"Cluster size: {wording} ({cluster:,} B)", html)
 
 
 if __name__ == "__main__":
