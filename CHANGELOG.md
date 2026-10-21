@@ -53,6 +53,12 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 - GitHub issue forms: a Bug report form that asks for the output of `smart-drive doctor --report`, the exact command,
   what happened and what was expected, a Feature request form, and a link that sends security problems to
   `SECURITY.md` instead of a public issue. `CONTRIBUTING.md` points to them.
+- `docs/BETA_TESTING.md`, a 15-minute checklist for beta testers: install with pipx, `doctor`, then `checkup` and an
+  `organize` preview on their drive (both read-only), an `organize --apply` / `undo --apply` round trip on a scratch
+  folder of copies checked with `snapshot verify`, `mcp register --all` and one MCP call from their coding agent, and
+  the report to paste into an issue, with notes for Windows, macOS, Linux and exFAT drives. A test keeps every
+  `smart-drive` command in it, in SECURITY.md, CONTRIBUTING.md and the issue forms accepted by the CLI, and keeps
+  `--apply` on the scratch folder.
 
 ### Changed
 
