@@ -28,6 +28,7 @@ from smart_drive.core.config import CLUSTER_SIZE_BYTES
 from smart_drive.core.fsinfo import (
     FilesystemInfo,
     best_mount,
+    cluster_size_text,
     detect_filesystem,
     normalize_fs_name,
     parse_mount_output,
@@ -93,6 +94,14 @@ class TestMountParsers(unittest.TestCase):
         self.assertEqual(normalize_fs_name("ufsd_NTFS"), "ntfs")
         self.assertEqual(normalize_fs_name("exFAT"), "exfat")
         self.assertEqual(normalize_fs_name(""), "unknown")
+
+
+class TestClusterSizeText(unittest.TestCase):
+    def test_a_whole_number_of_kilobytes_is_given_in_kb_and_anything_else_in_bytes(self) -> None:
+        cases = ((4096, "4 KB"), (524_288, "512 KB"), (1024, "1 KB"), (1536, "1536 B"), (512, "512 B"), (0, "0 B"))
+        for cluster, text in cases:
+            with self.subTest(cluster=cluster):
+                self.assertEqual(cluster_size_text(cluster), text)
 
 
 class TestSlackModelNote(unittest.TestCase):

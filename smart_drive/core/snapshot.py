@@ -3,7 +3,8 @@
 Designed specifically for external SSDs (Kingston XS2000 2TB exFAT, 512KB allocation blocks).
 Features:
 1. Point-in-time snapshot generation with streaming 64KB chunk SHA-256 hashing.
-2. exFAT 512KB cluster slack and physical allocation calculations.
+2. Cluster slack and physical allocation calculations at the cluster size the caller gives (the commands take it from
+   fsinfo.slack_cluster: the volume's own, the 512KB exFAT cluster only when it cannot be read); a manifest records it.
 3. High-integrity verification (clean status, modified, missing, and untracked files).
 4. Safe incremental backup with 2-second exFAT timestamp tolerance and junk filtering.
 5. Inviolable boundary guards preventing recursive or self-backup destruction.
@@ -31,6 +32,7 @@ from smart_drive.core.config import (
     calculate_slack_bytes,
     match_junk_rule,
 )
+from smart_drive.core.fsinfo import CLUSTER_SIZE_ASSUMED
 from smart_drive.core.root import same_file
 
 logger = logging.getLogger("smart_drive.core.snapshot")
@@ -219,6 +221,10 @@ class SnapshotManifest:
     files: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     include_hidden: bool = False                                    # hidden folders (.git ...) were walked
     excluded_dirs: List[str] = field(default_factory=list)          # folders that were left out (hidden, or on the exclusion list)
+    # The allocation unit the allocated sizes are worked out at, and where it came from (CLUSTER_SIZE_DETECTED or
+    # CLUSTER_SIZE_ASSUMED). A manifest from before they were recorded was always worked out at the assumed 512 KB.
+    cluster_size: int = CLUSTER_SIZE_BYTES
+    cluster_size_source: str = CLUSTER_SIZE_ASSUMED
 
     @property
     def total_bytes(self) -> int:
@@ -246,6 +252,8 @@ class SnapshotManifest:
             files=dict(data.get("files", {})),
             include_hidden=bool(data.get("include_hidden", False)),
             excluded_dirs=list(data.get("excluded_dirs", [])),
+            cluster_size=int(data.get("cluster_size", CLUSTER_SIZE_BYTES)),
+            cluster_size_source=str(data.get("cluster_size_source", CLUSTER_SIZE_ASSUMED)),
         )
 
     @classmethod
@@ -282,6 +290,9 @@ class SnapshotSummary:
     total_logical_bytes: int
     total_allocated_bytes: int
     path: str
+    # What total_allocated_bytes is worked out at, as the manifest records it
+    cluster_size: int = CLUSTER_SIZE_BYTES
+    cluster_size_source: str = CLUSTER_SIZE_ASSUMED
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -580,13 +591,19 @@ class BackupEngine:
 # ==============================================================================
 
 class SnapshotManager:
-    """Unified coordinator for creating, listing, verifying snapshots and incremental backup."""
+    """Unified coordinator for creating, listing, verifying snapshots and incremental backup.
+
+    ``cluster_size`` is the allocation unit a snapshot's allocated sizes are worked out at, and ``cluster_size_source``
+    says where it came from (CLUSTER_SIZE_DETECTED or CLUSTER_SIZE_ASSUMED); ``fsinfo.slack_cluster`` gives both, and a
+    snapshot records both in its manifest.
+    """
 
     def __init__(
         self,
         root_path: Union[str, Path],
         snapshot_dir: Optional[Union[str, Path]] = None,
         cluster_size: int = CLUSTER_SIZE_BYTES,
+        cluster_size_source: str = CLUSTER_SIZE_ASSUMED,
     ) -> None:
         self.root_path = Path(root_path).resolve()
         if snapshot_dir is not None:
@@ -594,6 +611,7 @@ class SnapshotManager:
         else:
             self.snapshot_dir = self.root_path / ".smart_drive" / "snapshots"
         self.cluster_size = cluster_size
+        self.cluster_size_source = cluster_size_source
         self.verifier = SnapshotVerifier(self.root_path)
         self.backup_engine = BackupEngine(self.root_path, self.cluster_size)
 
@@ -713,6 +731,8 @@ class SnapshotManager:
             files=file_records,
             include_hidden=include_hidden,
             excluded_dirs=excluded_dirs,
+            cluster_size=self.cluster_size,
+            cluster_size_source=self.cluster_size_source,
         )
 
         # Save manifest to disk
@@ -740,6 +760,8 @@ class SnapshotManager:
                         total_logical_bytes=manifest.total_logical_bytes,
                         total_allocated_bytes=manifest.total_allocated_bytes,
                         path=str(entry),
+                        cluster_size=manifest.cluster_size,
+                        cluster_size_source=manifest.cluster_size_source,
                     ))
                 except Exception as exc:
                     logger.warning("Skipping unreadable snapshot file '%s': %s", entry, exc)

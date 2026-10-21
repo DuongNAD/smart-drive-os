@@ -45,6 +45,21 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   and the MCP tool `ssd_auto_organize` already wrote nothing until applied. A dry run now writes nothing: its `--json`
   reports which markers are on the drive (`anti_indexing_shields`) and which `--apply` would create
   (`anti_indexing_shields_to_create`), and the text preview says so. `--apply` writes them as before.
+- `clean`, the MCP tool `ssd_clean` and `snapshot create` worked their sizes out at an assumed 512 KB exFAT cluster on
+  every drive, because they built their junk scanner, purge engine and snapshot manager without a cluster size. On a
+  4 KB NTFS drive `clean --json` listed 3,811 junk items holding 570,405,009 bytes and gave them 15,993,405,440 bytes of
+  `allocated_size` (every file rounded up to 512 KB), `ssd_clean` reported the same 15,993,405,440 as
+  `slack_bytes_reclaimed`, the space a cleanup would free, and a snapshot's allocated and slack bytes were worked out
+  the same way; nothing said which cluster size the figures were worked out at. They now use the drive's real cluster
+  size, like `smart-drive audit` (512 KB only when it cannot be read), through `fsinfo.slack_cluster`: on that drive
+  both now give the same junk 639,787,008 bytes at 4 KB clusters. `clean --json`, `ssd_clean` and the snapshot
+  manifests (so `snapshot create --json` and `snapshot list --json`) gained `cluster_size` and `cluster_size_source`
+  (`"detected"`, or `"assumed"` when the 512 KB cluster was used because the size could not be read); a manifest written
+  before reads as 512 KB, `"assumed"`, which is what it was worked out at. The text of `snapshot create` and
+  `snapshot list` names the cluster too, and the `ssd_clean` description says what its sizes are. `organize --clean`
+  and the clean step of `ssd_auto_organize` now work at the cluster their own plan reports (`cluster_size`), and
+  `backup`, which reports no allocated size and so gained no field, and the junk scan of `checkup`, whose allocated
+  sizes the report never shows, are given the real cluster as well.
 
 ## [1.4.2] - 2026-10-21
 

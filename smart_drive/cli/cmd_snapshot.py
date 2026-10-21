@@ -8,6 +8,7 @@ import os
 import sys
 from pathlib import Path
 
+from smart_drive.core.fsinfo import CLUSTER_SIZE_ASSUMED, cluster_size_text, detect_filesystem, slack_cluster
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.snapshot import SnapshotManager, SnapshotNotFoundError, SnapshotError
 
@@ -39,7 +40,10 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{e}\n")
         return 2
 
-    manager = SnapshotManager(root)
+    # A snapshot works its allocated sizes out at the volume's own allocation unit (as `audit` does), 512 KB exFAT only
+    # when it cannot be read, and records which in its manifest
+    cluster_size, cluster_size_source = slack_cluster(detect_filesystem(root))
+    manager = SnapshotManager(root, cluster_size=cluster_size, cluster_size_source=cluster_size_source)
     as_json = getattr(args, "json", False)
 
     # -------------------------------------------------------------------------
@@ -70,7 +74,10 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         print(f"  Partitions: {', '.join(manifest.partitions)}")
         print(f"  Files:      {manifest.file_count:,}")
         print(f"  Logical:    {_format_size(manifest.total_logical_bytes)}")
-        print(f"  Allocated:  {_format_size(manifest.total_allocated_bytes)} (512KB clusters)")
+        cluster_note = f"at {cluster_size_text(manifest.cluster_size)} clusters"
+        if manifest.cluster_size_source == CLUSTER_SIZE_ASSUMED:
+            cluster_note += ", assumed: the drive's own could not be read"
+        print(f"  Allocated:  {_format_size(manifest.total_allocated_bytes)} ({cluster_note})")
         print(f"  Manifest:   {manager.snapshot_dir / f'{manifest.name}.json'}")
         for note in manager.coverage_notes(manifest.partitions, manifest.excluded_dirs, manifest.include_hidden):
             print(f"  {note}")
@@ -91,18 +98,23 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
             return 0
 
         print(f"\nAvailable Snapshots (Root: {root}):")
-        print("=" * 86)
-        print(f"{'Snapshot Name':<28} {'Created (UTC)':<20} {'Files':<8} {'Logical':<12} {'Allocated (512K)'}")
-        print("-" * 86)
+        print("=" * 101)
+        print(f"{'Snapshot Name':<28} {'Created (UTC)':<20} {'Files':<8} {'Logical':<12} {'Allocated':<12} {'Cluster'}")
+        print("-" * 101)
         for s in summaries:
+            # The cluster each snapshot was made at (its manifest says), not the one the volume has today
+            cluster = cluster_size_text(s.cluster_size)
+            if s.cluster_size_source == CLUSTER_SIZE_ASSUMED:
+                cluster += " (assumed)"
             print(
                 f"{s.name:<28} "
                 f"{s.timestamp:<20} "
                 f"{s.file_count:<8} "
                 f"{_format_size(s.total_logical_bytes):<12} "
-                f"{_format_size(s.total_allocated_bytes)}"
+                f"{_format_size(s.total_allocated_bytes):<12} "
+                f"{cluster}"
             )
-        print("=" * 86)
+        print("=" * 101)
         print(f"Total: {len(summaries)} snapshot(s) stored.\n")
         return 0
 

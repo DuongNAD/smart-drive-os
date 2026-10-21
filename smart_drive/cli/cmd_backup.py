@@ -8,6 +8,7 @@ import os
 import sys
 from pathlib import Path
 
+from smart_drive.core.fsinfo import detect_filesystem, slack_cluster
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.snapshot import SnapshotManager, BackupError
 
@@ -38,7 +39,9 @@ def cmd_backup(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{e}\n")
         return 2
 
-    manager = SnapshotManager(root)
+    # A backup reports no allocated size, but its manager is given the volume's real cluster like every other one
+    cluster_size, cluster_size_source = slack_cluster(detect_filesystem(root))
+    manager = SnapshotManager(root, cluster_size=cluster_size, cluster_size_source=cluster_size_source)
 
     raw_parts = getattr(args, "partitions", None)
     partitions = [p.strip() for p in raw_parts.split(",") if p.strip()] if raw_parts else None
