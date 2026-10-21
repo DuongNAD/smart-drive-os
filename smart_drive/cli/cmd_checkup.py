@@ -1,4 +1,10 @@
-"""smart_drive.cli.cmd_checkup - Read-only 0-100 drive health score and top 3 recommended next steps."""
+"""smart_drive.cli.cmd_checkup - 0-100 drive health score and top 3 recommended next steps.
+
+It changes nothing on the drive except its own last report, `<root>/.smart_drive/checkup.json`: one JSON file,
+overwritten in place on every run (it never grows), that the next run reads to show how the score moved
+("Previous 72 -> now 80"). The report describes this drive, so it is kept on the drive: it follows the drive to
+another computer or drive letter, where a per-user folder would lose it or show another drive's score in its place.
+"""
 
 from __future__ import annotations
 
@@ -93,7 +99,11 @@ def run_checkup(
     reader: Optional[Union[RegistryReader, Mapping[str, Any]]] = None,
     scan_c_caches: Optional[bool] = None,
 ) -> Dict[str, Any]:
-    """Executes a read-only drive checkup, updates <root>/.smart_drive/checkup.json, and returns the report."""
+    """Scores the drive and returns the report, which it also writes to <root>/.smart_drive/checkup.json.
+
+    That file holds the last report only (overwritten in place); the next run reads it for `previous_score` and
+    `score_delta`. Nothing else on the drive is changed.
+    """
     root_abs = os.path.abspath(root)
     resolved_lang = detect_preferred_lang(lang)
 

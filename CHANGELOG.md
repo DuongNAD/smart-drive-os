@@ -79,6 +79,14 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   the moves start; from then on every event is appended as before. A run that ends before that (nothing to move, `Q`
   while apps are open, anything but `YES`, the self-test) leaves the drive exactly as it was and, on purpose, no longer
   leaves a trail. The banner, the launchers and both READMEs say when the log is written.
+- The `smart-drive checkup` help called the command "Read-only" and the README said it leaves your files alone, although
+  every run rewrites `<root>/.smart_drive/checkup.json` (its whole last report) and creates `.smart_drive/` when the
+  drive had none. The write stays: the comparison with the last run ("Previous 72 → now 80", `previous_score`,
+  `score_delta`) needs that report, and the report describes this drive, so it is kept on the drive, where it follows
+  the drive to another computer or drive letter (a per-user folder would lose it there or show another drive's score in
+  its place). It is one JSON file overwritten in place, so it never grows, and nothing else on the drive is changed. The
+  `--help` text, the module docstrings and both READMEs (the sentence under "Check the drive", the "What it does" table
+  and the command reference) now say exactly that.
 
 ## [1.4.2] - 2026-10-21
 

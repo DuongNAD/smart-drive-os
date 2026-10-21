@@ -651,10 +651,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_paths.add_argument("--json", action="store_true", help="Output broken paths report in JSON format")
 
     # 24. checkup
-    p_checkup = subparsers.add_parser(
-        "checkup",
-        help="Read-only 0-100 drive health score with top 3 recommended next steps",
+    checkup_help = (
+        "0-100 drive health score with top 3 recommended next steps. Changes nothing on the drive but its own "
+        "last report, .smart_drive/checkup.json, kept to show how the score moved"
     )
+    p_checkup = subparsers.add_parser("checkup", help=checkup_help, description=checkup_help)
     p_checkup.add_argument("--root", help="Root directory of the SSD")
     p_checkup.add_argument("--dup", action="store_true", help="Include SHA-256 duplicate file scan in checkup")
     p_checkup.add_argument("--lang", choices=["vi", "en"], help="Output language ('vi' or 'en')")
