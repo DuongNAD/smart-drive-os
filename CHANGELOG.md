@@ -54,6 +54,9 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 - `sentinel` named the allocation unit in its `Root:` line only when it was a whole number of KB, so on a 512 B
   exFAT volume the line read `(exFAT)` where a 4 KB one reads `(NTFS, 4 KB allocation unit)`. It now names any unit it
   read the way the reports do (`(exFAT, 512 B allocation unit)`); a unit that could not be read is still left out.
+- The HTML report of `audit --html` gave its cluster size in tenths of a KB (`Cluster: 0.5 KB (512 B)`,
+  `1.5 KB (1,536 B)`, and 1,000 B rounded to "1 KB"), while the text and markdown reports of the same audit say
+  `512 B` and `1536 B`. It now names it the way they do (`Cluster: 512 B (512 B)`, `Cluster: 4 KB (4,096 B)`).
 
 ## [1.4.3] - 2026-10-21
 

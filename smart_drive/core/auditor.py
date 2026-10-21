@@ -1311,9 +1311,9 @@ def _render_self_contained_html(data: Dict[str, Any]) -> str:
     root_path = _esc(data.get("root_path", "."))
     generated_at = _esc(data.get("generated_at", ""))
     cluster_size = int(data.get("cluster_size", CLUSTER_SIZE_BYTES) or CLUSTER_SIZE_BYTES)
-    cluster_kb = f"{cluster_size / 1024:.1f}".rstrip("0").rstrip(".")
+    cluster_text = cluster_size_text(cluster_size)
     fs_dict = data.get("filesystem") or {}
-    fs_summary = _esc(fs_dict.get("summary") or f"Cluster size: {cluster_kb} KB ({cluster_size:,} B)")
+    fs_summary = _esc(fs_dict.get("summary") or f"Cluster size: {cluster_text} ({cluster_size:,} B)")
     slack_note = _esc(data.get("slack_model_note") or "")
 
     total_files = int(summary.get("total_files", data.get("total_files", 0)) or 0)
@@ -1607,7 +1607,7 @@ td.mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
   <div class="card">
     <div class="card-label">Allocated on Disk</div>
     <div class="card-value">{_esc(format_bytes(allocated_bytes))}</div>
-    <div class="card-sub">Cluster: {cluster_kb} KB ({cluster_size:,} B)</div>
+    <div class="card-sub">Cluster: {cluster_text} ({cluster_size:,} B)</div>
   </div>
   <div class="card">
     <div class="card-label">Cluster Slack Waste</div>
