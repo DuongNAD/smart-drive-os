@@ -11,7 +11,7 @@ from typing import List, Optional, Tuple
 
 from smart_drive.cli.cmd_relink import print_relink
 from smart_drive.core.auto_zoner import AutoZoner
-from smart_drive.core.config import JunkTier
+from smart_drive.core.config import JunkTier, verify_anti_indexing_markers
 from smart_drive.core.git_locks import watching_repositories
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine, SecurityGuard
@@ -62,9 +62,10 @@ def cmd_organize(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{e}\n")
         return 2
     zoner = AutoZoner(root)
+    apply_mode = bool(getattr(args, "apply", False))
 
-    # 1. Anti-indexing shields
-    shields = zoner.ensure_anti_indexing_shields()
+    # 1. Anti-indexing shields: only --apply writes them, a dry run promises to change nothing and only looks
+    shields = zoner.ensure_anti_indexing_shields() if apply_mode else verify_anti_indexing_markers(root)
 
     # 2. Safe Tier 1 Clean only if explicitly requested (--clean)
     clean_summary = None
@@ -74,7 +75,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
         if junk_list:
             guard = SecurityGuard(drive_root=root)
             engine = PurgeEngine(guard)
-            dry_run = not getattr(args, "apply", False)
+            dry_run = not apply_mode
             res = engine.purge_batch(junk_list, dry_run=dry_run)
             clean_summary = {
                 "dry_run": dry_run,
@@ -92,7 +93,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
         confirmed = {_move_key(src, dest) for src, dest in only_moves}
         plan = [a for a in plan if _move_key(a.src_path, a.dest_path) in confirmed]
 
-    if getattr(args, "apply", False):
+    if apply_mode:
         apply_res = zoner.apply_plan(plan)
         moves = [(m["src"], m["dest"]) for m in apply_res["moved"]]
         relinked = after_moves(root, moves, "organize")
@@ -152,6 +153,8 @@ def cmd_organize(args: argparse.Namespace) -> int:
     busy_apps, busy_apps_unknown = busy_apps_of(preview)
     # Only looks (`git fsmonitor--daemon status`); --apply stops these daemons right before it moves their folders
     fsmonitor_to_stop = watching_repositories([a.src_path for a in plan if a.is_dir]) if plan else []
+    # `shields` says what is on the drive now; --apply writes the markers that are not
+    shields_to_create = [marker for marker, present in shields.items() if not present]
     if getattr(args, "json", False):
         print(json.dumps({
             "status": "dry_run",
@@ -164,6 +167,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
             "fsmonitor_to_stop": fsmonitor_to_stop,
             "relink_preview": preview.to_dict() if preview else None,
             "anti_indexing_shields": shields,
+            "anti_indexing_shields_to_create": shields_to_create,
             "note": "Use --apply to execute relocation."
         }, indent=2, ensure_ascii=False))
         return 0
@@ -189,7 +193,11 @@ def cmd_organize(args: argparse.Namespace) -> int:
             print("Git fsmonitor daemons that will be stopped first (each would keep its folder from being moved):")
             for repo in fsmonitor_to_stop:
                 print(f"  {repo}")
+        if shields_to_create:
+            print(f"Anti-indexing markers that --apply will create: {', '.join(shields_to_create)}")
         print("Run with --apply to execute the relocation safely.")
     else:
         print("  ✓ No loose or unorganized items detected. SSD taxonomy is already well-organized!")
+        if shields_to_create:
+            print(f"Anti-indexing markers that --apply will create: {', '.join(shields_to_create)}")
     return 0

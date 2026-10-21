@@ -40,6 +40,11 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   delete or move, while the taxonomy folders below it were protected. It now reports the root protected: `is_safe`
   false, `is_protected_root_dir` true and the new field `is_storage_root` true (every answer carries the field, false
   for any other path).
+- `organize` wrote `.metadata_never_index` and `.fseventsd/no_log` into the drive root during a dry run (`--dry-run`,
+  the default, and `--clean` without `--apply`), although a dry run promises to change nothing and `status`, `clean`
+  and the MCP tool `ssd_auto_organize` already wrote nothing until applied. A dry run now writes nothing: its `--json`
+  reports which markers are on the drive (`anti_indexing_shields`) and which `--apply` would create
+  (`anti_indexing_shields_to_create`), and the text preview says so. `--apply` writes them as before.
 
 ## [1.4.2] - 2026-10-21
 
