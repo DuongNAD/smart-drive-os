@@ -43,6 +43,10 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   "1,536 bytes (1 KB)" for one of 1536 B: below 1 KB it put KB after the byte count, and above it dropped what was
   left over. The part in brackets now names the size the way `audit` does (`512 B`, `1536 B`, `4 KB`, `512 KB`);
   `health --json` is unchanged.
+- The exFAT notice of `smart-drive health` (also in the `warnings` of `health --json`) wrote the cluster size as
+  `512KB`, worked out by dividing by 1024, so a cluster that is not a whole number of KB would have lost what was
+  left over. It now names it the way the reports do: "exFAT with 512 KB clusters". It still appears only for
+  clusters of 64 KB and more.
 
 ## [1.4.3] - 2026-10-21
 
