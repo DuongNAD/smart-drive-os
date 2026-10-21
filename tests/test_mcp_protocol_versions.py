@@ -24,6 +24,8 @@ Regressions:
   negotiated. A batch is still answered with an array in 2024-11-05 (plain JSON-RPC 2.0), in 2025-03-26 and before
   `initialize`. Once 2025-06-18 or later is negotiated, or when the batch holds a 2026-07-28 request, the whole batch
   is refused with one -32600 error and none of its requests runs.
+- The MCP section of README.md and of README_VN.md names every revision the server speaks, so a revision cannot be added
+  without the documentation that tells users and agents about it.
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ import io
 import json
 import shutil
 import tempfile
+import unicodedata
 import unittest
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -67,7 +70,13 @@ from smart_drive.mcp.server import (
     tools_for_version,
 )
 
-SERVER_JSON = Path(__file__).resolve().parent.parent / "server.json"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SERVER_JSON = REPO_ROOT / "server.json"
+# Where each README documents the MCP server: the heading of its section, which runs to the next second-level heading.
+README_MCP_SECTIONS = (
+    ("README.md", "## Use with coding agents (MCP)"),
+    ("README_VN.md", "## Dùng Với Coding Agent (MCP)"),
+)
 _ABSENT = object()  # "leave the key out", which None cannot say
 MODERN = "2026-07-28"
 # What every 2026-07-28 request carries in params._meta: the revision and the client's capabilities (none, here).
@@ -97,6 +106,15 @@ ADDITIONS_BY_REVISION: Dict[str, Dict[str, bool]] = {
     "2025-06-18": {"annotations_title": True, "title": True, "structured_content": True},
     "2025-11-25": {"annotations_title": True, "title": True, "structured_content": True},
 }
+
+
+def mcp_section(readme: str, heading: str) -> str:
+    """The MCP section of a README: from its heading up to the next second-level heading (or the end of the file)."""
+    text = unicodedata.normalize("NFC", (REPO_ROOT / readme).read_text(encoding="utf-8"))
+    heading = unicodedata.normalize("NFC", heading)
+    start = text.index(heading)
+    end = text.find("\n## ", start + len(heading))
+    return text[start:] if end == -1 else text[start:end]
 
 
 def without_titles(tool: Dict[str, Any]) -> Dict[str, Any]:
@@ -935,6 +953,23 @@ class TestBatchesByRevision(_Server):
                 self.negotiate(version)
                 (reply,) = self.talk(self.line(self.PING))
                 self.assertEqual(reply, {"jsonrpc": "2.0", "id": 1, "result": {}})
+
+
+class TestReadmesNameTheRevisions(unittest.TestCase):
+    def test_the_section_found_is_the_mcp_section_and_only_that(self) -> None:
+        for readme, heading in README_MCP_SECTIONS:
+            with self.subTest(readme=readme):
+                section = mcp_section(readme, heading)
+                self.assertTrue(section.startswith(heading))
+                self.assertIn("ssd_gitignore", section)  # the list of the nine tools is in it
+                self.assertNotIn("\n## ", section)  # and the next section is not
+
+    def test_every_supported_revision_is_in_the_mcp_section_of_each_readme(self) -> None:
+        for readme, heading in README_MCP_SECTIONS:
+            section = mcp_section(readme, heading)
+            for version in SUPPORTED_PROTOCOL_VERSIONS:
+                with self.subTest(readme=readme, revision=version):
+                    self.assertIn(version, section)
 
 
 class TestRevisionLists(unittest.TestCase):

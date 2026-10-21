@@ -147,6 +147,8 @@ SmartDrive-OS cung cấp máy chủ MCP chuẩn JSON-RPC 2.0 qua `stdio` với *
 8. `ssd_auto_organize`: Tự phân luồng và gom file giảm lãng phí slack kết hợp `AcademicClassifier`. *(sắp xếp/xóa rác)*
 9. `ssd_gitignore`: Kiểm toán và áp dụng khối `.gitignore` theo stack, bảo vệ dữ liệu cá nhân, kiểm toán secret và untrack an toàn. *(idempotent)*
 
+Máy chủ hỗ trợ MCP 2026-07-28, trong đó mỗi request ghi phiên bản của nó trong `_meta` và `server/discover` liệt kê các phiên bản được phục vụ, cùng các phiên bản cũ mở đầu bằng `initialize`: 2025-11-25, 2025-06-18, 2025-03-26 và 2024-11-05. `initialize` trả lời đúng phiên bản client xin, hoặc 2025-11-25 khi không biết phiên bản đó. Tiêu đề công cụ và `structuredContent` chỉ có ở các phiên bản định nghĩa chúng, batch JSON-RPC chỉ được trả lời ở 2024-11-05 và 2025-03-26, hai phiên bản có batch, còn client 2024-11-05 nhận đúng những câu trả lời như trước.
+
 <details>
 <summary>Chi tiết công cụ</summary>
 

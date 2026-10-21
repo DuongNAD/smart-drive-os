@@ -148,6 +148,8 @@ SmartDrive-OS exposes a JSON-RPC 2.0 `stdio` MCP server with **9 tools**:
 8. `ssd_auto_organize`: Autonomous drive auto-zoning and anti-slack relocation with `AcademicClassifier`. *(destructive)*
 9. `ssd_gitignore`: Stack-aware `.gitignore` governance, personal data defense, secrets audit, and safe untracking. *(idempotent)*
 
+The server speaks MCP 2026-07-28, where each request names its revision in `_meta` and `server/discover` lists the revisions it serves, and the older revisions that open with `initialize`: 2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05. `initialize` answers with the revision the client asks for, or with 2025-11-25 when it does not know that one. Tool titles and `structuredContent` appear in the revisions that define them, JSON-RPC batches are answered only in 2024-11-05 and 2025-03-26, the revisions that have them, and a 2024-11-05 client gets exactly the replies it always got.
+
 <details>
 <summary>Tool details</summary>
 
