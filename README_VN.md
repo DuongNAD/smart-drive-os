@@ -138,7 +138,7 @@ Windows không cho đổi tên thư mục khi có tiến trình đang giữ hand
 SmartDrive-OS cung cấp máy chủ MCP chuẩn JSON-RPC 2.0 qua `stdio` với **9 công cụ**:
 
 1. `ssd_search`: Tìm kiếm FTS5 tức thì trả về token rút gọn (<2.000 tokens/truy vấn). *(chỉ đọc)*
-2. `ssd_audit`: Thống kê dung lượng và phân tích lãng phí cluster slack có chế độ nén gọn. *(chỉ đọc)*
+2. `ssd_audit`: Thống kê dung lượng và phân tích lãng phí cluster slack theo cluster thật của ổ, có chế độ nén gọn. *(chỉ đọc)*
 3. `ssd_clean`: Dọn rác an toàn có bảo vệ whitelist và hỗ trợ dry-run. *(xóa rác)*
 4. `ssd_find_duplicates`: Tìm file trùng qua 3 giai đoạn SHA-256 có phân trang và giới hạn xem trước. *(chỉ đọc)*
 5. `ssd_update_index`: Đồng bộ chỉ mục tìm kiếm gia tăng (<2s). *(idempotent)*
@@ -148,8 +148,9 @@ SmartDrive-OS cung cấp máy chủ MCP chuẩn JSON-RPC 2.0 qua `stdio` với *
 9. `ssd_gitignore`: Kiểm toán và áp dụng khối `.gitignore` theo stack, bảo vệ dữ liệu cá nhân, kiểm toán secret và untrack an toàn. *(idempotent)*
 
 <details>
-<summary>Chi tiết công cụ: sub_dir, min_size và scan_skipped</summary>
+<summary>Chi tiết công cụ</summary>
 
+- `ssd_audit`: slack tính theo cluster thật của ổ, như `smart-drive audit` (`cluster_size`; `cluster_size_source` là `detected`, hoặc `assumed` khi không đọc được và dùng cluster exFAT 512 KB).
 - `ssd_clean`: `sub_dir` được xét như lúc quét cả ổ, kể cả các thư mục bên trên: nằm trong ứng dụng đã cài thì không quét gì và `scan_skipped` nêu thư mục cùng lý do; kết quả còn liệt kê mục đã giữ lại (`kept`) và các thư mục `protected_by_system`.
 - `ssd_find_duplicates`: `min_size` loại tệp nhỏ trước khi băm, slack tính theo cluster thật của ổ (`cluster_size`); `sub_dir` nằm trong ứng dụng đã cài hoặc thư mục phụ thuộc thì không được quét (`scan_skipped`).
 

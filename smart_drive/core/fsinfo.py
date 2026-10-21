@@ -1,8 +1,9 @@
 """smart_drive.core.fsinfo - Which filesystem, and which allocation unit, holds a path.
 
-SmartDrive-OS models cluster slack with one fixed 512 KB exFAT cluster (CLUSTER_SIZE_BYTES). That is
-right for the exFAT SSD the tool was built for and only a what-if number anywhere else, so its
-reports need to know what the volume really is instead of claiming exFAT.
+SmartDrive-OS was built for an exFAT SSD with 512 KB clusters (CLUSTER_SIZE_BYTES), and a report must not
+claim exFAT for a volume that is something else. Reports that work cluster slack out use the volume's own
+allocation unit (slack_cluster) and model the 512 KB cluster only when that cannot be read; the ones that
+show the 512 KB model (status, sentinel) say when it is not the volume's (slack_model_note).
 
 100% Python Standard Library: ``os.statvfs`` plus ``/proc/self/mounts`` on Linux, the ``mount``
 command on macOS, and ctypes (kernel32) on Windows. Nothing here ever raises: a volume that cannot
@@ -18,6 +19,8 @@ import sys
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+
+from smart_drive.core.config import CLUSTER_SIZE_BYTES
 
 # Display names for the lower-cased names the operating systems report.
 _DISPLAY_NAMES: Dict[str, str] = {
@@ -211,6 +214,22 @@ def detect_filesystem(path: "os.PathLike[str] | str") -> FilesystemInfo:
     return FilesystemInfo(target, fs_type, block, mount_point, source)
 
 
+# Where the cluster size that cluster-slack figures are worked out at came from (`cluster_size_source` in reports)
+CLUSTER_SIZE_DETECTED = "detected"  # the volume's own allocation unit, as the operating system reports it
+CLUSTER_SIZE_ASSUMED = "assumed"    # that could not be read: the 512 KB exFAT cluster SmartDrive-OS was built for
+
+
+def slack_cluster(info: FilesystemInfo) -> Tuple[int, str]:
+    """The allocation unit cluster slack is worked out at, and where it came from: (bytes, source).
+
+    The volume's own allocation unit when the operating system reported one (CLUSTER_SIZE_DETECTED), otherwise the
+    512 KB exFAT cluster the tool was built for (CLUSTER_SIZE_BYTES, CLUSTER_SIZE_ASSUMED).
+    """
+    if info.block_size > 0:
+        return info.block_size, CLUSTER_SIZE_DETECTED
+    return CLUSTER_SIZE_BYTES, CLUSTER_SIZE_ASSUMED
+
+
 def slack_model_note(info: FilesystemInfo, model_cluster_size: int) -> Optional[str]:
     """Explains when the modelled cluster size is not this volume's real one; None when it is."""
     model = f"{model_cluster_size // 1024} KB"
@@ -227,11 +246,14 @@ def slack_model_note(info: FilesystemInfo, model_cluster_size: int) -> Optional[
 
 
 __all__ = [
+    "CLUSTER_SIZE_ASSUMED",
+    "CLUSTER_SIZE_DETECTED",
     "FilesystemInfo",
     "best_mount",
     "detect_filesystem",
     "normalize_fs_name",
     "parse_mount_output",
     "parse_proc_mounts",
+    "slack_cluster",
     "slack_model_note",
 ]

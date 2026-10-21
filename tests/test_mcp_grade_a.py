@@ -384,7 +384,9 @@ class TestToolSchemaAndBehaviorAccuracy(SmartDriveTestCase):
         # Description accuracy
         desc = tool["description"]
         self.assertIn("6 standard taxonomies", desc)
-        self.assertIn("512KB exFAT cluster slack", desc)
+        self.assertIn("wasted cluster slack", desc)
+        self.assertIn("drive's real cluster size", desc)
+        self.assertIn("cluster_size_source", desc)
         self.assertIn("top slack directories", desc)
 
         # Execution using sub_dir

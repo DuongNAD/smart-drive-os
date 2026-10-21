@@ -7,6 +7,16 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The MCP tool `ssd_audit` worked out cluster slack at an assumed 512 KB exFAT cluster on every drive, so on a 4 KB NTFS
+  drive a folder holding 1.35 MB showed 34.7 MB of slack where `smart-drive audit` showed 157 KB, and nothing in the
+  result said which cluster size the figures were worked out at. It now uses the drive's real cluster size, like
+  `smart-drive audit` (512 KB only when the size cannot be read), through the new `fsinfo.slack_cluster`. Its result
+  gained `cluster_size`, `cluster_size_source` (`"detected"`, or `"assumed"` when the 512 KB cluster was used because
+  the size could not be read), `filesystem` and `slack_model_note`; `audit --json` gained `cluster_size_source`; and the
+  tool description no longer claims 512 KB.
+
 ## [1.4.2] - 2026-10-21
 
 Safety and packaging fixes from the product-readiness review of 1.4.1: a list of running programs that cannot be read

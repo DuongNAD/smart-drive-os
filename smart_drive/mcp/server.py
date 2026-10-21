@@ -2,7 +2,7 @@
 
 Provides autonomous AI coding agents with 8 high-performance tools:
 1. ssd_search: Instant sub-10ms multi-criteria search over 500,000+ files.
-2. ssd_audit: Storage allocation breakdown and 512KB cluster slack metrics.
+2. ssd_audit: Storage allocation breakdown and cluster slack metrics at the drive's real cluster size.
 3. ssd_clean: Safe junk cleaner (Tier 1 safe by default, dry-run or apply mode).
 4. ssd_find_duplicates: 3-phase duplicate detection and space reclamation plan.
 5. ssd_update_index: Fast incremental mtime/size search index synchronization.
@@ -37,7 +37,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.duplicates import DuplicateDetector
 from smart_drive.core.exfat_compat import ExFatEngine
-from smart_drive.core.fsinfo import detect_filesystem
+from smart_drive.core.fsinfo import detect_filesystem, slack_cluster
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.purge_engine import PurgeEngine, SecurityGuard
 from smart_drive.core.relink import after_moves, relink
@@ -200,7 +200,9 @@ TOOLS: List[Dict[str, Any]] = [
         "name": "ssd_audit",
         "description": (
             "Analyzes SSD storage allocation breakdown across 6 standard taxonomies (01_AI_Models .. "
-            "06_Archives_Storage) and computes wasted 512KB exFAT cluster slack and top slack directories. "
+            "06_Archives_Storage) and computes wasted cluster slack and top slack directories at the drive's real "
+            "cluster size, as `smart-drive audit` does. The result's cluster_size_source is 'detected', or 'assumed' "
+            "when the cluster size could not be read and the 512KB exFAT cluster was used instead. "
             "Use this to audit drive capacity. NEVER run recursive shell find or grep commands."
         ),
         "annotations": {
@@ -876,7 +878,11 @@ class SmartDriveMCPServer:
         sub_dir = args.get("sub_dir") or args.get("directory")
         target_root = self._resolve_safe_path(sub_dir)
         compact_mode = self._parse_bool(args.get("compact"), default=True)
-        auditor = StorageAuditor(target_root)
+
+        # Slack is worked out at the allocation unit of the folder audited, as `audit` does at its root: the volume's
+        # own, 512 KB exFAT only when it cannot be read. The result says which, so that an agent can tell.
+        cluster_size, cluster_size_source = slack_cluster(detect_filesystem(target_root))
+        auditor = StorageAuditor(target_root, cluster_size=cluster_size)
         report = auditor.run_audit()
 
         raw_categories = report.get("categories", {})
@@ -907,6 +913,10 @@ class SmartDriveMCPServer:
 
         result = {
             "root_path": report.get("root_path", target_root),
+            "cluster_size": cluster_size,
+            "cluster_size_source": cluster_size_source,
+            "filesystem": report.get("filesystem"),
+            "slack_model_note": report.get("slack_model_note"),
             "total_files": report.get("total_files", 0),
             "total_directories": report.get("total_directories", 0),
             "total_logical_bytes": logical_bytes,
