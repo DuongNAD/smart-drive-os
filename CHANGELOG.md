@@ -51,6 +51,9 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   divided the cluster size by 1024, so on 512 B clusters, which exFAT allows, its warning read "on 0KB clusters",
   and on 1536 B ones "on 1KB clusters". It now names the cluster the way the reports do
   ("on 512 B clusters", "on 512 KB clusters").
+- `sentinel` named the allocation unit in its `Root:` line only when it was a whole number of KB, so on a 512 B
+  exFAT volume the line read `(exFAT)` where a 4 KB one reads `(NTFS, 4 KB allocation unit)`. It now names any unit it
+  read the way the reports do (`(exFAT, 512 B allocation unit)`); a unit that could not be read is still left out.
 
 ## [1.4.3] - 2026-10-21
 
