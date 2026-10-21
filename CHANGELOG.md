@@ -32,6 +32,14 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   (`cluster_size_source` is `"detected"`, or `"assumed"` when the 512 KB exFAT cluster was used), how it compares files
   (by size, then by their first 8 KB and, above 16 KB, their last 8 KB, then in full), and which folders it does not
   enter.
+- The MCP tool `ssd_check_safety` called a drive-relative Windows path such as `E:x` safe, reading it as `x` below the
+  storage root, although Windows reads it against the current folder of drive `E:` and every other path tool refuses it.
+  It now refuses it with an error that says so and what to send instead (an absolute path, or one relative to the
+  storage root), and the other tools' refusal says the same instead of "path escapes storage root". It also called the
+  storage root itself safe (`E:\`, `.`, `x/..`, or the folder root in any spelling), the one folder an agent must never
+  delete or move, while the taxonomy folders below it were protected. It now reports the root protected: `is_safe`
+  false, `is_protected_root_dir` true and the new field `is_storage_root` true (every answer carries the field, false
+  for any other path).
 
 ## [1.4.2] - 2026-10-21
 

@@ -98,6 +98,33 @@ def _is_inside(root: str, path: str) -> bool:
         return False
 
 
+def _drive_relative_explanation(drive: str, path: str) -> str:
+    """Why a path such as `E:x` is refused and what to send instead: the one wording of every tool that takes a path.
+
+    `path` is the text that was sent (stripped), quoted back to the caller. Windows reads a drive letter that no
+    separator follows against the current folder of that drive, which is process state and says nothing about the
+    storage root, so such a path points nowhere the tool can vouch for.
+    """
+    return (
+        f"Drive-relative path: Windows resolves '{path}' against the current folder of drive {drive}, "
+        f"not against the storage root; send an absolute path ({drive}\\...) or a path relative to the storage root"
+    )
+
+
+def _refused_path_report(path: str, violations: List[str], error: str) -> Dict[str, Any]:
+    """The ssd_check_safety answer for a path refused outright: the keys of every other answer, and the reason."""
+    return {
+        "path": path,
+        "is_safe": False,
+        "is_symlink": False,
+        "forbidden_character_violations": violations,
+        "is_protected_root_file": False,
+        "is_protected_root_dir": False,
+        "is_storage_root": False,
+        "error": error,
+    }
+
+
 def _scan_skipped_note(target: str, skipped: Optional[Dict[str, str]], action: str) -> Optional[Dict[str, str]]:
     """A detector's `scan_skipped` plus a sentence to show: what kept the scan from looking at `target`, and why.
 
@@ -345,7 +372,12 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "ssd_check_safety",
-        "description": "Verifies whether a file path or operation complies with exFAT rules: checks for illegal Windows characters, symlink attempts, and whitelist.",
+        "description": (
+            "Verifies whether a file path or operation complies with exFAT rules: checks for illegal Windows "
+            "characters, symlink attempts, and whitelist. The storage root itself is reported protected "
+            "(is_storage_root), and drive-relative Windows paths such as E:x, which Windows resolves against the "
+            "drive's current folder and not the storage root, are refused."
+        ),
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -700,7 +732,7 @@ class SmartDriveMCPServer:
                 raise ValueError("Access denied: path escapes storage root")
             # "E:x" is relative to the drive's working directory, which is process state, not a place on the drive
             if clean_norm[2:3] != "/":
-                raise ValueError("Access denied: path escapes storage root")
+                raise ValueError("Access denied: " + _drive_relative_explanation(root_drive, sub_path_str))
             target = os.path.realpath(os.path.abspath(clean_norm))
         elif clean_norm.startswith("/"):
             # Windows reads a drive-less "\x" against the process' current drive, which says nothing about the root
@@ -1078,15 +1110,7 @@ class SmartDriveMCPServer:
         if not path_str or not isinstance(path_str, str):
             return {"error": "Missing required argument 'path'"}
         if "\x00" in path_str:
-            return {
-                "path": path_str,
-                "is_safe": False,
-                "is_symlink": False,
-                "forbidden_character_violations": ["\\x00"],
-                "is_protected_root_file": False,
-                "is_protected_root_dir": False,
-                "error": "Path contains null byte",
-            }
+            return _refused_path_report(path_str, ["\\x00"], "Path contains null byte")
 
         root = self._ensure_root()
         canonical_root = os.path.realpath(os.path.abspath(root))
@@ -1103,15 +1127,9 @@ class SmartDriveMCPServer:
                     v_str = str(v)
                     if v_str not in all_forbidden:
                         all_forbidden.append(v_str)
-            return {
-                "path": path_str,
-                "is_safe": False,
-                "is_symlink": False,
-                "forbidden_character_violations": all_forbidden,
-                "is_protected_root_file": False,
-                "is_protected_root_dir": False,
-                "error": "Path is on a different drive mount or escapes drive root (UNC path)",
-            }
+            return _refused_path_report(
+                path_str, all_forbidden, "Path is on a different drive mount or escapes drive root (UNC path)"
+            )
 
         # 2. Cross-drive checks & Windows drive stripping
         root_drive = canonical_root[:2].upper() if len(canonical_root) >= 2 and canonical_root[0].isalpha() and canonical_root[1] == ":" else ""
@@ -1130,15 +1148,13 @@ class SmartDriveMCPServer:
                     all_forbidden.append(v_str)
 
         if path_drive and path_drive != root_drive:
-            return {
-                "path": path_str,
-                "is_safe": False,
-                "is_symlink": False,
-                "forbidden_character_violations": all_forbidden,
-                "is_protected_root_file": False,
-                "is_protected_root_dir": False,
-                "error": "Path is on a different drive mount or escapes drive root",
-            }
+            return _refused_path_report(
+                path_str, all_forbidden, "Path is on a different drive mount or escapes drive root"
+            )
+
+        # "E:x" is read against the current folder of drive E:, which is process state and not the storage root
+        if path_drive and clean_path[2:3] not in ("\\", "/"):
+            return _refused_path_report(path_str, all_forbidden, _drive_relative_explanation(root_drive, clean_path))
 
         if norm_sub.startswith("/"):
             # Absolute: the drive letter dropped from norm_sub for the segment audit is part of where it points
@@ -1178,8 +1194,10 @@ class SmartDriveMCPServer:
         except (OSError, ValueError):
             is_symlink = False
 
+        # The storage root itself is the one folder nothing may delete or move: reported protected, like the taxonomies
+        is_storage_root = not escapes_root and os.path.normcase(normalized_target) == os.path.normcase(canonical_root)
         is_prot_file = is_protected_root_file(rel_path)
-        is_prot_dir = is_protected_root_dir(rel_path)
+        is_prot_dir = is_storage_root or is_protected_root_dir(rel_path)
         is_safe = (
             len(all_forbidden) == 0
             and not is_symlink
@@ -1194,6 +1212,7 @@ class SmartDriveMCPServer:
             "forbidden_character_violations": all_forbidden,
             "is_protected_root_file": is_prot_file,
             "is_protected_root_dir": is_prot_dir,
+            "is_storage_root": is_storage_root,
         }
         if escapes_root:
             res["error"] = "Path is on a different drive mount or escapes drive root"

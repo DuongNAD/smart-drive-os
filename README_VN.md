@@ -153,6 +153,7 @@ SmartDrive-OS cung cấp máy chủ MCP chuẩn JSON-RPC 2.0 qua `stdio` với *
 - `ssd_audit`: slack tính theo cluster thật của ổ, như `smart-drive audit` (`cluster_size`; `cluster_size_source` là `detected`, hoặc `assumed` khi không đọc được và dùng cluster exFAT 512 KB).
 - `ssd_clean`: `sub_dir` được xét như lúc quét cả ổ, kể cả các thư mục bên trên: nằm trong ứng dụng đã cài thì không quét gì và `scan_skipped` nêu thư mục cùng lý do; kết quả còn liệt kê mục đã giữ lại (`kept`) và các thư mục `protected_by_system`.
 - `ssd_find_duplicates`: `min_size` loại tệp nhỏ trước khi băm, slack tính theo cluster thật của ổ (`cluster_size`; `cluster_size_source` là `detected`, hoặc `assumed` khi không đọc được); `sub_dir` nằm trong ứng dụng đã cài hoặc thư mục phụ thuộc thì không được quét (`scan_skipped`).
+- `ssd_check_safety`: gốc lưu trữ được báo là thư mục được bảo vệ (`is_storage_root`); đường dẫn tương đối theo ổ như `E:x` (Windows tính từ thư mục hiện tại của ổ) bị từ chối.
 
 </details>
 
