@@ -1,10 +1,12 @@
-"""smart_drive.core.auditor - Storage Audit, Taxonomy Breakdown & 512KB Cluster Slack Calculator.
+"""smart_drive.core.auditor - Storage Audit, Taxonomy Breakdown & Cluster Slack Calculator.
 
 Designed specifically for external SSDs (Kingston XS2000 2TB exFAT).
 Implements:
 1. Storage breakdown by taxonomy (01_AI_Models .. 06_Archives_Storage, workspaces, and system).
 2. Extension & MIME classification (7 categories + Other) utilizing config.py constants and core/scanner.py streams.
-3. 512KB cluster slack metrics (nominal size vs allocated physical size).
+3. Cluster slack metrics (nominal size vs allocated physical size) at the cluster size the auditor is given: the commands
+   take it from fsinfo.slack_cluster (the volume's own, the 512KB exFAT cluster only when it cannot be read), and the
+   reports name it.
 4. Directory tree aggregation (DirectoryNode) tracking direct and recursive metrics.
 5. Multi-format reporting (ASCII table, JSON, Markdown).
 """
@@ -43,7 +45,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOptions, ScanStats
 from smart_drive.core.exfat_compat import ExFatEngine, normalize_rel_path
-from smart_drive.core.fsinfo import detect_filesystem, slack_model_note
+from smart_drive.core.fsinfo import cluster_size_text, detect_filesystem, slack_model_note
 from smart_drive.core.learning_units import (
     get_hotspot_advice,
     get_learning_summary,
@@ -435,12 +437,14 @@ AuditReport = AuditResult
 # ==============================================================================
 
 class StorageAuditor:
-    """Comprehensive storage auditor and 512KB cluster slack calculator.
+    """Comprehensive storage auditor and cluster slack calculator.
 
     Traverses drives via `FastDirectoryScanner.scan_iter()`, classifying files into
     the 6 business taxonomies + workspaces + system, categorizing extensions into
-    7 functional groups + Other, computing exact 512KB cluster allocations,
-    and building an aggregated directory tree (`DirectoryNode`).
+    7 functional groups + Other, computing exact cluster allocations at ``cluster_size``
+    (the 512KB exFAT cluster unless the caller gives the volume's own, as the commands
+    do from ``fsinfo.slack_cluster``), and building an aggregated directory tree
+    (`DirectoryNode`). Its reports name the cluster size they were worked out at.
     """
 
     def __init__(
@@ -503,7 +507,7 @@ class StorageAuditor:
         return classify_file_entry(name, ext, rel_path)
 
     def calculate_allocation(self, size: int) -> int:
-        """Calculates physical cluster allocation on exFAT for a given size."""
+        """Calculates physical cluster allocation for a given size at ``cluster_size``."""
         return calculate_allocated_bytes(size, self.cluster_size)
 
     def calculate_slack(self, size: int) -> int:
@@ -779,11 +783,15 @@ class StorageAuditor:
         """Renders an ASCII text report formatted with structured tables."""
         buf = io.StringIO()
         summary = data.get("summary", {})
-        cluster_kb = data.get("cluster_size", CLUSTER_SIZE_BYTES) // 1024
+        cluster_size = int(data.get("cluster_size") or CLUSTER_SIZE_BYTES)
+        cluster_text = cluster_size_text(cluster_size)
+        # `audit` also says where the cluster size came from: detected, or assumed when the volume's own cannot be read
+        cluster_source = data.get("cluster_size_source")
+        cluster_detail = f"{cluster_size} B, {cluster_source}" if cluster_source else f"{cluster_size} B"
 
         buf.write("=" * 80 + "\n")
         buf.write("SMART DRIVE OS - STORAGE AUDIT REPORT\n")
-        buf.write(f"Root: {data.get('root_path')} | Cluster Size: {cluster_kb} KB ({data.get('cluster_size')} B)\n")
+        buf.write(f"Root: {data.get('root_path')} | Cluster Size: {cluster_text} ({cluster_detail})\n")
         if data.get("filesystem"):
             buf.write(f"Filesystem: {data['filesystem'].get('summary')}\n")
         if data.get("slack_model_note"):
@@ -800,7 +808,7 @@ class StorageAuditor:
         buf.write(f"  Physical Allocated Size: {format_bytes(summary.get('total_allocated_bytes', 0))} ({summary.get('total_allocated_bytes', 0):,} B)\n")
         buf.write(f"  Wasted Cluster Slack:    {format_bytes(summary.get('total_slack_bytes', 0))} ({format_percentage(summary.get('total_slack_percentage', 0.0))} waste)\n")
         buf.write(f"  Zero-Byte Files:         {format_count(summary.get('empty_files_count', 0))} (0 clusters allocated)\n")
-        buf.write(f"  Allocated 512KB Clusters:{format_count(summary.get('total_clusters', 0))}\n")
+        buf.write(f"  Allocated Clusters:      {format_count(summary.get('total_clusters', 0))} ({cluster_text} each)\n")
         skipped_links = (data.get("scan_stats") or {}).get("symlinks_skipped", 0)
         if skipped_links:
             buf.write(f"  Symlinks Skipped:        {format_count(skipped_links)} (links are never followed or counted)\n")
@@ -889,11 +897,12 @@ class StorageAuditor:
         """Renders a complete Markdown storage audit report."""
         buf = io.StringIO()
         summary = data.get("summary", {})
-        cluster_kb = data.get("cluster_size", CLUSTER_SIZE_BYTES) // 1024
+        cluster_size = int(data.get("cluster_size") or CLUSTER_SIZE_BYTES)
+        cluster_text = cluster_size_text(cluster_size)
 
         buf.write(f"# Storage Audit Report\n\n")
         buf.write(f"- **Root Path**: `{data.get('root_path')}`\n")
-        buf.write(f"- **Volume Cluster Geometry**: `{cluster_kb} KB` ({data.get('cluster_size'):,} bytes per allocation unit)\n")
+        buf.write(f"- **Volume Cluster Geometry**: `{cluster_text}` ({cluster_size:,} bytes per allocation unit)\n")
         if data.get("filesystem"):
             buf.write(f"- **Filesystem**: `{data['filesystem'].get('summary')}`\n")
         if data.get("slack_model_note"):
@@ -908,7 +917,7 @@ class StorageAuditor:
         buf.write(f"| **Logical Nominal Size** | {format_bytes(summary.get('total_logical_bytes', 0))} ({summary.get('total_logical_bytes', 0):,} bytes) |\n")
         buf.write(f"| **Physical Allocated Size** | {format_bytes(summary.get('total_allocated_bytes', 0))} ({summary.get('total_allocated_bytes', 0):,} bytes) |\n")
         buf.write(f"| **Wasted Cluster Slack** | {format_bytes(summary.get('total_slack_bytes', 0))} ({format_percentage(summary.get('total_slack_percentage', 0.0))} overhead) |\n")
-        buf.write(f"| **Allocated 512KB Clusters** | {format_count(summary.get('total_clusters', 0))} |\n")
+        buf.write(f"| **Allocated Clusters** | {format_count(summary.get('total_clusters', 0))} ({cluster_text} each) |\n")
         buf.write(f"| **Zero-Byte Files** | {format_count(summary.get('empty_files_count', 0))} (0 physical bytes) |\n")
         skipped_links = (data.get("scan_stats") or {}).get("symlinks_skipped", 0)
         if skipped_links:
@@ -944,7 +953,7 @@ class StorageAuditor:
             buf.write(f"| **{name}** | {files_str} | {log_str} | {alloc_str} | {slack_str} | {pct_str} |\n")
         buf.write("\n")
 
-        buf.write("## 4. 512KB Cluster Slack Hotspots\n\n")
+        buf.write(f"## 4. Cluster Slack Hotspots ({cluster_text} clusters)\n\n")
         buf.write("Folders with significant cluster slack overhead caused by thousands of small files:\n\n")
         buf.write("| Directory (Subtree) | Files | Subtree Size | Slack Wasted | Slack Overhead % |\n")
         buf.write("|:---|---:|---:|---:|---:|\n")
@@ -961,7 +970,10 @@ class StorageAuditor:
         micro_hotspots = data.get("micro_file_hotspots", [])
         if micro_hotspots:
             buf.write("## 5. Micro-File Hotspots (High Cluster Slack)\n\n")
-            buf.write("Folders containing at least 20 micro-files (< 32 KB) with > 90% cluster slack waste on 512 KB clusters:\n\n")
+            buf.write(
+                "Folders containing at least 20 micro-files (< 32 KB) with > 90% cluster slack waste "
+                f"on {cluster_text} clusters:\n\n"
+            )
             buf.write("| Directory | Micro-Files | Direct Files | Logical Size | Allocated | Slack Wasted | Waste % | Advice |\n")
             buf.write("|:---|---:|---:|---:|---:|---:|---:|:---||\n")
             for h in micro_hotspots:
@@ -990,7 +1002,10 @@ class StorageAuditor:
         slack_pct = summary.get("total_slack_percentage", 0.0)
         slack_bytes = summary.get("total_slack_bytes", 0)
         buf.write(f"- **Volume Cluster Health**: Total slack loss is **{format_bytes(slack_bytes)}** ({slack_pct:.1f}%).\n")
-        buf.write("- **Recommendation 1 (Purge AppleDouble)**: Run `smart-drive clean --dry-run` to detect and safely eliminate `._*` resource forks, which each waste 512 KB.\n")
+        buf.write(
+            "- **Recommendation 1 (Purge AppleDouble)**: Run `smart-drive clean --dry-run` to detect and safely "
+            f"eliminate `._*` resource forks, which each take at least one {cluster_text} cluster.\n"
+        )
         buf.write("- **Recommendation 2 (Archive Small Code Repos)**: Folders with >50% slack overhead (e.g. unbundled node_modules or unpacked repositories) should be zipped or tarred into `.zip` / `.tar.gz` archives to eliminate cluster quantization loss.\n")
 
         return buf.getvalue()

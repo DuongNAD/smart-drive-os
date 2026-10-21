@@ -321,7 +321,7 @@ class TestCliAuditClusterSize(SmartDriveTestCase):
         self.assertEqual(data["cluster_size"], 4096)
 
     def test_plain_audit_uses_the_detected_cluster_size(self) -> None:
-        self.assertIn("Cluster Size: 4 KB (4096 B)", self.run_audit(block_size=4096))
+        self.assertIn("Cluster Size: 4 KB (4096 B, detected)", self.run_audit(block_size=4096))
 
     def test_undetected_cluster_size_falls_back_to_the_exfat_model(self) -> None:
         data = json.loads(self.run_audit("--json", block_size=0))
