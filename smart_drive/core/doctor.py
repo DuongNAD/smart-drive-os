@@ -46,7 +46,7 @@ except ImportError:  # Python < 3.11: a Codex entry is then found by its table h
 
 import smart_drive
 from smart_drive.core import relink
-from smart_drive.core.fsinfo import detect_filesystem, slack_cluster
+from smart_drive.core.fsinfo import cluster_size_text, detect_filesystem, slack_cluster
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.sentinel import get_default_db_path
 from smart_drive.mcp.registrar import _UV_ARCHIVE_BUCKET, DIST_NAME, build_mcp_entry
@@ -1005,10 +1005,6 @@ _FOUND_BY = {
 }
 
 
-def _unit_text(size: int) -> str:
-    return f"{size // 1024} KB" if size >= 1024 and size % 1024 == 0 else f"{size} B"
-
-
 def _size_text(size: int) -> str:
     value = float(size)
     for unit in ("B", "KB", "MB", "GB"):
@@ -1133,7 +1129,7 @@ def _environment_rows(report: Dict[str, Any], code: Callable[[str], str]) -> Lis
         parts = [str(data.get("name", "unknown"))]
         unit = data.get("allocation_unit_bytes")
         if isinstance(unit, int):
-            parts.append(f"allocation unit {_unit_text(unit)} ({data.get('cluster_size_source', '?')})")
+            parts.append(f"allocation unit {cluster_size_text(unit)} ({data.get('cluster_size_source', '?')})")
         if data.get("detected_via"):
             parts.append(f"detected via {data['detected_via']}")
         total, free = data.get("total_bytes"), data.get("free_bytes")

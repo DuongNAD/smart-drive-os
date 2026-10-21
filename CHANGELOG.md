@@ -17,6 +17,13 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   the source in its own `filesystem` block). The `ssd_auto_organize` description says what the two fields mean, and no
   field was renamed or removed.
 
+### Changed
+
+- `doctor` names the drive's allocation unit with `fsinfo.cluster_size_text` instead of its own copy of it; the
+  report reads as before. A test reads the source of `smart_drive` and fails if a cluster size is divided by 1024 for
+  a text, or tested for a whole number of KB, anywhere but in `fsinfo`, so the reports listed under Fixed cannot
+  drift apart again.
+
 ### Removed
 
 - The unused import of `CLUSTER_SIZE_BYTES`, the fixed 512 KB exFAT cluster, from `smart_drive.core.duplicates`. The
