@@ -451,6 +451,8 @@ SmartDrive-OS is engineered with a **local-first, zero-trust** architecture:
 
 For full details and compliance specifications, read [PRIVACY.md](PRIVACY.md).
 
+To report a security problem privately (data loss, a path escape in an MCP tool, a write outside the drive, a corrupted agent config), see [SECURITY.md](SECURITY.md).
+
 ## Testing
 
 2,000+ automated tests run in CI on Windows, macOS and Linux with Python 3.9 and 3.13 using `unittest`:
