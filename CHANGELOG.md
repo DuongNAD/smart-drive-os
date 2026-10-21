@@ -87,6 +87,13 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   its place). It is one JSON file overwritten in place, so it never grows, and nothing else on the drive is changed. The
   `--help` text, the module docstrings and both READMEs (the sentence under "Check the drive", the "What it does" table
   and the command reference) now say exactly that.
+- `sentinel` (also with `--no-heal`, which leaves the drive alone) and the MCP tool `ssd_status`, which is annotated
+  read-only, ran `git status` in every repository on the drive without turning optional locks off, so in a repository
+  whose index was stale (a clone copied to another computer or drive letter, files touched by a tool) git refreshed the
+  index and wrote `.git/index` back. `repos`, `gitignore audit` and the junk detector already ran git with
+  `GIT_OPTIONAL_LOCKS=0`; the repository check of `sentinel` now does too, so a health check leaves every repository
+  byte for byte as it was. Found by running the previews on a real repository: the repositories the tests used until
+  then held a `.git/HEAD` and nothing else, which git cannot read.
 
 ## [1.4.2] - 2026-10-21
 

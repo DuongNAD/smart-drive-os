@@ -5,7 +5,8 @@ Provides:
 1. Verification and auto-healing of anti-indexing shields (.metadata_never_index, .fseventsd/no_log).
 2. SQLite FTS5 database connectivity and PRAGMA quick_check integrity validation.
 3. exFAT safety auditing: Windows forbidden characters and symlink prevention.
-4. Multi-repository Git status sentinel across the SSD.
+4. Multi-repository Git status sentinel across the SSD. Git runs with optional locks off, so the check never
+   rewrites the index of a repository.
 """
 
 from __future__ import annotations
@@ -216,6 +217,9 @@ def check_git_repositories(root: str, max_depth: int = 4) -> Dict[str, Any]:
     clean_count = 0
     dirty_count = 0
     unpushed_count = 0
+    # `git status` refreshes the index it reads and writes it back unless optional locks are off; a health check
+    # must leave every repository as it found it (a clone copied to another drive has a stale index)
+    git_env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0")
 
     for repo_dir in repos_found:
         rel_repo = os.path.relpath(repo_dir, root).replace("\\", "/")
@@ -227,6 +231,7 @@ def check_git_repositories(root: str, max_depth: int = 4) -> Dict[str, Any]:
                 text=True,
                 timeout=5,
                 check=False,
+                env=git_env,
             )
             if res.returncode == 0:
                 lines = [ln for ln in res.stdout.strip().split("\n") if ln.strip()]
