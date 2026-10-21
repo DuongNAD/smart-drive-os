@@ -104,6 +104,9 @@ _CLIENT_ERRORS = (
 
 # A JSON-RPC batch is answered in one piece, so its size is capped (clients do not batch dozens of calls).
 MAX_BATCH_SIZE = 100
+# The revisions that have JSON-RPC batches. MCP 2025-03-26 added them and 2025-06-18 took them out again; 2024-11-05
+# is plain JSON-RPC 2.0, which has them, and this server has always answered them.
+BATCH_PROTOCOL_VERSIONS: Tuple[str, ...] = ("2025-03-26", "2024-11-05")
 
 
 def _is_at_least(version: str, since: str) -> bool:
@@ -1617,6 +1620,21 @@ class SmartDriveMCPServer:
         if not isinstance(message, list):
             self._process_one(message)
             return
+        # Before the other checks, and whatever the batch holds, so that none of its requests runs: 2025-06-18 and
+        # later have no batches, and a 2026-07-28 request is never part of one.
+        if self.protocol_version not in BATCH_PROTOCOL_VERSIONS or any(_is_modern_request(item) for item in message):
+            self.send_response({
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {
+                    "code": -32600,
+                    "message": (
+                        "Invalid Request: MCP 2025-06-18 and later have no JSON-RPC batches; "
+                        "send each request as a message of its own"
+                    ),
+                },
+            })
+            return
         if not message:
             self.send_response({
                 "jsonrpc": "2.0",
@@ -1938,6 +1956,7 @@ class SmartDriveMCPServer:
 
 
 __all__ = [
+    "BATCH_PROTOCOL_VERSIONS",
     "CACHE_TTL_MS",
     "LATEST_PROTOCOL_VERSION",
     "LEGACY_PROTOCOL_VERSIONS",

@@ -20,6 +20,10 @@ Regressions:
   lists the revisions served, `tools/list` and `server/discover` carry `ttlMs` and `cacheScope`, a request that names
   another revision gets -32022 and one with a missing or malformed envelope -32602, `ping` no longer exists, and
   nothing a 2026-07-28 request does reads or changes what `initialize` negotiated.
+- MCP 2025-06-18 took JSON-RPC batches out of the protocol, yet a batch was answered whatever the client had
+  negotiated. A batch is still answered with an array in 2024-11-05 (plain JSON-RPC 2.0), in 2025-03-26 and before
+  `initialize`. Once 2025-06-18 or later is negotiated, or when the batch holds a 2026-07-28 request, the whole batch
+  is refused with one -32600 error and none of its requests runs.
 """
 
 from __future__ import annotations
@@ -37,9 +41,11 @@ from unittest.mock import patch
 import smart_drive.mcp as mcp_package
 from smart_drive.mcp import server as server_module
 from smart_drive.mcp.server import (
+    BATCH_PROTOCOL_VERSIONS,
     CACHE_TTL_MS,
     LATEST_PROTOCOL_VERSION,
     LEGACY_PROTOCOL_VERSIONS,
+    MAX_BATCH_SIZE,
     META_CLIENT_CAPABILITIES,
     META_PROTOCOL_VERSION,
     META_SERVER_INFO,
@@ -803,6 +809,134 @@ class TestModernAuthAndLimits(_Server):
         self.assertEqual(set(second), {"jsonrpc", "id", "error"})
 
 
+class TestBatchesByRevision(_Server):
+    """A JSON-RPC batch exists in 2024-11-05 and 2025-03-26; 2025-06-18 took it out of the protocol."""
+
+    PING = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+    CALL = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {"name": "ssd_check_safety", "arguments": {"path": "01_AI_Models/model.gguf"}},
+    }
+
+    def modern(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """A 2026-07-28 request as a message, to put in a batch."""
+        return json.loads(self.modern_line(method, params, msg_id=3))
+
+    def negotiate(self, version: Any) -> None:
+        """Sends `initialize` for `version` on a fresh server; `_ABSENT` leaves the server before any initialize."""
+        self.restart()
+        if version is not _ABSENT:
+            self.initialize({"protocolVersion": version})
+
+    def assert_refused(self, reply: Any) -> None:
+        """`reply` is the one error that turns a batch down whole."""
+        self.assertIsInstance(reply, dict)
+        self.assertEqual(set(reply), {"jsonrpc", "id", "error"})
+        self.assertEqual(reply["jsonrpc"], "2.0")
+        self.assertIsNone(reply["id"])
+        self.assertEqual(list(reply["error"]), ["code", "message"])
+        self.assertEqual(reply["error"]["code"], -32600)
+        message = reply["error"]["message"]
+        self.assertTrue(message.startswith("Invalid Request"))
+        for phrase in ("2025-06-18", "no JSON-RPC batches", "each request", "message of its own"):
+            self.assertIn(phrase, message)
+
+    def test_a_batch_is_refused_whole_once_2025_06_18_or_later_is_negotiated(self) -> None:
+        for version in ("2025-06-18", "2025-11-25"):
+            with self.subTest(version=version):
+                self.negotiate(version)
+                with patch.object(self.server, "dispatch_tool") as dispatch:
+                    replies = self.talk(self.line([self.PING, self.CALL]))
+                self.assertEqual(len(replies), 1)
+                self.assert_refused(replies[0])
+                dispatch.assert_not_called()
+
+    def test_a_batch_is_still_answered_with_an_array_where_the_revision_has_batches(self) -> None:
+        for version in (_ABSENT, "2024-11-05", "2025-03-26"):
+            with self.subTest(version="no initialize" if version is _ABSENT else version):
+                self.negotiate(version)
+                (reply,) = self.talk(self.line([self.PING, self.CALL]))
+                self.assertIsInstance(reply, list)
+                self.assertEqual([item["id"] for item in reply], [1, 2])
+                self.assertEqual(reply[0], {"jsonrpc": "2.0", "id": 1, "result": {}})
+                self.assertIn("content", reply[1]["result"])
+                self.negotiate(version)
+                self.assertEqual(self.talk_raw(self.line([self.PING])), '[{"jsonrpc":"2.0","id":1,"result":{}}]\n')
+
+    def test_a_batch_holding_a_2026_request_is_refused_in_every_state(self) -> None:
+        call = self.modern("tools/call", {"name": "ssd_check_safety", "arguments": {"path": "01_AI_Models/model.gguf"}})
+        for version in (_ABSENT,) + LEGACY_PROTOCOL_VERSIONS:
+            for batch in ([call, self.PING], [self.PING, call], [call]):
+                with self.subTest(version="no initialize" if version is _ABSENT else version, size=len(batch)):
+                    self.negotiate(version)
+                    with patch.object(self.server, "dispatch_tool") as dispatch:
+                        replies = self.talk(self.line(batch))
+                    self.assertEqual(len(replies), 1)
+                    self.assert_refused(replies[0])
+                    dispatch.assert_not_called()
+
+    def test_nothing_in_a_refused_batch_runs(self) -> None:
+        """Not even an `initialize`: the revision negotiated before the batch stays."""
+        handshake = json.loads(self.initialize_line({"protocolVersion": "2024-11-05"}, msg_id=9))
+        self.negotiate("2025-11-25")
+        (reply,) = self.talk(self.line([handshake, self.PING]))
+        self.assert_refused(reply)
+        self.assertEqual(self.server.protocol_version, "2025-11-25")
+        self.negotiate(_ABSENT)
+        handshake = json.loads(self.initialize_line({"protocolVersion": "2025-06-18"}, msg_id=9))
+        (reply,) = self.talk(self.line([handshake, self.modern("tools/list")]))
+        self.assert_refused(reply)
+        self.assertEqual(self.server.protocol_version, PROTOCOL_VERSION)
+
+    def test_the_refusal_comes_before_the_empty_and_the_size_checks(self) -> None:
+        pings = [{"jsonrpc": "2.0", "id": index, "method": "ping"} for index in range(MAX_BATCH_SIZE + 1)]
+        self.negotiate("2025-11-25")
+        for label, batch in (("empty", []), ("oversized", pings)):
+            with self.subTest(batch=label, revision="2025-11-25"):
+                (reply,) = self.talk(self.line(batch))
+                self.assert_refused(reply)
+        self.negotiate("2025-03-26")  # where batches exist those two checks keep their own errors
+        for label, batch, phrase in (("empty", [], "empty batch"), ("oversized", pings, "exceeds the limit")):
+            with self.subTest(batch=label, revision="2025-03-26"):
+                (reply,) = self.talk(self.line(batch))
+                self.assertEqual(reply["error"]["code"], -32600)
+                self.assertIn(phrase, reply["error"]["message"])
+
+    def test_a_batch_of_only_notifications_is_refused_where_it_used_to_be_answered_with_silence(self) -> None:
+        note = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        self.negotiate("2025-06-18")
+        (reply,) = self.talk(self.line([note, note]))
+        self.assert_refused(reply)
+        self.negotiate("2025-03-26")
+        self.assertEqual(self.talk(self.line([note, note])), [])
+
+    def test_only_a_real_2026_request_makes_a_batch_one_to_refuse(self) -> None:
+        """Not an item that is no object, a request with other `_meta` keys, or an `initialize` with the envelope."""
+        params = {"protocolVersion": "2024-11-05", "_meta": dict(ENVELOPE)}
+        handshake = json.loads(self.initialize_line(params, msg_id=4))
+        batch = [
+            5,
+            {"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {"_meta": {"progressToken": 1}}},
+            {"jsonrpc": "2.0", "id": 2, "method": "ping", "params": {"_meta": {META_CLIENT_CAPABILITIES: {}}}},
+            {"jsonrpc": "2.0", "id": 3, "method": "ping", "params": {"_meta": "x"}},
+            handshake,
+        ]
+        (reply,) = self.talk(self.line(batch))
+        self.assertIsInstance(reply, list)
+        self.assertEqual(reply[0]["error"]["code"], -32600)  # the 5 is no request
+        self.assertEqual([item["id"] for item in reply[1:]], [1, 2, 3, 4])
+        self.assertEqual(reply[4]["result"]["protocolVersion"], "2024-11-05")
+
+    def test_single_requests_are_answered_in_every_revision(self) -> None:
+        for version in LEGACY_PROTOCOL_VERSIONS:
+            with self.subTest(version=version):
+                self.negotiate(version)
+                (reply,) = self.talk(self.line(self.PING))
+                self.assertEqual(reply, {"jsonrpc": "2.0", "id": 1, "result": {}})
+
+
 class TestRevisionLists(unittest.TestCase):
     def test_legacy_revisions_are_iso_dates_newest_first(self) -> None:
         """server_info compares revisions as strings, which only works for dates written year first."""
@@ -831,6 +965,14 @@ class TestRevisionLists(unittest.TestCase):
         self.assertEqual(META_SERVER_INFO, "io.modelcontextprotocol/serverInfo")
         self.assertEqual(UNSUPPORTED_PROTOCOL_VERSION_CODE, -32022)
 
+    def test_batches_belong_to_the_revisions_that_have_them(self) -> None:
+        self.assertEqual(BATCH_PROTOCOL_VERSIONS, ("2025-03-26", "2024-11-05"))
+        self.assertTrue(set(BATCH_PROTOCOL_VERSIONS) <= set(LEGACY_PROTOCOL_VERSIONS))
+        self.assertIn(PROTOCOL_VERSION, BATCH_PROTOCOL_VERSIONS)  # a client that never initialized keeps its batches
+        for version in SUPPORTED_PROTOCOL_VERSIONS:
+            if version not in BATCH_PROTOCOL_VERSIONS:
+                self.assertGreaterEqual(version, "2025-06-18")  # only the revisions that took batches out
+
     def test_the_cache_time_is_a_whole_number_of_milliseconds(self) -> None:
         self.assertIsInstance(CACHE_TTL_MS, int)
         self.assertGreaterEqual(CACHE_TTL_MS, 0)
@@ -853,6 +995,7 @@ class TestRevisionLists(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue(hasattr(server_module, name))
         for name in (
+            "BATCH_PROTOCOL_VERSIONS",
             "LATEST_PROTOCOL_VERSION",
             "LEGACY_PROTOCOL_VERSIONS",
             "MODERN_PROTOCOL_VERSIONS",
