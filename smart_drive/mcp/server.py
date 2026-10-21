@@ -549,6 +549,42 @@ TOOLS: List[Dict[str, Any]] = [
     },
 ]
 
+# What MCP shows people instead of a tool's name (`title`). It is not in TOOLS, which is the 2024-11-05 catalog:
+# `tools_for_version` adds it in the revisions that define it.
+TOOL_TITLES: Dict[str, str] = {
+    "ssd_search": "Search Drive Files",
+    "ssd_audit": "Audit Storage and Cluster Slack",
+    "ssd_clean": "Clean Junk Files",
+    "ssd_find_duplicates": "Find Duplicate Files",
+    "ssd_update_index": "Update Search Index",
+    "ssd_check_safety": "Check Path Safety",
+    "ssd_status": "Drive Status",
+    "ssd_auto_organize": "Auto-Organize Drive",
+    "ssd_gitignore": "Gitignore Governance",
+}
+
+
+def tools_for_version(version: str) -> List[Dict[str, Any]]:
+    """The tool catalog `tools/list` answers under revision `version`; each revision only adds to the one before.
+
+    2024-11-05 is TOOLS itself. 2025-03-26 adds the display `title` to each tool's `annotations`, 2025-06-18 also puts
+    it at the top of the tool, right after the name. The hints stay at the top level too. Later revisions get copies,
+    so TOOLS, which every 2024-11-05 reply is built from, is never changed.
+    """
+    if not _is_at_least(version, "2025-03-26"):
+        return TOOLS
+    with_top_level_title = _is_at_least(version, "2025-06-18")
+    catalog: List[Dict[str, Any]] = []
+    for tool in TOOLS:
+        title = TOOL_TITLES[tool["name"]]
+        entry: Dict[str, Any] = {}
+        for key, value in tool.items():
+            entry[key] = {"title": title, **value} if key == "annotations" else value
+            if key == "name" and with_top_level_title:
+                entry["title"] = title
+        catalog.append(entry)
+    return catalog
+
 
 class _LoadInt(int):
     """Integer that can also be called as a method for dual property/method access."""
@@ -1683,7 +1719,7 @@ class SmartDriveMCPServer:
             resp = {
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "result": {"tools": TOOLS},
+                "result": {"tools": tools_for_version(self.protocol_version)},
             }
             self.send_response(resp)
             return resp
@@ -1734,10 +1770,13 @@ class SmartDriveMCPServer:
                 return err_tool_resp
 
             # Outside the try on purpose: a failure to write the reply is a server problem, not a tool refusal.
+            result: Dict[str, Any] = {"content": [{"type": "text", "text": result_text}]}
+            if _is_at_least(self.protocol_version, "2025-06-18"):
+                result["structuredContent"] = res_data  # the same JSON as the text, as the object it came from
             resp = {
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "result": {"content": [{"type": "text", "text": result_text}]},
+                "result": result,
             }
             self.send_response(resp)
             return resp
@@ -1832,6 +1871,8 @@ __all__ = [
     "SlidingWindowRateLimiter",
     "SmartDriveMCPServer",
     "TOOLS",
+    "TOOL_TITLES",
     "negotiate_protocol_version",
     "server_info",
+    "tools_for_version",
 ]

@@ -21,6 +21,13 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   revision still gets `2024-11-05` and a reply that is the same byte for byte. The chosen revision lasts for the
   connection and decides what `serverInfo` carries: `title` from `2025-06-18`, and `description` and `websiteUrl` (the
   words of `server.json`) from `2025-11-25`.
+- The MCP tools get display titles and structured results in the protocol revisions that define them. `tools/list`
+  carries `annotations.title` from `2025-03-26` (`"Search Drive Files"` for `ssd_search`, and so on for the nine tools)
+  and also a top-level `title` from `2025-06-18`. From `2025-06-18` a successful `tools/call` returns the result object
+  as `structuredContent` and, as the specification recommends, the same JSON as text in `content`, so a result is about
+  twice as large for those clients. The hints stay at the top level of each tool, error results are unchanged, and a
+  client on `2024-11-05` (or one that never sends `initialize`) gets the same tool list and results as before, byte for
+  byte.
 
 ### Fixed
 
