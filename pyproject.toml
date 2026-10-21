@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smart-drive-os"
-version = "1.4.2"
+version = "1.4.3"
 description = "Organize a drive without breaking your coding agents and IDEs: move folders and relink the paths they remember, clean junk safely, and search files instantly. Zero-dependency CLI and MCP server."
 readme = "README.md"
 requires-python = ">=3.9"

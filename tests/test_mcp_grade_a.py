@@ -741,12 +741,12 @@ class TestDomainConsistencyAndPackagingMetadata(unittest.TestCase):
         self.assertEqual(dependencies, [])
 
     def test_mcp_server_version(self) -> None:
-        """smart_drive.mcp.server.SERVER_VERSION must be '1.4.2' matching package version."""
-        self.assertEqual(SERVER_VERSION, "1.4.2")
+        """smart_drive.mcp.server.SERVER_VERSION must be '1.4.3' matching package version."""
+        self.assertEqual(SERVER_VERSION, "1.4.3")
 
     def test_smart_drive_init_metadata(self) -> None:
         """smart_drive package version and author must be synchronized."""
-        self.assertEqual(smart_drive.__version__, "1.4.2")
+        self.assertEqual(smart_drive.__version__, "1.4.3")
         self.assertIn("DuongNAD", smart_drive.__author__)
         self.assertIn("SmartDrive Team", smart_drive.__author__)
 
