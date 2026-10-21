@@ -31,6 +31,11 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   eight-column header, so GitHub and other renderers that follow GitHub Flavored Markdown did not draw the table and
   showed its rows as plain text. The row has eight cells now, and a test checks that every table of the report has as
   many delimiter cells as header cells.
+- `fsinfo.slack_model_note`, the note `audit`, `ssd_audit`, `status` and `sentinel` add when the cluster size their
+  slack figures model may not be the volume's own, gave that size in whole KB, so a cluster of 512 B read "0 KB" and
+  one of 1536 B "1 KB". It now gives it the way the reports do (`fsinfo.cluster_size_text`: `4 KB`, `512 KB`, `512 B`,
+  `1536 B`). `status` and `sentinel` always model 512 KB and read as before; `audit` and `ssd_audit` said "model 0 KB
+  clusters" for a volume whose filesystem could not be identified but whose allocation unit was read as 512 B.
 
 ## [1.4.3] - 2026-10-21
 

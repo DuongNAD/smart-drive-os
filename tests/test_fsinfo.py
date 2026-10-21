@@ -127,6 +127,43 @@ class TestSlackModelNote(unittest.TestCase):
         unknown = slack_model_note(FilesystemInfo("/x", "unknown", 0, "", "unknown"), CLUSTER_SIZE_BYTES)
         self.assertIn("Could not detect", unknown)
 
+    def test_a_model_that_is_not_a_whole_number_of_kb_is_named_in_bytes(self) -> None:
+        """Dividing by 1024 made a 1536 B model "1 KB" and one of 512 B "0 KB"."""
+        cases = (
+            (
+                self.info("ntfs", 4096),
+                1536,
+                "This volume is NTFS (4 KB allocation unit); cluster-slack figures model 1536 B exFAT clusters, "
+                "so treat them as what-if numbers.",
+            ),
+            (
+                self.info("exfat", 32768),
+                1536,
+                "This exFAT volume uses a different cluster size (exFAT (32 KB allocation unit)); "
+                "cluster-slack figures model 1536 B clusters.",
+            ),
+            (
+                FilesystemInfo("/x", "unknown", 512, "", "unknown"),
+                512,
+                "Could not detect the filesystem; cluster-slack figures model 512 B clusters.",
+            ),
+            # a whole number of KB still reads in KB
+            (
+                FilesystemInfo("/x", "unknown", 0, "", "unknown"),
+                CLUSTER_SIZE_BYTES,
+                "Could not detect the filesystem; cluster-slack figures model 512 KB clusters.",
+            ),
+            (
+                self.info("ntfs", 4096),
+                CLUSTER_SIZE_BYTES,
+                "This volume is NTFS (4 KB allocation unit); cluster-slack figures model 512 KB exFAT clusters, "
+                "so treat them as what-if numbers.",
+            ),
+        )
+        for info, model, note in cases:
+            with self.subTest(fs_type=info.fs_type, model=model):
+                self.assertEqual(slack_model_note(info, model), note)
+
     def test_summary_and_dict(self) -> None:
         info = self.info("apfs", 4096)
         self.assertEqual(info.summary(), "APFS (4 KB allocation unit)")
