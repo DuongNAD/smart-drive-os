@@ -60,6 +60,17 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   and the clean step of `ssd_auto_organize` now work at the cluster their own plan reports (`cluster_size`), and
   `backup`, which reports no allocated size and so gained no field, and the junk scan of `checkup`, whose allocated
   sizes the report never shows, are given the real cluster as well.
+- The text and markdown reports of `audit` still printed 512 KB labels on every drive. The text report called its
+  cluster count "Allocated 512KB Clusters"; the markdown report did the same, titled its hotspot section
+  "512KB Cluster Slack Hotspots", described its micro-file folders as wasting slack "on 512 KB clusters" and said
+  each `._*` fork wastes 512 KB. Since 1.4.0 every figure in them is worked out at the drive's real cluster size, so
+  on a 4 KB NTFS drive a count of 4 KB clusters stood under a 512 KB label (the JSON and HTML reports were right).
+  Each of those labels now names the cluster size the figures use (the count is followed by `(4 KB each)`, the
+  section is titled `Cluster Slack Hotspots (4 KB clusters)`), and the fork tip says each fork takes at least one
+  cluster of that size. The headers of both reports divided the size by 1024, so a cluster below 1 KB read "0 KB" and
+  1536 B read "1 KB"; the headers and the labels now give such a size in bytes (`512 B`, `1536 B`). The text header
+  also says where the size came from, `Cluster Size: 4 KB (4096 B, detected)`, or `assumed` when the 512 KB exFAT
+  cluster is used because the drive's own could not be read.
 
 ## [1.4.2] - 2026-10-21
 
