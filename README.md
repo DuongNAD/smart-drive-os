@@ -154,6 +154,7 @@ SmartDrive-OS exposes a JSON-RPC 2.0 `stdio` MCP server with **9 tools**:
 - `ssd_audit`: cluster slack is worked out at the drive's real allocation unit, as `smart-drive audit` does (`cluster_size`; `cluster_size_source` is `detected`, or `assumed` when it cannot be read and the 512 KB exFAT cluster is used).
 - `ssd_clean`: a `sub_dir` is judged like the whole-drive scan, folders above it included: inside an installed app nothing is scanned and `scan_skipped` names the folder and why; the result also lists what was `kept` and the `protected_by_system` folders.
 - `ssd_find_duplicates`: `min_size` drops small files before anything is hashed, slack is worked out at the drive's real allocation unit (`cluster_size`; `cluster_size_source` is `detected`, or `assumed` when it cannot be read), and a `sub_dir` inside an installed app or a dependency tree is not scanned (`scan_skipped`).
+- `ssd_check_safety`: the storage root itself is reported protected (`is_storage_root`), and drive-relative paths such as `E:x` (Windows reads them against the drive's current folder) are refused.
 
 </details>
 
