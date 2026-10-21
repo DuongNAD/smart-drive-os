@@ -7,6 +7,17 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-10-21
+
+Previews that write nothing, the drive's real cluster size everywhere, a newer MCP protocol and a kit for beta
+testers. A dry run of `organize`, the preview of `Smart_Organize` and the repository check of `sentinel` no longer
+change anything on the drive; `clean`, `ssd_clean`, `snapshot` and `backup` size allocations at the drive's real
+cluster (on a 4 KB NTFS drive `clean` had reported 15.99 GB where 0.64 GB is right), and the MCP tools report what
+the CLI reports. The MCP server negotiates the protocol revision with each client, from `2024-11-05` to `2025-11-25`,
+and also serves `2026-07-28`, while a client that names no revision gets the same bytes as before. `smart-drive
+doctor` prints a redacted environment report for bug reports, and `SECURITY.md`, GitHub issue forms and a 15-minute
+beta-testing checklist are new. The READMEs now lead with what SmartDrive-OS does and how to install it from PyPI.
+
 ### Added
 
 - `smart-drive doctor` prints a read-only, offline report of the environment for bug reports: the SmartDrive-OS version
@@ -411,7 +422,8 @@ in the same release.
   for `wow! a!b!c`, and "Goodbye!" and the Python-missing error printed without their `!`. Delayed expansion is now off;
   only the line of `SmartDrive.bat` that shows the drive root switches it on.
 
-[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.2...main
+[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.3...main
+[1.4.3]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.4.0
