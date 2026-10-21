@@ -7,7 +7,7 @@ Thank you for your interest in contributing to **SmartDrive-OS**! We welcome con
 ## 🌟 How Can You Contribute?
 
 You can contribute in several ways:
-1. **Report Bugs**: Found a bug or compatibility issue with an SSD format? Open an [Issue](https://github.com/DuongNAD/smart-drive-os/issues).
+1. **Report Bugs**: Found a bug or a problem with a drive format? Open a [Bug report](https://github.com/DuongNAD/smart-drive-os/issues/new/choose) and paste the output of `smart-drive doctor --report`. Security problems go to [SECURITY.md](SECURITY.md) instead.
 2. **Suggest Features**: Have ideas for new presets, CLI flags, or MCP tools? Let us know in an issue.
 3. **Submit Code**: Implement new features, optimize algorithms, or improve cross-platform compatibility via Pull Requests.
 4. **Improve Docs**: Help translate, clarify guides, or add troubleshooting tips.

@@ -1,0 +1,7 @@
+# Blank issues stay enabled on purpose: the repository has no Discussions, and beta testers need a place for
+# "all steps passed" notes and questions.
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security problem privately
+    url: https://github.com/DuongNAD/smart-drive-os/security/policy
+    about: Data loss, a path escape in an MCP tool, a write outside the drive or a corrupted agent config. SECURITY.md says how to report it privately; please do not open a public issue.
