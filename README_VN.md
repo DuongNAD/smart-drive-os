@@ -44,12 +44,12 @@ SmartDrive-OS là bộ quản trị ổ đĩa và tìm kiếm tức thì (<10ms)
 ## Khởi Động Nhanh
 
 ### 1. Cài đặt (hoặc chạy trực tiếp không cần cài)
-**uvx** (sau bản phát hành PyPI đầu tiên): chỉ cần [uv](https://docs.astral.sh/uv/), uv còn tự tải Python khi máy chưa có.
+**uvx**: chỉ cần [uv](https://docs.astral.sh/uv/), uv còn tự tải Python khi máy chưa có.
 ```bash
 uvx smart-drive-os <lệnh>              # chạy lệnh con bất kỳ, không cài gì
 uvx smart-drive-os mcp register --all  # đăng ký `uvx smart-drive-os mcp` vào các coding agent của bạn
 ```
-**pipx** (sau bản phát hành PyPI đầu tiên; cần Python 3.9+):
+**pipx** (cần Python 3.9+):
 ```bash
 pipx install smart-drive-os
 smart-drive <lệnh>
