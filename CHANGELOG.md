@@ -28,6 +28,15 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   twice as large for those clients. The hints stay at the top level of each tool, error results are unchanged, and a
   client on `2024-11-05` (or one that never sends `initialize`) gets the same tool list and results as before, byte for
   byte.
+- The MCP server now also serves MCP `2026-07-28`, which has no `initialize`: each request names its revision in
+  `params._meta` (`io.modelcontextprotocol/protocolVersion`, next to `io.modelcontextprotocol/clientCapabilities`), and
+  `server/discover` lists the supported revisions. Its results carry `resultType` and the server's identity in
+  `_meta["io.modelcontextprotocol/serverInfo"]`, and `tools/list` and `server/discover` carry `ttlMs` and `cacheScope`.
+  A request that names a revision the server cannot serve this way gets error `-32022` listing `2026-07-28`, one with a
+  missing or malformed `_meta` entry gets `-32602`, and `ping` is not part of `2026-07-28`. The earlier revisions are
+  still negotiated through `initialize` in the same process, and a `2026-07-28` request neither reads nor changes the
+  revision `initialize` chose. A `server/discover` sent without the `_meta` entries now gets `-32602` instead of
+  `-32601`.
 
 ### Fixed
 

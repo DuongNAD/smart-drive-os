@@ -50,7 +50,11 @@ from smart_drive.search.parser import apply_size_spec, parse_search_query
 # The MCP revisions that open with an `initialize` request, newest first: the client names the one it wants and the
 # server answers with the one it will speak for the whole process.
 LEGACY_PROTOCOL_VERSIONS: Tuple[str, ...] = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
-SUPPORTED_PROTOCOL_VERSIONS: Tuple[str, ...] = LEGACY_PROTOCOL_VERSIONS
+# The revisions without `initialize`: every request names its revision and the client's capabilities in
+# `params._meta`, so the server keeps no per-connection state for them. Such a request is served beside the handshake
+# of the older revisions, whatever `initialize` negotiated.
+MODERN_PROTOCOL_VERSIONS: Tuple[str, ...] = ("2026-07-28",)
+SUPPORTED_PROTOCOL_VERSIONS: Tuple[str, ...] = MODERN_PROTOCOL_VERSIONS + LEGACY_PROTOCOL_VERSIONS
 LATEST_PROTOCOL_VERSION: str = SUPPORTED_PROTOCOL_VERSIONS[0]
 # The revision of a client that names none (an initialize without a string protocolVersion, or any request before
 # initialize): the oldest, all this server spoke before it negotiated, so such a client sees no change.
@@ -62,6 +66,16 @@ SERVER_VERSION = "1.4.2"
 SERVER_TITLE = "SmartDrive-OS"
 SERVER_DESCRIPTION = "Organize a drive without breaking coding agents: relink moved folders, clean junk, search files."
 SERVER_WEBSITE_URL = "https://github.com/DuongNAD/smart-drive-os#readme"
+# The `_meta` keys of MCP 2026-07-28: what a request names, and the identity a result carries.
+META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion"
+META_CLIENT_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
+META_SERVER_INFO = "io.modelcontextprotocol/serverInfo"
+# The JSON-RPC error code of a request that names a revision this server does not serve that way.
+UNSUPPORTED_PROTOCOL_VERSION_CODE = -32022
+# How long (in milliseconds) a client may keep a `tools/list` or `server/discover` answer. The tools and this server's
+# identity only change when the package is upgraded, which restarts the process; five minutes bounds how long a client
+# that caches across restarts keeps an old list.
+CACHE_TTL_MS = 300_000
 
 # Sent as InitializeResult.instructions: the MCP spec puts it at the top level of the result, which is where
 # clients look for it (it was nested inside serverInfo, so no client ever saw it).
@@ -124,6 +138,47 @@ def server_info(version: str) -> Dict[str, Any]:
         info["description"] = SERVER_DESCRIPTION
         info["websiteUrl"] = SERVER_WEBSITE_URL
     return info
+
+
+def _is_modern_request(message: Any) -> bool:
+    """True for a request in the 2026-07-28 style: not `initialize`, and `params._meta` names the revision.
+
+    An `initialize` is always the handshake of an older revision, whatever its `_meta` says. The key alone decides (its
+    value may be wrong, which is an error to report); a request without it is answered under what `initialize` chose.
+    """
+    if not isinstance(message, dict) or message.get("method") == "initialize":
+        return False
+    params = message.get("params")
+    meta = params.get("_meta") if isinstance(params, dict) else None
+    return isinstance(meta, dict) and META_PROTOCOL_VERSION in meta
+
+
+def _modern_envelope_error(meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The JSON-RPC error object for a 2026-07-28 request whose `_meta` cannot be served, or None when it can.
+
+    The revision is checked first and on its own: the envelope of a revision this server does not know may follow rules
+    it does not know. A legacy revision is not served this way either, it is reached through `initialize`.
+    """
+    version = meta[META_PROTOCOL_VERSION]
+    if not isinstance(version, str):
+        return {
+            "code": -32602,
+            "message": f"Invalid params: '{META_PROTOCOL_VERSION}' in params._meta must be a string",
+        }
+    if version not in MODERN_PROTOCOL_VERSIONS:
+        return {
+            "code": UNSUPPORTED_PROTOCOL_VERSION_CODE,
+            "message": "Unsupported protocol version",
+            "data": {"supported": list(MODERN_PROTOCOL_VERSIONS), "requested": version},
+        }
+    if not isinstance(meta.get(META_CLIENT_CAPABILITIES), dict):
+        return {
+            "code": -32602,
+            "message": (
+                f"Invalid params: '{META_CLIENT_CAPABILITIES}' in params._meta is required and must be an object"
+            ),
+        }
+    return None
 
 
 def _is_client_error(error: BaseException) -> bool:
@@ -1530,6 +1585,18 @@ class SmartDriveMCPServer:
             return
         self._write(response)
 
+    def _send_result(self, msg_id: Any, result: Dict[str, Any], modern_version: Optional[str]) -> Dict[str, Any]:
+        """Sends a JSON-RPC result and returns the response that was sent.
+
+        A 2026-07-28 request (`modern_version` is its revision) gets a result that also says it is complete and which
+        server answered. Error responses are never decorated, so they are not sent through here.
+        """
+        if modern_version is not None:
+            result = {"resultType": "complete", **result, "_meta": {META_SERVER_INFO: server_info(modern_version)}}
+        resp = {"jsonrpc": "2.0", "id": msg_id, "result": result}
+        self.send_response(resp)
+        return resp
+
     def _write(self, payload: Any) -> None:
         body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
         try:
@@ -1636,6 +1703,21 @@ class SmartDriveMCPServer:
         if inline_token and self.verify_token(inline_token):
             self._authenticated = True
 
+        # MCP 2026-07-28 has no handshake: each request names its revision in params._meta and is answered under it,
+        # never under (or changing) what `initialize` negotiated for the older revisions.
+        modern_version: Optional[str] = None
+        if _is_modern_request(req):
+            if msg_id is None:  # a notification gets no answer, not even an error
+                return None
+            meta = params["_meta"]
+            envelope_error = _modern_envelope_error(meta)
+            if envelope_error is not None:
+                err_resp = {"jsonrpc": "2.0", "id": msg_id, "error": envelope_error}
+                self.send_response(err_resp)
+                return err_resp
+            modern_version = meta[META_PROTOCOL_VERSION]
+        version = modern_version if modern_version is not None else self.protocol_version
+
         if method == "initialize":
             self.protocol_version = negotiate_protocol_version(params.get("protocolVersion"))
             resp = {
@@ -1655,29 +1737,11 @@ class SmartDriveMCPServer:
 
         if method == "auth/handshake":
             if not self.require_auth and not self.auth_token:
-                resp = {
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "result": {
-                        "status": "authenticated",
-                        "authenticated": True,
-                    },
-                }
-                self.send_response(resp)
-                return resp
+                return self._send_result(msg_id, {"status": "authenticated", "authenticated": True}, modern_version)
 
             if self.verify_token(inline_token):
                 self._authenticated = True
-                resp = {
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "result": {
-                        "status": "authenticated",
-                        "authenticated": True,
-                    },
-                }
-                self.send_response(resp)
-                return resp
+                return self._send_result(msg_id, {"status": "authenticated", "authenticated": True}, modern_version)
             else:
                 err_resp = {
                     "jsonrpc": "2.0",
@@ -1692,13 +1756,41 @@ class SmartDriveMCPServer:
                     self.send_response(err_resp)
                 return err_resp
 
-        if method == "ping":
+        if method == "ping" and modern_version is None:  # 2026-07-28 dropped it: there it is an unknown method
             resp = {"jsonrpc": "2.0", "id": msg_id, "result": {}}
             self.send_response(resp)
             return resp
 
         if method == "notifications/initialized":
             return None
+
+        if method == "server/discover":  # like initialize and ping, it must work before any token is shown
+            if modern_version is None:
+                err_resp = {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "error": {
+                        "code": -32602,
+                        "message": (
+                            f"Invalid params: server/discover needs params._meta with '{META_PROTOCOL_VERSION}' "
+                            f"and '{META_CLIENT_CAPABILITIES}'"
+                        ),
+                    },
+                }
+                if msg_id is not None:
+                    self.send_response(err_resp)
+                return err_resp
+            return self._send_result(
+                msg_id,
+                {
+                    "supportedVersions": list(MODERN_PROTOCOL_VERSIONS),
+                    "capabilities": {"tools": {}},
+                    "instructions": SERVER_INSTRUCTIONS,
+                    "ttlMs": CACHE_TTL_MS,
+                    "cacheScope": "public",
+                },
+                modern_version,
+            )
 
         # Authentication Enforcement for Protected Endpoints (tools/list, tools/call, etc.)
         if self.require_auth and not self._authenticated:
@@ -1716,13 +1808,10 @@ class SmartDriveMCPServer:
             return err_resp
 
         if method == "tools/list":
-            resp = {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {"tools": tools_for_version(self.protocol_version)},
-            }
-            self.send_response(resp)
-            return resp
+            listing: Dict[str, Any] = {"tools": tools_for_version(version)}
+            if modern_version is not None:
+                listing.update({"ttlMs": CACHE_TTL_MS, "cacheScope": "public"})
+            return self._send_result(msg_id, listing, modern_version)
 
         if method == "tools/call":
             tool_name = params.get("name")
@@ -1753,10 +1842,9 @@ class SmartDriveMCPServer:
                     logger.warning("Tool %s refused the request: %s", tool_name, e)
                 else:
                     logger.exception("Error executing tool %s: %s", tool_name, e)
-                err_tool_resp = {
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "result": {
+                return self._send_result(
+                    msg_id,
+                    {
                         "isError": True,
                         "content": [
                             {
@@ -1765,21 +1853,14 @@ class SmartDriveMCPServer:
                             }
                         ],
                     },
-                }
-                self.send_response(err_tool_resp)
-                return err_tool_resp
+                    modern_version,
+                )
 
             # Outside the try on purpose: a failure to write the reply is a server problem, not a tool refusal.
             result: Dict[str, Any] = {"content": [{"type": "text", "text": result_text}]}
-            if _is_at_least(self.protocol_version, "2025-06-18"):
+            if _is_at_least(version, "2025-06-18"):
                 result["structuredContent"] = res_data  # the same JSON as the text, as the object it came from
-            resp = {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": result,
-            }
-            self.send_response(resp)
-            return resp
+            return self._send_result(msg_id, result, modern_version)
 
         if msg_id is not None:
             resp = {
@@ -1857,9 +1938,14 @@ class SmartDriveMCPServer:
 
 
 __all__ = [
+    "CACHE_TTL_MS",
     "LATEST_PROTOCOL_VERSION",
     "LEGACY_PROTOCOL_VERSIONS",
     "MAX_BATCH_SIZE",
+    "META_CLIENT_CAPABILITIES",
+    "META_PROTOCOL_VERSION",
+    "META_SERVER_INFO",
+    "MODERN_PROTOCOL_VERSIONS",
     "PROTOCOL_VERSION",
     "SERVER_DESCRIPTION",
     "SERVER_INSTRUCTIONS",
@@ -1872,6 +1958,7 @@ __all__ = [
     "SmartDriveMCPServer",
     "TOOLS",
     "TOOL_TITLES",
+    "UNSUPPORTED_PROTOCOL_VERSION_CODE",
     "negotiate_protocol_version",
     "server_info",
     "tools_for_version",
