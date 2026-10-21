@@ -64,7 +64,7 @@ Lệnh này đăng ký bản cài vừa rồi; với uvx thì `uvx smart-drive-o
 ```bash
 smart-drive checkup   # điểm sức khỏe 0–100 và 3 việc nên làm tiếp, dạng lệnh để sao chép
 ```
-Lệnh không đụng tới tệp của bạn (chỉ lưu điểm lần gần nhất trong `.smart_drive/`). Các lệnh về ổ đĩa nhận `--root <đường dẫn>` (hoặc biến `SMART_DRIVE_ROOT`); nếu không có cả hai, SmartDrive dùng thư mục gốc SmartDrive nằm phía trên thư mục hiện tại, rồi đến ổ đang gắn vào máy. `smart-drive init` chuẩn bị một ổ mới (xem [cấu hình mẫu](#tính-năng-khác)).
+Lệnh không đụng tới tệp của bạn. Thứ duy nhất nó ghi là `.smart_drive/checkup.json`, báo cáo lần chạy gần nhất (điểm, các khoản trừ điểm và phát hiện), giữ lại để lần sau cho biết điểm đã thay đổi thế nào. Các lệnh về ổ đĩa nhận `--root <đường dẫn>` (hoặc biến `SMART_DRIVE_ROOT`); nếu không có cả hai, SmartDrive dùng thư mục gốc SmartDrive nằm phía trên thư mục hiện tại, rồi đến ổ đang gắn vào máy. `smart-drive init` chuẩn bị một ổ mới (xem [cấu hình mẫu](#tính-năng-khác)).
 
 ### 4. Sắp xếp lại an toàn
 
@@ -79,7 +79,7 @@ smart-drive undo --apply      # đổi ý? dời đợt gần nhất về chỗ 
 
 | Việc cần làm | Lệnh | An toàn theo mặc định |
 |---|---|---|
-| Điểm sức khỏe và bước tiếp theo | `smart-drive checkup` | Không đụng tới tệp của bạn |
+| Điểm sức khỏe và bước tiếp theo | `smart-drive checkup` | Không đụng tới tệp của bạn; chỉ ghi báo cáo lần chạy gần nhất vào `.smart_drive/checkup.json` |
 | Sắp xếp ổ đĩa và hoàn tác | `smart-drive organize` / `smart-drive undo` | Chỉ xem trước cho tới khi có `--apply`; mỗi đợt dời đều có nhật ký |
 | Sửa đường dẫn sau khi tự dời thư mục | `smart-drive relink "CŨ" "MỚI"` / `smart-drive paths --broken` | `--dry-run` xem trước; tệp cấu hình được sao lưu `.bak.smart-drive` trước khi ghi; `paths --broken` chỉ liệt kê (`--fix` sửa các khớp chắc chắn) |
 | Dọn rác | `smart-drive clean` | Chạy thử cho tới khi có `--apply`; chỉ rác Tier 3 vào khu cách ly có thể khôi phục |
@@ -408,7 +408,7 @@ Mọi lệnh chạy qua `smart-drive <lệnh>`, `python -m smart_drive <lệnh>`
 | Lệnh | Tham số chính | Mô tả chức năng |
 |---|---|---|
 | `self-path-check` | *(không có)* | Kiểm tra `PATH` hệ thống và in câu lệnh cấu hình 1-chạm. |
-| `checkup` | `--root <đd>`, `--dup`, `--lang {en,vi}`, `--json` | Khám tổng quát 1 màn hình: chấm điểm sức khỏe ổ đĩa (`0–100`), so với lần chạy trước và gợi ý bước tiếp theo. |
+| `checkup` | `--root <đd>`, `--dup`, `--lang {en,vi}`, `--json` | Khám tổng quát 1 màn hình: chấm điểm sức khỏe ổ đĩa (`0–100`), so với lần chạy trước và gợi ý bước tiếp theo. Chỉ ghi báo cáo lần chạy gần nhất vào `.smart_drive/checkup.json` (ghi đè mỗi lần chạy) và đọc lại tệp đó để so sánh. |
 | `init` | `--profile <tên>`, `--root <đd>`, `--force`, `--json` | Khởi tạo ổ đĩa, tạo 6 nhóm thư mục, cài khiên bảo vệ và gieo chỉ mục FTS5. |
 | `status` | `--root <đd>`, `--json` | Kiểm tra điểm gắn ổ đĩa, hệ tệp nhận diện, cấu trúc hình học, khiên bảo vệ và phân vùng. |
 | `audit` | `--root <đd>`, `--html [tệp]`, `--json`, `--markdown`, `--export <tệp>` | Kiểm toán dung lượng và cluster slack theo kích thước cụm thật của ổ đĩa (4 KB NTFS, 512 KB exFAT…). `--html` xuất báo cáo treemap tự chứa chạy offline (mặc định `<root>/.smart_drive/reports/audit.html`). Hard link tính một lần; symlink/junction bỏ qua và đếm. |

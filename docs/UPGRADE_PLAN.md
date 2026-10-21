@@ -331,7 +331,7 @@ Thứ tự khuyến nghị: M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7 
 ### M6 — "Khám ổ đĩa" cho người dùng thường
 
 #### T15. `smart-drive checkup`
-- **Mục tiêu**: một lệnh **chỉ đọc**, ra điểm sức khỏe 0–100 và 3 việc nên làm, mỗi việc kèm đúng lệnh cần chạy.
+- **Mục tiêu**: một lệnh không đổi gì trên ổ ngoài báo cáo lần chạy cuối của chính nó (`.smart_drive/checkup.json`), ra điểm sức khỏe 0–100 và 3 việc nên làm, mỗi việc kèm đúng lệnh cần chạy.
 - **Gộp từ**: hệ tệp/cluster (`fsinfo`), `core/health.py`, tóm tắt dung lượng (`StorageAuditor`), rác Tier 1–2 có thể thu hồi
   (junk detector, dry-run), dung lượng quarantine (T11), đường dẫn agent cũ (`relink.find_moved`, `relink.py:1396`),
   tham chiếu gãy (T16), cache lớn trên `C:` (`offloader.get_scan_summary`, chỉ Windows), thư mục được bảo vệ vì hệ thống dùng (T5).

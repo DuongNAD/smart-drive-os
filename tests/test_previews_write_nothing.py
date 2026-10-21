@@ -14,6 +14,11 @@ end before the moves runs on a fresh drive of its own (loose folders worth organ
 files, a repository, no `.smart_drive/`), and a command that writes anything there fails its own subtest. `sentinel`
 without `--no-heal` is not a preview: it heals the anti-indexing markers, by design.
 
+`checkup` is the other command that writes, on purpose: its last report, `.smart_drive/checkup.json`, which the next
+run reads to show how the score moved. Its help called it "Read-only" and the README said it leaves your files alone,
+and neither named that file. It now writes that one file and nothing else, and its help, its docstrings and both
+READMEs say so; `TestCheckupWritesOnlyItsLastReport` pins exactly what it writes.
+
 100% isolated like the other organize tests: temporary drives, a fake home and AppData, and stand-ins for the list of
 running programs and the machine's system references. Nothing on the real machine is read or written.
 """
@@ -24,16 +29,18 @@ import contextlib
 import importlib
 import io
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 import unittest
 from unittest.mock import patch
 
-from smart_drive.cli.main import main as cli_main
+from smart_drive.cli.cmd_checkup import run_checkup
+from smart_drive.cli.main import build_parser, main as cli_main
 from smart_drive.cli.smart_organize_runner import OrganizeLog, append_organize_log, get_log_path, run_smart_organize, t
 from smart_drive.core.relink import record_moves
-from smart_drive.core.system_refs import SystemRefIndex
+from smart_drive.core.system_refs import RegistryReader, SystemRefIndex
 from smart_drive.mcp.server import SmartDriveMCPServer
 from tests.helpers import SmartDriveTestCase, TreeState, organize_log_events, snapshot_tree, tree_changes
 
@@ -41,9 +48,13 @@ from tests.helpers import SmartDriveTestCase, TreeState, organize_log_events, sn
 # submodule; the modules whose names the code under test looks up are patched through the module objects instead.
 RELINK = importlib.import_module("smart_drive.core.relink")
 RUNNER = importlib.import_module("smart_drive.cli.smart_organize_runner")
+CMD_CHECKUP = importlib.import_module("smart_drive.cli.cmd_checkup")
 CMD_ORGANIZE = importlib.import_module("smart_drive.cli.cmd_organize")
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# The one file `checkup` writes, as its help and the READMEs name it
+CHECKUP_FILE = ".smart_drive/checkup.json"
 
 # What a fresh drive holds, by path below its root. No `.smart_drive/`: that is made by the commands that keep state.
 DRIVE_FILES: Dict[str, Union[str, bytes]] = {
@@ -317,6 +328,47 @@ class TestMcpPreviewsWriteNothing(_Machine):
         self.assertUnchanged(before, snapshot_tree(drive))
 
 
+class TestCheckupWritesOnlyItsLastReport(_Machine):
+    """`checkup` is the one command that writes on purpose: its last report, which the next run reads to compare."""
+
+    def checkup(self, drive: Path) -> Dict[str, Any]:
+        return run_checkup(
+            str(drive),
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            reader=RegistryReader(tree={}),
+            scan_c_caches=False,
+            lang="en",
+        )
+
+    def test_it_writes_its_report_to_one_file_and_overwrites_that_file_next_time(self) -> None:
+        drive = self.new_drive()
+        report_file = drive / ".smart_drive" / "checkup.json"
+        before = snapshot_tree(drive)
+
+        first = self.checkup(drive)
+        after_first = snapshot_tree(drive)
+        self.assertEqual(tree_changes(before, after_first), ([".smart_drive", CHECKUP_FILE], [], []))
+        self.assertEqual(json.loads(report_file.read_text(encoding="utf-8")), json.loads(json.dumps(first)))
+        self.assertIsNone(first["previous_score"])
+
+        second = self.checkup(drive)
+        after_second = snapshot_tree(drive)
+        self.assertEqual(second["previous_score"], first["score"])
+        self.assertEqual(second["score_delta"], second["score"] - first["score"])
+        self.assertEqual(tree_changes(after_first, after_second), ([], [], [CHECKUP_FILE]))
+        # (one JSON document that is exactly the last report: it was overwritten, not appended to)
+        self.assertEqual(json.loads(report_file.read_text(encoding="utf-8")), json.loads(json.dumps(second)))
+
+    def test_a_smart_drive_folder_that_is_there_gets_only_the_report(self) -> None:
+        drive = self.new_drive()
+        (drive / ".smart_drive").mkdir()
+        (drive / ".smart_drive" / "moves.jsonl").write_text('{"tool": "organize"}\n', encoding="utf-8")
+        before = snapshot_tree(drive)
+        self.checkup(drive)
+        self.assertEqual(tree_changes(before, snapshot_tree(drive)), ([CHECKUP_FILE], [], []))
+
+
 class TestGuidedOrganizerWritesNothingBeforeYes(_Machine):
     """`Smart_Organize.*`: the preview, the busy-apps wait and the self-test change nothing; YES is where it starts."""
 
@@ -515,6 +567,39 @@ class TestTheDocsSayWhatTheOrganizerWrites(unittest.TestCase):
                 self.assertEqual(len(bullets), 1)
                 self.assertIn(".smart_drive/smart-organize.log", bullets[0])
                 self.assertIn("`YES`", bullets[0])
+
+
+class TestTheDocsSayWhatCheckupWrites(unittest.TestCase):
+    def test_the_help_names_the_file_it_writes_and_no_longer_says_read_only(self) -> None:
+        with patch.dict(os.environ, {"COLUMNS": "4000"}):  # wide enough that no line of the help is wrapped
+            listing = build_parser().format_help()
+            with contextlib.redirect_stdout(io.StringIO()) as shown, self.assertRaises(SystemExit):
+                build_parser().parse_args(["checkup", "--help"])
+        lines = [line for line in listing.splitlines() if line.lstrip().startswith("checkup ")]
+        self.assertEqual(len(lines), 1)
+        for where, text in (("smart-drive --help", lines[0]), ("smart-drive checkup --help", shown.getvalue())):
+            with self.subTest(help=where):
+                self.assertIn(CHECKUP_FILE, text)
+                self.assertNotIn("read-only", text.lower())
+
+    def test_the_docstrings_name_the_file_it_writes_and_no_longer_say_read_only(self) -> None:
+        for where, doc in (("the module", CMD_CHECKUP.__doc__), ("run_checkup", run_checkup.__doc__)):
+            with self.subTest(docstring=where):
+                self.assertIn(CHECKUP_FILE, doc or "")
+                self.assertNotIn("read-only", (doc or "").lower())
+
+    def test_both_readmes_name_the_file_in_the_checkup_sentence_and_in_both_rows(self) -> None:
+        for name in ("README.md", "README_VN.md"):
+            with self.subTest(readme=name):
+                lines = (ROOT / name).read_text(encoding="utf-8").splitlines()
+                start = next(n for n, line in enumerate(lines) if line.startswith("smart-drive checkup   #"))
+                sentence = next(line for line in lines[start + 1 :] if line.strip() and not line.startswith("```"))
+                table_rows = [line for line in lines if line.startswith("|") and "`smart-drive checkup`" in line]
+                reference_rows = [line for line in lines if line.startswith("| `checkup` |")]
+                self.assertEqual((len(table_rows), len(reference_rows)), (1, 1))
+                for part, text in (("sentence", sentence), ("table row", table_rows[0]), ("reference row", reference_rows[0])):
+                    with self.subTest(part=part):
+                        self.assertIn(CHECKUP_FILE, text)
 
 
 if __name__ == "__main__":

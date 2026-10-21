@@ -65,7 +65,7 @@ That registers the install you just made; with uvx, `uvx smart-drive-os mcp regi
 ```bash
 smart-drive checkup   # a 0–100 health score and the top 3 next steps, as commands to copy
 ```
-It leaves your files alone (it only keeps its last score in `.smart_drive/`). Drive commands take `--root <path>` (or set `SMART_DRIVE_ROOT`); without either, SmartDrive uses the SmartDrive root above the current folder, then one on an attached drive. `smart-drive init` prepares a new drive (see [drive profiles](#more-features)).
+It leaves your files alone. The one thing it writes is `.smart_drive/checkup.json`, its last report (score, penalties and findings), kept so the next run can show how the score moved. Drive commands take `--root <path>` (or set `SMART_DRIVE_ROOT`); without either, SmartDrive uses the SmartDrive root above the current folder, then one on an attached drive. `smart-drive init` prepares a new drive (see [drive profiles](#more-features)).
 
 ### 4. Reorganize safely
 
@@ -80,7 +80,7 @@ smart-drive undo --apply      # changed your mind? moves the latest batch back a
 
 | Task | Command | Safe by default |
 |---|---|---|
-| Health score and next steps | `smart-drive checkup` | Leaves your files alone |
+| Health score and next steps | `smart-drive checkup` | Leaves your files alone; writes only its last report, `.smart_drive/checkup.json` |
 | Organize the drive, and undo it | `smart-drive organize` / `smart-drive undo` | Preview until `--apply`; every batch is journaled |
 | Repair paths after a manual move | `smart-drive relink "OLD" "NEW"` / `smart-drive paths --broken` | `--dry-run` previews; config files get a `.bak.smart-drive` backup first; `paths --broken` only lists (`--fix` repairs sure matches) |
 | Clean junk | `smart-drive clean` | Dry run until `--apply`; only Tier 3 junk goes to a restorable quarantine |
@@ -409,7 +409,7 @@ All commands run via `smart-drive <command>`, `python -m smart_drive <command>`,
 | Command | Key Arguments | Description |
 |---|---|---|
 | `self-path-check` | *(none)* | Inspects Python CLI script paths on system `PATH` and outputs 1-click setup commands. |
-| `checkup` | `--root <path>`, `--dup`, `--lang {en,vi}`, `--json` | 1-screen drive health score (`0–100`), comparison against previous run, and prioritized next-step commands. |
+| `checkup` | `--root <path>`, `--dup`, `--lang {en,vi}`, `--json` | 1-screen drive health score (`0–100`), comparison against previous run, and prioritized next-step commands. Writes only its last report, `.smart_drive/checkup.json` (overwritten on each run), and reads it back for that comparison. |
 | `init` | `--profile <name>`, `--root <path>`, `--force`, `--json` | 1-touch drive setup, taxonomy creation, anti-indexing shield installation, and FTS5 DB seeding. |
 | `status` | `--root <path>`, `--json` | Inspect SSD mount point, detected filesystem, geometry, shield health, and taxonomy status. |
 | `audit` | `--root <path>`, `--html [file]`, `--json`, `--markdown`, `--export <file>` | Storage & cluster slack audit using the drive's real cluster size (4 KB NTFS, 512 KB exFAT, etc.). `--html` exports a self-contained offline treemap report (default `<root>/.smart_drive/reports/audit.html`). Hard links counted once; symlinks/junctions skipped and counted. |
