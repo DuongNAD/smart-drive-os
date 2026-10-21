@@ -27,6 +27,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
+from smart_drive.core.fsinfo import cluster_size_text
+
 
 # ==============================================================================
 # 1. CORE ENUMS & CONSTANTS
@@ -175,7 +177,7 @@ class FilesystemAdapter:
         if self.filesystem == FilesystemType.EXFAT and total_slack > 50 * 1024 * 1024:
             warning = (
                 f"exFAT cluster slack guard: Storing {file_count} files (~{avg_file_size}B each) "
-                f"on {self.cluster_size_bytes // 1024}KB clusters will waste "
+                f"on {cluster_size_text(self.cluster_size_bytes)} clusters will waste "
                 f"{total_slack / (1024 * 1024):.1f} MB in cluster slack ({slack_pct:.1f}% wasted). "
                 f"Consider using an NTFS secondary drive or archiving into a consolidated container."
             )

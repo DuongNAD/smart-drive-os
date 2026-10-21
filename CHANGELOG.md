@@ -47,6 +47,10 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   `512KB`, worked out by dividing by 1024, so a cluster that is not a whole number of KB would have lost what was
   left over. It now names it the way the reports do: "exFAT with 512 KB clusters". It still appears only for
   clusters of 64 KB and more.
+- The exFAT cluster slack guard of `FilesystemAdapter.evaluate_cluster_slack` (`smart_drive.core.drive_detector`)
+  divided the cluster size by 1024, so on 512 B clusters, which exFAT allows, its warning read "on 0KB clusters",
+  and on 1536 B ones "on 1KB clusters". It now names the cluster the way the reports do
+  ("on 512 B clusters", "on 512 KB clusters").
 
 ## [1.4.3] - 2026-10-21
 

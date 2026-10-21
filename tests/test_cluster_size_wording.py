@@ -21,6 +21,7 @@ from unittest.mock import patch
 
 from smart_drive.cli.cmd_checkup import run_checkup
 from smart_drive.cli.main import main
+from smart_drive.core.drive_detector import FilesystemAdapter, FilesystemType
 from smart_drive.core.fsinfo import FilesystemInfo
 from smart_drive.core.health import SSDHealthReport, evaluate_health_warnings
 from smart_drive.core.system_refs import RegistryReader
@@ -171,6 +172,22 @@ class TestHealthClusterNotice(unittest.TestCase):
         for cluster in (512, 1536, 4096, 32_768):
             with self.subTest(cluster=cluster):
                 self.assertEqual(self.warnings(cluster), [])
+
+
+class TestDriveDetectorSlackGuard(unittest.TestCase):
+    """The exFAT slack guard of `FilesystemAdapter` divided the cluster by 1024 for the text of its warning.
+
+    On the 512 B clusters that exFAT allows it warned of slack "on 0KB clusters", and on 1536 B ones "on 1KB clusters".
+    """
+
+    def test_the_warning_names_the_cluster(self) -> None:
+        for cluster, wording in WORDING.items():
+            with self.subTest(cluster=cluster):
+                adapter = FilesystemAdapter(FilesystemType.EXFAT, cluster_size_bytes=cluster)
+                # 200,000 one-byte files leave more than the 50 MB of slack that the guard warns at, even at 512 B
+                warning = adapter.evaluate_cluster_slack(file_count=200_000, avg_file_size=1)["warning"]
+                self.assertIsNotNone(warning)
+                self.assertIn(f"on {wording} clusters will waste", warning)
 
 
 if __name__ == "__main__":
