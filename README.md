@@ -270,7 +270,7 @@ The SQLite FTS5 engine (`unicode61` + BM25) executes multi-criteria queries in <
 
 All 24 portable launchers (`.bat` for Windows CMD, `.ps1` for PowerShell, `.command` for macOS, `.sh` for Linux/POSIX) sit in both the repo root and `launchers/`, and need no Git:
 - `SmartDrive.*`: the full interactive menu, including `[8]` Relink Agents after hand moves, `[9]` Checkup, `[10]` Safe Guided Organizer and `[11]` Relink to the latest move.
-- `Smart_Organize.*`: the guided organizer with a step-by-step dry-run preview, busy-app wait, `YES` confirmation, post-move verification and 1-key `U` undo (EN/VI).
+- `Smart_Organize.*`: the guided organizer with a step-by-step dry-run preview, busy-app wait, `YES` confirmation, post-move verification and 1-key `U` undo (EN/VI). The preview writes nothing to the drive: `.smart_drive/smart-organize.log` is written once you confirm with `YES`.
 - `Quick_Search.*`, `Quick_Clean.*`, `Quick_Audit.*`: an instant interactive FTS5 search prompt, a dry-run junk preview followed by a confirmed Tier 1 deletion, and an instant storage breakdown and cluster slack audit.
 - `Setup_SSD.*`: interactive 1-touch initialization and profile selector (see [More features](#more-features)).
 

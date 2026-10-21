@@ -1,7 +1,8 @@
 """smart_drive.cli.smart_organize_runner - Guided safe organizer workflow for Smart_Organize launchers.
 
 Implements the interactive end-user flow for `Smart_Organize.{bat,ps1,command,sh}`:
-1. Dry-run preview (`organize --dry-run --json`) showing planned moves and protected items.
+1. Dry-run preview (`organize --dry-run --json`) showing planned moves and protected items; it writes nothing to the
+   drive.
 2. Wait for `busy_apps` (open IDEs / coding agents) to close before moving; when the list of running programs cannot
    be read (`busy_apps_unknown`), ask for the coding agents and IDEs to be closed all the same.
 3. Explicit `YES` confirmation prompt.
@@ -11,8 +12,10 @@ Implements the interactive end-user flow for `Smart_Organize.{bat,ps1,command,sh
 
 Supports:
 - Bilingual i18n: English (`en`) by default; Vietnamese (`vi`) when system locale is `vi-*` or `SMARTDRIVE_LANG=vi`.
-- Read-only self-test mode when `SD_SELFTEST=1` (or `--selftest`).
-- Persistent execution log at `<root>/.smart_drive/smart-organize.log`.
+- Self-test mode when `SD_SELFTEST=1` (or `--selftest`): the preview and the checks, and nothing is written to the drive.
+- Execution log at `<root>/.smart_drive/smart-organize.log`, written once the moves are confirmed with `YES`. The preview
+  keeps its log lines in memory (`OrganizeLog`), so a run that ends before that (nothing to move, `Q` while apps are
+  open, anything but `YES`, the self-test) leaves the drive exactly as it was, and no log.
 """
 
 from __future__ import annotations
@@ -42,7 +45,7 @@ I18N_STRINGS: Dict[str, Dict[str, str]] = {
     "en": {
         "banner_title": "SmartDrive-OS - Smart Organize (Safe Guided Move)",
         "drive_root": "Drive Root: {root}",
-        "log_path": "Log File:   {log_file}",
+        "log_path": "Log File:   {log_file} (written once you confirm the moves)",
         "step1_title": "[1/5] Scanning drive (Dry-Run Preview)...",
         "planned_header": "Planned folder/file moves ({count}):",
         "planned_item": "  + {src}  -->  {dst}  ({reason})",
@@ -82,7 +85,7 @@ I18N_STRINGS: Dict[str, Dict[str, str]] = {
     "vi": {
         "banner_title": "SmartDrive-OS - Smart Organize (Dời thư mục an toàn)",
         "drive_root": "Ổ đĩa gốc:  {root}",
-        "log_path": "Nhật ký:    {log_file}",
+        "log_path": "Nhật ký:    {log_file} (được ghi khi bạn xác nhận dời)",
         "step1_title": "[1/5] Đang quét xem trước (Dry-Run Preview)...",
         "planned_header": "Các mục dự kiến dời ({count}):",
         "planned_item": "  + {src}  -->  {dst}  ({reason})",
@@ -187,20 +190,69 @@ def get_log_path(root: str) -> str:
     return os.path.join(os.path.abspath(root), ".smart_drive", "smart-organize.log")
 
 
-def append_organize_log(root: str, event: str, details: str = "") -> str:
-    """Appends a timestamped UTF-8 log entry to `<root>/.smart_drive/smart-organize.log`."""
+def _utc_timestamp() -> str:
+    """The current UTC time as `YYYY-MM-DDTHH:MM:SSZ`."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _log_line(timestamp: str, event: str, details: str = "") -> str:
+    """One log line: `[YYYY-MM-DDTHH:MM:SSZ] EVENT | details` (without ` | details` when there are none)."""
+    line = f"[{timestamp}] {event}"
+    if details:
+        line += f" | {details}"
+    return line
+
+
+def _write_log_lines(root: str, lines: List[str]) -> str:
+    """Appends `lines` as UTF-8 to `<root>/.smart_drive/smart-organize.log`, creating `.smart_drive/` if needed.
+
+    A log that cannot be written never stops a run.
+    """
     log_file = get_log_path(root)
     try:
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        line = f"[{ts}] {event}"
-        if details:
-            line += f" | {details}"
         with open(log_file, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
+            f.write("".join(line + "\n" for line in lines))
     except OSError:
         pass
     return log_file
+
+
+def append_organize_log(root: str, event: str, details: str = "") -> str:
+    """Appends a timestamped UTF-8 log entry to `<root>/.smart_drive/smart-organize.log` at once.
+
+    The guided run itself goes through `OrganizeLog`, which waits for the confirmation before it writes.
+    """
+    return _write_log_lines(root, [_log_line(_utc_timestamp(), event, details)])
+
+
+class OrganizeLog:
+    """The log of one guided run. It writes nothing to the drive until `flush()`.
+
+    The preview promises to change nothing, so what happens before the person confirms the moves is kept in memory,
+    each line stamped with the time of its event. `flush()` writes those lines to the log file, in order, and from then
+    on every event is appended as it happens. A run that ends before `flush()` (nothing to move, `Q` while apps are
+    open, anything but `YES`, the self-test) leaves no log file and no `.smart_drive/` folder behind.
+    """
+
+    def __init__(self, root: str) -> None:
+        self.root = os.path.abspath(root)
+        self.path = get_log_path(self.root)
+        self._waiting: Optional[List[str]] = []  # None once flushed
+
+    def add(self, event: str, details: str = "") -> None:
+        """Records an event: kept in memory until `flush()`, appended to the log file at once after it."""
+        line = _log_line(_utc_timestamp(), event, details)
+        if self._waiting is None:
+            _write_log_lines(self.root, [line])
+        else:
+            self._waiting.append(line)
+
+    def flush(self) -> None:
+        """Writes the lines kept so far, in order, and switches to writing every later event at once."""
+        waiting, self._waiting = self._waiting, None
+        if waiting:
+            _write_log_lines(self.root, waiting)
 
 
 # ==============================================================================
@@ -378,24 +430,20 @@ def run_smart_organize(
     out = output_stream if output_stream is not None else sys.stdout
     resolved_lang = lang or detect_language()
     root_abs = os.path.abspath(root)
-    log_file = get_log_path(root_abs)
+    log = OrganizeLog(root_abs)  # writes nothing to the drive until the moves are confirmed (see below)
     run_relink = relink_fn or relink
 
     def emit(line: str = "") -> None:
         out.write(line + "\n")
         out.flush()
 
-    append_organize_log(
-        root_abs,
-        "START",
-        f"lang={resolved_lang} selftest={selftest} root={root_abs}",
-    )
+    log.add("START", f"lang={resolved_lang} selftest={selftest} root={root_abs}")
 
     emit("=" * 64)
     emit("  " + t("banner_title", resolved_lang))
     emit("=" * 64)
     emit("  " + t("drive_root", resolved_lang, root=root_abs))
-    emit("  " + t("log_path", resolved_lang, log_file=log_file))
+    emit("  " + t("log_path", resolved_lang, log_file=log.path))
     emit("")
 
     # Step 1: Dry-run preview
@@ -416,8 +464,7 @@ def run_smart_organize(
         except Exception:
             pass
 
-    append_organize_log(
-        root_abs,
+    log.add(
         "DRY_RUN",
         f"planned={len(actions)} protected_by_system={len(protected_entries)} busy_apps={relink_preview.get('busy_apps', [])}",
     )
@@ -437,12 +484,12 @@ def run_smart_organize(
         emit(t("cannot_move_header", resolved_lang, count=len(protected_entries)))
         for item_name, reason_str in protected_entries:
             emit(t("cannot_move_item", resolved_lang, name=item_name, reasons=reason_str))
-            append_organize_log(root_abs, "CANNOT_MOVE_PROTECTED", f"{item_name}: {reason_str}")
+            log.add("CANNOT_MOVE_PROTECTED", f"{item_name}: {reason_str}")
     else:
         emit(t("cannot_move_none", resolved_lang))
     emit("")
 
-    # Read-only SD_SELFTEST=1 mode: verify dry-run + checks without modifying anything
+    # SD_SELFTEST=1 mode: verify dry-run + checks without modifying anything (the log is never flushed)
     if selftest:
         ver = verify_post_organize(root_abs, [], relink_fn=relink_fn)
         if ver["relink_ok"]:
@@ -450,11 +497,11 @@ def run_smart_organize(
         emit(t("verify_git_ok", resolved_lang, checked=ver["git_checked"]))
         emit(t("verify_venv_ok", resolved_lang, checked=ver["venv_checked"]))
         emit(t("selftest_ok", resolved_lang, lang=resolved_lang, root=root_abs))
-        append_organize_log(root_abs, "SELFTEST_OK", f"lang={resolved_lang}")
+        log.add("SELFTEST_OK", f"lang={resolved_lang}")
         return 0
 
     if not actions:
-        append_organize_log(root_abs, "END", "nothing_to_move")
+        log.add("END", "nothing_to_move")
         return 0
 
     # Step 2: Check and wait for busy_apps to close (or be closed, when the list of running programs cannot be read)
@@ -469,14 +516,14 @@ def run_smart_organize(
             apps_str = "unknown"
             emit(t("step2_unknown_title", resolved_lang))
             emit(t("step2_unknown_hint", resolved_lang))
-        append_organize_log(root_abs, "BUSY_APPS", apps_str)
+        log.add("BUSY_APPS", apps_str)
         try:
             ans = input_fn(t("step2_busy_prompt", resolved_lang)).strip().lower()
         except EOFError:
             ans = "q"
         if ans == "q":
             emit(t("cancelled", resolved_lang))
-            append_organize_log(root_abs, "CANCELLED_AT_BUSY_APPS", apps_str)
+            log.add("CANCELLED_AT_BUSY_APPS", apps_str)
             return 0
         if ans == "c":
             break
@@ -504,8 +551,11 @@ def run_smart_organize(
 
     if confirm.upper() != "YES":
         emit(t("cancelled", resolved_lang))
-        append_organize_log(root_abs, "CANCELLED_CONFIRM", f"input={confirm!r}")
+        log.add("CANCELLED_CONFIRM", f"input={confirm!r}")
         return 0
+
+    # The drive changes from here on, so the log starts here: what the preview recorded goes in first, in order
+    log.flush()
 
     # Step 4: Execute organize --apply --json
     emit("")
@@ -551,11 +601,7 @@ def run_smart_organize(
         ]
 
     emit(t("moved_summary", resolved_lang, moved=moved_count))
-    append_organize_log(
-        root_abs,
-        "APPLY",
-        f"moved={moved_count} errors={len(errors)} protected={len(protected_post)}",
-    )
+    log.add("APPLY", f"moved={moved_count} errors={len(errors)} protected={len(protected_post)}")
 
     # Clearly display items that could NOT be moved with their reasons
     if protected_post or errors:
@@ -571,7 +617,7 @@ def run_smart_organize(
                 else:
                     err_str = str(err)
                 emit(t("move_error_item", resolved_lang, error=err_str))
-                append_organize_log(root_abs, "CANNOT_MOVE_ERROR", err_str)
+                log.add("CANNOT_MOVE_ERROR", err_str)
     else:
         emit(t("cannot_move_none", resolved_lang))
     emit("")
@@ -616,11 +662,7 @@ def run_smart_organize(
                 )
             )
 
-        append_organize_log(
-            root_abs,
-            "VERIFY",
-            f"relink_ok={ver['relink_ok']} git_ok={ver['git_ok']} venv_ok={ver['venv_ok']}",
-        )
+        log.add("VERIFY", f"relink_ok={ver['relink_ok']} git_ok={ver['git_ok']} venv_ok={ver['venv_ok']}")
         emit("")
 
         try:
@@ -629,7 +671,7 @@ def run_smart_organize(
             choice = ""
 
         if choice == "R":
-            append_organize_log(root_abs, "ACTION", "RETRY")
+            log.add("ACTION", "RETRY")
             if not applied_pairs:
                 emit(t("retry_no_moves", resolved_lang))
                 continue
@@ -638,15 +680,15 @@ def run_smart_organize(
             try:
                 run_relink(applied_pairs, root=root_abs, dry_run=False)
             except Exception as err:
-                append_organize_log(root_abs, "RETRY_ERROR", str(err))
+                log.add("RETRY_ERROR", str(err))
             continue
         elif choice == "U":
-            append_organize_log(root_abs, "ACTION", "UNDO")
+            log.add("ACTION", "UNDO")
             # `smart-drive undo` reverts the latest journal batch: only run it when that batch is this run's.
             latest = last_undoable_moves(root_abs)
             if not applied_pairs or latest is None or set(latest.get("moves") or []) != set(applied_pairs):
                 emit(t("undo_not_this_run", resolved_lang))
-                append_organize_log(root_abs, "UNDO_REFUSED", "latest undoable batch is not this run's")
+                log.add("UNDO_REFUSED", "latest undoable batch is not this run's")
                 continue
             emit(t("undoing", resolved_lang))
             from smart_drive.cli.cmd_undo import cmd_undo
@@ -663,19 +705,15 @@ def run_smart_organize(
             failed = int(undo_rep.get("failed_count", 0) or 0)
             if undo_rc or failed:
                 emit(t("undo_partial", resolved_lang, restored=restored, failed=max(failed, 1)))
-                append_organize_log(root_abs, "END", f"undo_partial restored={restored} failed={failed}")
+                log.add("END", f"undo_partial restored={restored} failed={failed}")
                 return 1
             emit(t("undo_done", resolved_lang, restored=restored))
-            append_organize_log(
-                root_abs,
-                "END",
-                f"undone restored={restored}",
-            )
+            log.add("END", f"undone restored={restored}")
             return 0
         else:
             emit(t("kept_done", resolved_lang))
-            append_organize_log(root_abs, "ACTION", "KEEP")
-            append_organize_log(root_abs, "END", "kept")
+            log.add("ACTION", "KEEP")
+            log.add("END", "kept")
             return 0
 
 

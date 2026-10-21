@@ -58,6 +58,7 @@ from smart_drive.core.purge_engine import (
     SecurityViolationError,
 )
 from smart_drive.mcp.server import SmartDriveMCPServer
+from tests.helpers import organize_log_events, snapshot_tree, tree_changes
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LAUNCHERS_DIR = REPO_ROOT / "launchers"
@@ -1234,8 +1235,8 @@ class TestSmartOrganizeLauncher(unittest.TestCase):
             content = menu_path.read_text(encoding="utf-8")
             self.assertIn("Smart_Organize", content, f"{menu_path} must reference Smart_Organize in its menu")
 
-    def test_sd_selftest_mode_is_readonly_and_writes_log(self) -> None:
-        """Running Smart_Organize with SD_SELFTEST=1 performs a read-only dry-run and logs to .smart_drive/smart-organize.log."""
+    def test_sd_selftest_mode_writes_nothing_to_the_drive(self) -> None:
+        """Running Smart_Organize with SD_SELFTEST=1 previews the moves and leaves the drive byte for byte as it was."""
         temp_drive = Path(tempfile.mkdtemp(prefix="test_smart_org_selftest_"))
         try:
             # Create an unorganized repo that would be moved in --apply mode
@@ -1243,6 +1244,7 @@ class TestSmartOrganizeLauncher(unittest.TestCase):
             (repo_dir / ".git").mkdir(parents=True)
             (repo_dir / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
             (repo_dir / "main.py").write_text("print('hi')\n", encoding="utf-8")
+            before = snapshot_tree(temp_drive)
 
             env = dict(os.environ)
             env["SMART_DRIVE_ROOT"] = str(temp_drive)
@@ -1275,11 +1277,13 @@ class TestSmartOrganizeLauncher(unittest.TestCase):
             self.assertTrue(repo_dir.is_dir(), "SD_SELFTEST=1 must never move folders")
             self.assertFalse((temp_drive / "03_Development_Projects" / "sample_repo").exists())
 
-            # Verify log file written
-            log_file = temp_drive / ".smart_drive" / "smart-organize.log"
-            self.assertTrue(log_file.is_file(), "smart-organize.log must be created")
-            log_text = log_file.read_text(encoding="utf-8")
-            self.assertIn("SELFTEST_OK", log_text)
+            # Verify nothing was written: no log, no .smart_drive/ folder, no other path or byte changed
+            self.assertFalse((temp_drive / ".smart_drive").exists(), "SD_SELFTEST=1 must not create .smart_drive/")
+            self.assertEqual(
+                tree_changes(before, snapshot_tree(temp_drive)),
+                ([], [], []),
+                "SD_SELFTEST=1 must leave the drive exactly as it was",
+            )
         finally:
             shutil.rmtree(temp_drive, ignore_errors=True)
 
@@ -1369,6 +1373,12 @@ class TestSmartOrganizeLauncher(unittest.TestCase):
             self.assertIn("APPLY", log_text)
             self.assertIn("RETRY", log_text)
             self.assertIn("UNDO", log_text)
+
+            # The preview's lines are kept back until YES and then reach the log first, in the order they happened
+            events = organize_log_events(log_text)
+            self.assertLess(events.index("START"), events.index("DRY_RUN"))
+            self.assertLess(events.index("DRY_RUN"), events.index("BUSY_APPS"))
+            self.assertLess(events.index("BUSY_APPS"), events.index("APPLY"))
         finally:
             shutil.rmtree(temp_drive, ignore_errors=True)
 
