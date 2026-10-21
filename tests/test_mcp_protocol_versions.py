@@ -9,10 +9,16 @@ Regressions:
 - The chosen revision lasts for the whole process (a second `initialize` negotiates again) and decides the shape of
   `serverInfo`: `name` and `version` in 2024-11-05, `title` added in 2025-06-18, `description` and `websiteUrl` added in
   2025-11-25. The 2024-11-05 reply stays byte for byte what it was before the server negotiated.
+- `tools/list` and `tools/call` ignored the revision, so tools had no display names and a result carried only its JSON
+  text. `tools/list` now adds `annotations.title` (2025-03-26) and a top-level `title` (2025-06-18) to a copy of the
+  catalog, and a successful `tools/call` adds `structuredContent` (2025-06-18), the object the text holds. TOOLS stays
+  the 2024-11-05 catalog and is never changed, error results are the same in every revision, and a 2024-11-05 client
+  (or one that never initialized) gets the bytes it always got.
 """
 
 from __future__ import annotations
 
+import copy
 import io
 import json
 import shutil
@@ -35,9 +41,12 @@ from smart_drive.mcp.server import (
     SERVER_VERSION,
     SERVER_WEBSITE_URL,
     SUPPORTED_PROTOCOL_VERSIONS,
+    TOOL_TITLES,
+    TOOLS,
     SmartDriveMCPServer,
     negotiate_protocol_version,
     server_info,
+    tools_for_version,
 )
 
 SERVER_JSON = Path(__file__).resolve().parent.parent / "server.json"
@@ -57,11 +66,31 @@ SERVER_INFO_BY_REVISION: Dict[str, Dict[str, str]] = {
     },
 }
 
+# What each revision adds to the tools: a title inside each tool's annotations, a title at the top of each tool, and
+# `structuredContent` in a successful tools/call result. A revision keeps everything the one before it added.
+ADDITIONS_BY_REVISION: Dict[str, Dict[str, bool]] = {
+    "2024-11-05": {"annotations_title": False, "title": False, "structured_content": False},
+    "2025-03-26": {"annotations_title": True, "title": False, "structured_content": False},
+    "2025-06-18": {"annotations_title": True, "title": True, "structured_content": True},
+    "2025-11-25": {"annotations_title": True, "title": True, "structured_content": True},
+}
+
+
+def without_titles(tool: Dict[str, Any]) -> Dict[str, Any]:
+    """A tool as 2024-11-05 lists it: the entry minus the titles a later revision added."""
+    plain = {key: value for key, value in tool.items() if key != "title"}
+    plain["annotations"] = {key: value for key, value in tool["annotations"].items() if key != "title"}
+    return plain
+
 
 class _Server(unittest.TestCase):
     def setUp(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="sd_mcp_ver_")).resolve()
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.server = SmartDriveMCPServer(root=str(self.root), rate_limit_enabled=False)
+
+    def restart(self) -> None:
+        """A new server process on the same drive: it has negotiated nothing yet."""
         self.server = SmartDriveMCPServer(root=str(self.root), rate_limit_enabled=False)
 
     def talk_raw(self, *chunks: str) -> str:
@@ -89,6 +118,13 @@ class _Server(unittest.TestCase):
         """The result of an `initialize` with these params, sent through the stdio loop."""
         (reply,) = self.talk(self.initialize_line(params))
         return reply["result"]
+
+    def list_line(self, msg_id: int = 2) -> str:
+        return self.line({"jsonrpc": "2.0", "id": msg_id, "method": "tools/list"})
+
+    def call_line(self, name: str, arguments: Dict[str, Any], msg_id: int = 2) -> str:
+        params = {"name": name, "arguments": arguments}
+        return self.line({"jsonrpc": "2.0", "id": msg_id, "method": "tools/call", "params": params})
 
 
 class TestNegotiation(_Server):
@@ -205,6 +241,143 @@ class TestOldClientsSeeNoChange(_Server):
                 self.assertEqual(self.talk_raw(self.initialize_line(params)), self.EXPECTED_LINE + "\n")
 
 
+class TestToolCatalog(_Server):
+    def listed(self, version: Any = _ABSENT) -> List[Dict[str, Any]]:
+        """The tools `tools/list` answers, after an `initialize` for `version` unless there is none."""
+        if version is not _ABSENT:
+            self.initialize({"protocolVersion": version})
+        (reply,) = self.talk(self.list_line())
+        return reply["result"]["tools"]
+
+    def test_every_revision_has_a_row(self) -> None:
+        self.assertEqual(set(ADDITIONS_BY_REVISION), set(LEGACY_PROTOCOL_VERSIONS))
+
+    def test_2024_11_05_is_tools_itself_and_before_initialize_the_server_answers_with_it(self) -> None:
+        self.assertIs(tools_for_version("2024-11-05"), TOOLS)
+        self.assertEqual(self.listed(), TOOLS)
+
+    def test_the_tools_list_line_for_2024_11_05_is_what_it_was_before_the_negotiation(self) -> None:
+        expected = json.dumps(
+            {"jsonrpc": "2.0", "id": 2, "result": {"tools": TOOLS}}, separators=(",", ":"), ensure_ascii=False
+        )
+        preludes = (
+            ("before initialize", ()),
+            ("after initialize 2024-11-05", (self.initialize_line({"protocolVersion": "2024-11-05"}),)),
+            ("after initialize naming nothing", (self.initialize_line({}),)),
+        )
+        for label, prelude in preludes:
+            with self.subTest(client=label):
+                self.restart()
+                lines = self.talk_raw(*prelude, self.list_line()).splitlines()
+                self.assertEqual(len(lines), len(prelude) + 1)
+                self.assertEqual(lines[-1], expected)
+
+    def test_each_revision_adds_titles_and_nothing_else(self) -> None:
+        for version, adds in ADDITIONS_BY_REVISION.items():
+            with self.subTest(version=version):
+                tools = self.listed(version)
+                self.assertEqual(tools, json.loads(json.dumps(tools_for_version(version))))
+                self.assertEqual([tool["name"] for tool in tools], [tool["name"] for tool in TOOLS])
+                for tool, original in zip(tools, TOOLS):
+                    self.assertEqual(without_titles(tool), original)  # the hints stay at the top level too
+                    self.assertEqual("title" in tool["annotations"], adds["annotations_title"])
+                    self.assertEqual("title" in tool, adds["title"])
+                    if adds["annotations_title"]:
+                        self.assertEqual(tool["annotations"]["title"], TOOL_TITLES[original["name"]])
+                        self.assertEqual(list(tool["annotations"]), ["title"] + list(original["annotations"]))
+                    if adds["title"]:
+                        self.assertEqual(tool["title"], TOOL_TITLES[original["name"]])
+                        self.assertEqual(list(tool)[:2], ["name", "title"])
+                    self.assertEqual([key for key in tool if key != "title"], list(original))
+
+    def test_building_a_catalog_never_changes_tools(self) -> None:
+        before = copy.deepcopy(TOOLS)
+        for version in LEGACY_PROTOCOL_VERSIONS:
+            with self.subTest(version=version):
+                catalog = tools_for_version(version)
+                if catalog is TOOLS:  # 2024-11-05 hands out the catalog itself, which is not for editing
+                    continue
+                self.assertIsNot(catalog, tools_for_version(version))  # nobody's edits can reach the next reply
+                for entry, original in zip(catalog, TOOLS):
+                    self.assertIsNot(entry, original)
+                    self.assertIsNot(entry["annotations"], original["annotations"])
+                    entry["annotations"]["title"] = "edited"
+                    entry["name"] = "edited"
+                    entry.pop("title", None)
+                catalog.clear()
+        self.assertEqual(TOOLS, before)
+
+    def test_titles_cover_exactly_the_tools(self) -> None:
+        self.assertEqual(set(TOOL_TITLES), {tool["name"] for tool in TOOLS})
+        for name, title in TOOL_TITLES.items():
+            with self.subTest(tool=name):
+                self.assertIsInstance(title, str)
+                self.assertTrue(title.strip())
+        self.assertEqual(len(set(TOOL_TITLES.values())), len(TOOL_TITLES))  # a title tells two tools apart
+
+
+class TestToolResults(_Server):
+    SAFE_PATH = {"path": "01_AI_Models/model.gguf"}
+
+    def call(self, name: str, arguments: Dict[str, Any], version: Any = _ABSENT) -> Dict[str, Any]:
+        """The result of one `tools/call`, after an `initialize` for `version` unless there is none."""
+        if version is not _ABSENT:
+            self.initialize({"protocolVersion": version})
+        (reply,) = self.talk(self.call_line(name, arguments))
+        return reply["result"]
+
+    def test_a_successful_result_gains_structured_content_in_the_revisions_that_define_it(self) -> None:
+        baseline = self.call("ssd_check_safety", self.SAFE_PATH, "2024-11-05")
+        self.assertEqual(list(baseline), ["content"])
+        self.assertEqual([item["type"] for item in baseline["content"]], ["text"])
+        for version, adds in ADDITIONS_BY_REVISION.items():
+            with self.subTest(version=version):
+                result = self.call("ssd_check_safety", self.SAFE_PATH, version)
+                self.assertEqual(result["content"], baseline["content"])  # the text item is the one it always was
+                if adds["structured_content"]:
+                    self.assertEqual(list(result), ["content", "structuredContent"])
+                    self.assertIsInstance(result["structuredContent"], dict)
+                    self.assertEqual(json.loads(result["content"][0]["text"]), result["structuredContent"])
+                    self.assertIs(result["structuredContent"]["is_safe"], True)
+                else:
+                    self.assertEqual(list(result), ["content"])
+
+    def test_before_initialize_a_result_is_only_content(self) -> None:
+        self.assertEqual(list(self.call("ssd_check_safety", self.SAFE_PATH)), ["content"])
+
+    def test_the_result_line_before_2025_06_18_is_what_it_was_before_the_negotiation(self) -> None:
+        report = self.server.handle_ssd_check_safety(self.SAFE_PATH)
+        text = json.dumps(report, separators=(",", ":"), ensure_ascii=False)
+        expected = json.dumps(
+            {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": text}]}},
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        preludes = (
+            ("before initialize", ()),
+            ("after initialize 2024-11-05", (self.initialize_line({"protocolVersion": "2024-11-05"}),)),
+            ("after initialize 2025-03-26", (self.initialize_line({"protocolVersion": "2025-03-26"}),)),
+        )
+        for label, prelude in preludes:
+            with self.subTest(client=label):
+                self.restart()
+                lines = self.talk_raw(*prelude, self.call_line("ssd_check_safety", self.SAFE_PATH)).splitlines()
+                self.assertEqual(len(lines), len(prelude) + 1)
+                self.assertEqual(lines[-1], expected)
+
+    def test_error_results_are_the_same_in_every_revision(self) -> None:
+        calls = (("no_such_tool", {}), ("ssd_audit", {"sub_dir": "../../outside"}))
+        first: Dict[str, Dict[str, Any]] = {}
+        for version in LEGACY_PROTOCOL_VERSIONS:
+            for name, arguments in calls:
+                with self.subTest(version=version, tool=name):
+                    with self.assertLogs("smart_drive.mcp.server", level="WARNING"):
+                        result = self.call(name, arguments, version)
+                    self.assertEqual(list(result), ["isError", "content"])
+                    self.assertIs(result["isError"], True)
+                    self.assertEqual(result, first.setdefault(name, result))
+
+
 class TestRevisionLists(unittest.TestCase):
     def test_legacy_revisions_are_iso_dates_newest_first(self) -> None:
         """server_info compares revisions as strings, which only works for dates written year first."""
@@ -238,8 +411,10 @@ class TestRevisionLists(unittest.TestCase):
             "SERVER_TITLE",
             "SERVER_DESCRIPTION",
             "SERVER_WEBSITE_URL",
+            "TOOL_TITLES",
             "negotiate_protocol_version",
             "server_info",
+            "tools_for_version",
         ):
             with self.subTest(public=name):
                 self.assertIn(name, server_module.__all__)
