@@ -160,7 +160,7 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
         )
 
     def test_r1_mcp_audit_storage_breakdown(self) -> None:
-        """R1: ssd_audit returns concise storage breakdown and 512KB cluster slack metrics."""
+        """R1: ssd_audit returns concise storage breakdown and cluster slack metrics at the drive's real cluster."""
         audit_res = self.server.handle_ssd_audit({})
         self.assertIn("root_path", audit_res)
         self.assertIn("total_files", audit_res)
@@ -200,7 +200,7 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
         self.assertTrue(agents_md.exists(), "Root AGENTS.md must never be deleted by cleaner")
 
     def test_r1_mcp_duplicate_detection_and_savings(self) -> None:
-        """R1: ssd_find_duplicates computes exact nominal and 512KB physical cluster space savings."""
+        """R1: ssd_find_duplicates computes the nominal bytes and the cluster slack of the redundant copies."""
         # Create identical duplicate files in two separate directories
         content = b"E2E_DUPLICATE_IDENTICAL_CONTENT_STRING_654321" * 10
         dir_a = self.root_path / "01_AI_Models"

@@ -373,6 +373,24 @@ class TestDupCommandMinSize(_Tree):
         self.assertEqual(refused.exception.code, 2)
 
 
+class TestPartialHashSamples(_Tree):
+    """The second phase hashes a file's first 8KB and, above 16KB, its last 8KB too, as the tool description says."""
+
+    def partial(self, name: str, data: bytes) -> str:
+        return duplicates.compute_partial_hash(str(self.write(name, data)))
+
+    def test_the_head_and_the_tail_of_a_file_over_16kb_decide_the_hash(self) -> None:
+        head, tail = b"H" * 8192, b"T" * 8192
+        whole = self.partial("whole.bin", head + b"m" * 10000 + tail)
+        self.assertEqual(self.partial("other_middle.bin", head + b"x" * 10000 + tail), whole)
+        self.assertNotEqual(self.partial("other_head.bin", b"h" + head[1:] + b"m" * 10000 + tail), whole)
+        self.assertNotEqual(self.partial("other_tail.bin", head + b"m" * 10000 + tail[:-1] + b"t"), whole)
+
+    def test_a_file_of_16kb_or_less_is_hashed_on_its_head_alone(self) -> None:
+        self.assertEqual(self.partial("a.bin", b"a" * 16384), self.partial("b.bin", b"a" * 8192 + b"z" * 8192))
+        self.assertNotEqual(self.partial("c.bin", b"a" * 16385), self.partial("d.bin", b"a" * 16384 + b"z"))
+
+
 class TestHashingRunsInParallel(_Tree):
     """Opening a file is what costs (Windows Defender scans it): the opens overlap, the answer does not change."""
 
