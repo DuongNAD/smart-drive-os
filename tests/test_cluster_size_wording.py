@@ -31,7 +31,9 @@ from smart_drive.core.system_refs import RegistryReader
 # at a function and not at the module.
 CLI_CHECKUP = importlib.import_module("smart_drive.cli.cmd_checkup")
 CLI_HEALTH = importlib.import_module("smart_drive.cli.cmd_health")
+CLI_SENTINEL = importlib.import_module("smart_drive.cli.cmd_sentinel")
 RELINK = importlib.import_module("smart_drive.core.relink")
+SENTINEL = importlib.import_module("smart_drive.core.sentinel")
 
 # The text each cluster has to be given. It is written out here and not taken from `cluster_size_text`, the helper under
 # test, so that a helper which goes wrong cannot make the reports agree with it.
@@ -188,6 +190,43 @@ class TestDriveDetectorSlackGuard(unittest.TestCase):
                 warning = adapter.evaluate_cluster_slack(file_count=200_000, avg_file_size=1)["warning"]
                 self.assertIsNotNone(warning)
                 self.assertIn(f"on {wording} clusters will waste", warning)
+
+
+class TestSentinelRootLine(unittest.TestCase):
+    """`sentinel` named the allocation unit in its `Root:` line only when it was a whole number of KB.
+
+    A 512 B exFAT volume read `(exFAT)` where a 4 KB NTFS one read `(NTFS, 4 KB allocation unit)`.
+    """
+
+    def lines(self, mount: Dict[str, Any]) -> List[str]:
+        """The lines `sentinel` prints for a drive "x" whose mount is ``mount``."""
+        return CLI_SENTINEL.format_ansi_report({"drive_root": "x", "mount": mount}, color=False).splitlines()
+
+    def test_the_root_line_names_the_allocation_unit(self) -> None:
+        for cluster, wording in WORDING.items():
+            with self.subTest(cluster=cluster):
+                mount = {"filesystem": "exFAT", "allocation_unit_bytes": cluster}
+                self.assertIn(f"    - Root: x (exFAT, {wording} allocation unit)", self.lines(mount))
+
+    def test_a_unit_that_was_not_read_is_still_left_out(self) -> None:
+        for mount in ({"filesystem": "exFAT", "allocation_unit_bytes": 0}, {"filesystem": "exFAT"}):
+            with self.subTest(mount=mount):
+                self.assertIn("    - Root: x (exFAT)", self.lines(mount))
+
+    def test_the_command_names_the_unit_of_a_512_b_volume(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="sd_cluster_wording_")).resolve()
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        (root / "GEMINI.md").write_text("# anchor", encoding="utf-8")
+        (root / "01_AI_Models").mkdir()
+        (root / "01_AI_Models" / "a.txt").write_text("a", encoding="utf-8")
+        out = io.StringIO()
+        with patch.object(SENTINEL, "detect_filesystem", return_value=volume(root, 512)):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                # (the exit code is not looked at: a drive without anti-indexing shields ends it with 1, and --no-heal
+                # does not make them)
+                main(["sentinel", "--root", str(root), "--no-heal"])
+        printed = out.getvalue()
+        self.assertTrue(any(line.endswith("(exFAT, 512 B allocation unit)") for line in printed.splitlines()), printed)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import os
 import sys
 
 from smart_drive.core.config import CLUSTER_SIZE_BYTES
+from smart_drive.core.fsinfo import cluster_size_text
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.core.sentinel import SentinelEngine
 
@@ -34,7 +35,7 @@ def format_ansi_report(report: dict, color: bool = True) -> str:
     mount = report.get("mount", {})
     fs_name = mount.get("filesystem", "unknown")
     unit = mount.get("allocation_unit_bytes") or 0
-    unit_text = f", {unit // 1024} KB allocation unit" if unit >= 1024 and unit % 1024 == 0 else ""
+    unit_text = f", {cluster_size_text(unit)} allocation unit" if unit > 0 else ""
     lines.append(f"[{C_GREEN}✓{C_RESET}] Drive Mount & Geometry:")
     lines.append(f"    - Root: {root} ({fs_name}{unit_text})")
     if mount.get("slack_model_note"):
