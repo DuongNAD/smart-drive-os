@@ -532,13 +532,26 @@ Chạy thủ công trước mỗi bản phát hành; vượt ngân sách thì s�
 - **Khu cách ly**: mã đợt theo giờ máy cục bộ (lệch khi đổi giờ mùa hè/múi giờ); manifest ghi sau khi đổi tên, nằm ngoài `try`;
   hai tiến trình trong cùng một giây dùng chung đợt. ✅ (1.4.2) `clean --purge-quarantine` giờ giữ các đợt dưới 30 ngày;
   muốn xóa mọi đợt phải ghi rõ `--older-than 0`, số âm bị từ chối.
-- **MCP**: `ssd_check_safety` đọc `E:x` như đường dẫn tương đối của gốc; gốc lưu trữ được báo là an toàn. Mô tả công cụ
-  `ssd_find_duplicates` vẫn ghi "512KB physical cluster" (bị `test_mcp_grade_a` ghim). `ssd_audit` vẫn tính slack theo cluster
-  512 KB trong khi `smart-drive audit` đã dùng cluster thật của ổ (trên `E:`: 119 MB slack "giả định" cho 4 MB dữ liệu) —
-  nên thống nhất qua cùng helper ở `fsinfo.py`, hoặc trả cả hai con số.
+- **MCP** ✅ (sau 1.4.2, chưa phát hành): cả ba mục đã tái hiện bằng lời gọi JSON-RPC `tools/call` trên `E:` (cả qua MCP
+  server đang chạy cho Claude Code) rồi mới sửa, mỗi mục một commit có test. `ssd_audit` từng tính slack theo cluster
+  512 KB giả định trên mọi ổ: cùng một thư mục 1,35 MB trên `E:` báo 34,7 MB slack, còn `smart-drive audit` báo 157 KB.
+  Giờ cả hai lấy cluster từ `fsinfo.slack_cluster` (cluster thật của ổ, 512 KB chỉ khi không đọc được) và báo
+  `cluster_size_source` (`detected`/`assumed`); `ssd_audit` có thêm `cluster_size`, `filesystem`, `slack_model_note`.
+  Mô tả `ssd_audit` và `ssd_find_duplicates` không còn hứa "512KB" (các test ghim trong `test_mcp_grade_a` đổi cùng
+  commit). `ssd_check_safety` từ chối đường dẫn tương đối theo ổ (`E:x`, `E:`) bằng lỗi nói rõ lý do và cách gửi đúng
+  (các công cụ khác cũng nói như vậy thay vì "escapes storage root"), và coi chính gốc lưu trữ là được bảo vệ
+  (`is_safe: false`, `is_protected_root_dir: true`, trường mới `is_storage_root`). Cùng đợt: `organize` khi chạy thử
+  (`--dry-run`, mặc định, hay `--clean` không kèm `--apply`) không còn ghi `.metadata_never_index` và `.fseventsd/no_log`
+  vào gốc ổ (MCP `ssd_auto_organize` vốn đúng); `--json` báo thêm `anti_indexing_shields_to_create`. Còn: `clean`/
+  `ssd_clean`, `snapshot`, `backup` và phần rác của `checkup` vẫn tính dung lượng cấp phát theo cluster 512 KB mặc định
+  trên mọi ổ (CLI và MCP khớp nhau nhưng cùng sai trên NTFS 4 KB); báo cáo text/markdown của `audit` còn ghi cứng
+  "512KB" ở vài nhãn (`Allocated 512KB Clusters`, tiêu đề mục hotspot); bản xem trước của `Smart_Organize` vẫn ghi
+  `<gốc>/.smart_drive/smart-organize.log`.
 - **`dup`**: bản cài portable không đăng ký với Windows (ví dụ SonarQube trong `E:\tool`) vẫn có `.jar` trùng được liệt kê;
-  cần dùng lại heuristic "thư mục ứng dụng" của `classify` hoặc cho người dùng tự loại trừ. Biểu thức "cluster đã phát hiện,
-  nếu không thì 512 KB" lặp ở `cmd_audit`, `cmd_checkup`, `cmd_dup`, `server.py`: gom vào một helper trong `fsinfo.py`.
+  cần dùng lại heuristic "thư mục ứng dụng" của `classify` hoặc cho người dùng tự loại trừ. ✅ Biểu thức "cluster đã phát
+  hiện, nếu không thì 512 KB" (từng lặp ở `cmd_audit`, `cmd_checkup`, `cmd_dup`, `server.py` và `AutoZoner`) giờ chỉ nằm
+  trong `fsinfo.slack_cluster`, có test chặn viết lại; `dup --json`, `checkup --json` và `ssd_find_duplicates` báo thêm
+  `cluster_size_source`.
 - **`clean`**: ✅ (1.4.2) `--only-tier 3 --apply` chỉ cách ly rác Tier 3, không xóa Tier 1–2. Còn: tệp Tier 3 nằm trong
   một thư mục rác Tier 1–2 (ví dụ `build/x.tmp`) không được `--only-tier 3` liệt kê; công cụ MCP `ssd_clean` chưa có
   `only_tier`; `*.dmp` có thể là file export của Oracle (Tier 3 nên chỉ vào khu cách ly, cần theo dõi); `*.pyc` lẻ không có
