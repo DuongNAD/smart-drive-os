@@ -975,7 +975,7 @@ class StorageAuditor:
                 f"on {cluster_text} clusters:\n\n"
             )
             buf.write("| Directory | Micro-Files | Direct Files | Logical Size | Allocated | Slack Wasted | Waste % | Advice |\n")
-            buf.write("|:---|---:|---:|---:|---:|---:|---:|:---||\n")
+            buf.write("|:---|---:|---:|---:|---:|---:|---:|:---|\n")
             for h in micro_hotspots:
                 p = h.get("rel_path") or "."
                 mf_str = format_count(h.get("micro_file_count", 0))

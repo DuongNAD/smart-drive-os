@@ -7,6 +7,14 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The markdown report of `audit` (`--markdown`, also when written to a file with `--export`) ended the delimiter row
+  of its micro-file hotspot table with a stray `|` (`|:---|---:|---:|---:|---:|---:|---:|:---||`): nine cells under an
+  eight-column header, so GitHub and other renderers that follow GitHub Flavored Markdown did not draw the table and
+  showed its rows as plain text. The row has eight cells now, and a test checks that every table of the report has as
+  many delimiter cells as header cells.
+
 ## [1.4.3] - 2026-10-21
 
 Previews that write nothing, the drive's real cluster size everywhere, a newer MCP protocol and a kit for beta

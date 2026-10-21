@@ -12,6 +12,10 @@ The tests run `audit` on a volume with a 4 KB cluster, on odd ones (1536 B, 512 
 read. For that one the fallback is patched to 64 KB, as in test_slack_cluster_routing.py, so that a label which keeps
 saying 512 KB is caught. Each label has to say the cluster the figures are at, and the count printed beside it has to be
 the number of clusters of that size that the files take.
+
+The markdown report's tables are checked as well: the delimiter row of the micro-file table ended in `||`, nine cells
+under an eight-column header, and GitHub Flavored Markdown does not draw a table whose delimiter row is not as wide as
+its header.
 """
 
 from __future__ import annotations
@@ -61,6 +65,9 @@ MARKDOWN_LABELS: Dict[str, str] = {
 TEXT_COUNT = re.compile(r"^  Allocated Clusters: +([\d,]+) \(", re.MULTILINE)
 MARKDOWN_COUNT = re.compile(r"^\| \*\*Allocated Clusters\*\* \| ([\d,]+) \(", re.MULTILINE)
 
+# A cell of the delimiter row of a table in GitHub Flavored Markdown: hyphens, with a colon at either end or both
+DELIMITER_CELL = re.compile(r"^\s*:?-+:?\s*$")
+
 
 def volume(path: Any, block_size: int, fs_type: str = "ntfs") -> FilesystemInfo:
     return FilesystemInfo(str(path), fs_type, block_size, str(path), "win32" if fs_type != "unknown" else "unknown")
@@ -74,6 +81,36 @@ def clusters(cluster: int) -> int:
 def labels(report: str, patterns: Dict[str, str]) -> Dict[str, List[str]]:
     """What each label of the report says (a list per label: every place it stands)."""
     return {name: re.findall(pattern, report, re.MULTILINE) for name, pattern in patterns.items()}
+
+
+def table_cells(row: str) -> List[str]:
+    """The cells of a markdown table row; the outer pipes are optional in GFM, so one at each end is dropped."""
+    cells = row.strip()
+    if cells.startswith("|"):
+        cells = cells[1:]
+    if cells.endswith("|"):
+        cells = cells[:-1]
+    return cells.split("|")  # (nothing in this report escapes a pipe)
+
+
+def markdown_tables(report: str) -> List[Tuple[str, str, List[str]]]:
+    """Each table of a markdown report as (header row, delimiter row, body rows).
+
+    A delimiter row is found by its characters (it starts with `|`, has a `-` and nothing but `|`, `:`, `-` and spaces),
+    not by GFM's rule for one, so that a malformed one is still found, and checked. The header is the line just above
+    it and the body is the run of lines right below it that start with `|`.
+    """
+    lines = report.splitlines()
+    tables = []
+    for number, line in enumerate(lines):
+        if number > 0 and line.startswith("|") and "-" in line and set(line) <= set("|:- "):
+            body = []
+            for row in lines[number + 1:]:
+                if not row.startswith("|"):
+                    break
+                body.append(row)
+            tables.append((lines[number - 1], line, body))
+    return tables
 
 
 class _Drive(unittest.TestCase):
@@ -202,6 +239,47 @@ class TestTheOtherWaysToAskForTheReport(_Drive):
         for fixed in ("512KB", "512 KB"):
             with self.subTest(fixed=fixed):
                 self.assertNotIn(fixed, html)
+
+
+class TestMarkdownTables(_Drive):
+    """Every table of the markdown report has to be one that GitHub Flavored Markdown draws.
+
+    The delimiter row of the micro-file table ended in `||`: nine cells under an eight-column header, so renderers that
+    follow GFM showed the rows of the table as plain text.
+    """
+
+    def test_every_table_has_as_many_delimiter_cells_as_header_cells(self) -> None:
+        markdown = self.audit(volume(self.root, 4096), "--markdown")
+        self.assertIn("## 5. Micro-File Hotspots", markdown)  # (so the table that had the bug is in the report)
+        tables = markdown_tables(markdown)
+        # A table that the finder misses is a table that is not checked: the report has these five, in this order
+        names = [table_cells(header)[0].strip() for header, _, _ in tables]
+        self.assertEqual(names, ["Metric", "Taxonomy", "Category", "Directory (Subtree)", "Directory"])
+        for name, (header, delimiter, rows) in zip(names, tables):
+            with self.subTest(table=name):
+                columns = len(table_cells(header))
+                self.assertEqual(len(table_cells(delimiter)), columns, delimiter)
+                for cell in table_cells(delimiter):
+                    self.assertRegex(cell, DELIMITER_CELL)
+                for row in rows:
+                    self.assertEqual(len(table_cells(row)), columns, row)
+        # The micro-file table is the last one; with no row under it the loop above would have had nothing to check
+        self.assertTrue(tables[-1][2], "the micro-file table has no row")
+
+    def test_the_check_catches_the_row_the_micro_file_table_had(self) -> None:
+        """The helpers see what was wrong with the old row: nine cells under eight, and the last one no delimiter."""
+        header = (
+            "| Directory | Micro-Files | Direct Files | Logical Size | Allocated | Slack Wasted | Waste % | Advice |"
+        )
+        old = "|:---|---:|---:|---:|---:|---:|---:|:---||"
+        fixed = "|:---|---:|---:|---:|---:|---:|---:|:---|"
+        self.assertEqual(markdown_tables(header + "\n" + old + "\n"), [(header, old, [])])
+        self.assertEqual(len(table_cells(header)), 8)
+        self.assertEqual(len(table_cells(old)), 9)
+        self.assertNotRegex(table_cells(old)[-1], DELIMITER_CELL)
+        self.assertEqual(len(table_cells(fixed)), 8)
+        for cell in table_cells(fixed):
+            self.assertRegex(cell, DELIMITER_CELL)
 
 
 if __name__ == "__main__":
