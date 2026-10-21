@@ -16,19 +16,18 @@ running programs and the machine's system references. Nothing on the real machin
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import importlib
 import io
 import json
 from pathlib import Path
-from typing import Dict, Sequence, Tuple
+from typing import Dict, Sequence
 import unittest
 from unittest.mock import patch
 
 from smart_drive.cli.main import main as cli_main
 from smart_drive.core.system_refs import SystemRefIndex
 from smart_drive.mcp.server import SmartDriveMCPServer
-from tests.helpers import SmartDriveTestCase
+from tests.helpers import SmartDriveTestCase, TreeState, snapshot_tree, tree_changes
 
 RELINK = importlib.import_module("smart_drive.core.relink")
 
@@ -40,19 +39,6 @@ DRY_RUN_KEYS = {
     "status", "cluster_size", "clean_preview", "planned_actions", "protected_by_system", "busy_apps",
     "busy_apps_unknown", "fsmonitor_to_stop", "relink_preview", "anti_indexing_shields", "note",
 }
-
-
-def snapshot(root: Path) -> Dict[str, Tuple[str, int, str]]:
-    """Every path below `root` with its kind, its size and, for a file, the SHA-256 of its content."""
-    state: Dict[str, Tuple[str, int, str]] = {}
-    for path in sorted(root.rglob("*")):
-        rel = path.relative_to(root).as_posix()
-        if path.is_dir():
-            state[rel] = ("dir", 0, "")
-        else:
-            data = path.read_bytes()
-            state[rel] = ("file", len(data), hashlib.sha256(data).hexdigest())
-    return state
 
 
 class _Machine(SmartDriveTestCase):
@@ -101,11 +87,8 @@ class _Machine(SmartDriveTestCase):
     def organize(self, drive: Path, *flags: str) -> str:
         return self.run_cli("organize", "--root", str(drive), *flags)
 
-    def assertUnchanged(self, before: Dict[str, Tuple[str, int, str]], after: Dict[str, Tuple[str, int, str]]) -> None:
-        added = sorted(set(after) - set(before))
-        removed = sorted(set(before) - set(after))
-        changed = sorted(path for path in before if path in after and before[path] != after[path])
-        self.assertEqual((added, removed, changed), ([], [], []), "the drive was changed")
+    def assertUnchanged(self, before: TreeState, after: TreeState) -> None:
+        self.assertEqual(tree_changes(before, after), ([], [], []), "the drive was changed")
 
 
 class TestADryRunWritesNothing(_Machine):
@@ -113,9 +96,9 @@ class TestADryRunWritesNothing(_Machine):
         for flags in (["--dry-run", "--json"], [], ["--clean", "--json"], ["--dry-run"], ["--clean"]):
             with self.subTest(flags=flags):
                 drive = self.new_drive()
-                before = snapshot(drive)
+                before = snapshot_tree(drive)
                 out = self.organize(drive, *flags)
-                self.assertUnchanged(before, snapshot(drive))
+                self.assertUnchanged(before, snapshot_tree(drive))
                 if "--json" in flags:  # (it did preview something: this is not an empty plan)
                     data = json.loads(out)
                     self.assertTrue(data["planned_actions"])
@@ -126,20 +109,20 @@ class TestADryRunWritesNothing(_Machine):
             with self.subTest(flags=flags):
                 drive = self.new_drive(loose=False)
                 self.organize(drive, *flags)
-                self.assertEqual(snapshot(drive), {})
+                self.assertEqual(snapshot_tree(drive), {})
 
     def test_the_other_previews_stay_silent_too(self) -> None:
         for argv in (["status", "--json"], ["clean", "--json"]):
             with self.subTest(command=argv[0]):
                 drive = self.new_drive()
-                before = snapshot(drive)
+                before = snapshot_tree(drive)
                 self.run_cli(*argv, "--root", str(drive))
-                self.assertUnchanged(before, snapshot(drive))
+                self.assertUnchanged(before, snapshot_tree(drive))
         drive = self.new_drive()
-        before = snapshot(drive)
+        before = snapshot_tree(drive)
         server = SmartDriveMCPServer(root=str(drive), rate_limit_enabled=False)
         self.assertEqual(server.handle_ssd_auto_organize({"apply": False})["status"], "dry_run")
-        self.assertUnchanged(before, snapshot(drive))
+        self.assertUnchanged(before, snapshot_tree(drive))
 
 
 class TestTheDryRunJsonSaysWhatApplyWouldWrite(_Machine):

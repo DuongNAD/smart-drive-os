@@ -269,7 +269,7 @@ Công cụ SQLite FTS5 (`unicode61` + BM25) xử lý truy vấn đa tiêu chí d
 
 24 launcher portable (`.bat` cho Windows CMD, `.ps1` cho PowerShell, `.command` cho macOS, `.sh` cho Linux/POSIX) nằm ở cả gốc dự án và `launchers/`, không cần Git:
 - `SmartDrive.*`: menu TUI đầy đủ, gồm mục `[8]` Relink Agents sau khi dời tay, `[9]` Checkup, `[10]` Smart_Organize và `[11]` Relink theo đợt dời gần nhất.
-- `Smart_Organize.*`: trình dời an toàn có dẫn dắt từng bước: xem trước dry-run, chờ đóng ứng dụng bận, xác nhận `YES`, kiểm tra sau dời và hoàn tác 1 phím `U` (EN/VI).
+- `Smart_Organize.*`: trình dời an toàn có dẫn dắt từng bước: xem trước dry-run, chờ đóng ứng dụng bận, xác nhận `YES`, kiểm tra sau dời và hoàn tác 1 phím `U` (EN/VI). Phần xem trước không ghi gì vào ổ đĩa: nhật ký `.smart_drive/smart-organize.log` chỉ được ghi sau khi bạn xác nhận bằng `YES`.
 - `Quick_Search.*`, `Quick_Clean.*`, `Quick_Audit.*`: nhập từ khóa tìm kiếm tức thì bằng SQLite FTS5; xem trước file rác (dry-run) rồi xác nhận xóa Tier 1; thống kê dung lượng và đo lãng phí cluster slack.
 - `Setup_SSD.*`: hướng dẫn khởi tạo ổ đĩa và chọn profile (xem [Tính Năng Khác](#tính-năng-khác)).
 

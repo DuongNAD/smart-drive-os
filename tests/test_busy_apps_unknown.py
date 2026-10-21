@@ -8,6 +8,8 @@ empty `busy_apps` alone does not mean that no coding agent or IDE is open. Verif
    Q cancels) instead of moving at once.
 3. `--apply` is not changed: organize and undo still move, since nothing is at risk and `smart-drive relink` can be
    run again.
+4. The guided flow writes its log only once YES has been typed: a run cancelled at step 2 or 3 leaves the drive as
+   it was, and a confirmed run has the busy-apps lines in its log before the APPLY line.
 
 100% isolated: a temporary drive, a fake home and AppData, and a stand-in for the list of running programs. The real
 process list, registry and coding agent configuration files are never read.
@@ -30,7 +32,7 @@ from smart_drive.cli.main import main as cli_main
 from smart_drive.cli.smart_organize_runner import _extract_relink_dict, get_log_path, run_smart_organize, t
 from smart_drive.core.relink import RelinkReport, record_moves
 from smart_drive.core.system_refs import SystemRefIndex
-from tests.helpers import SmartDriveTestCase
+from tests.helpers import SmartDriveTestCase, organize_log_events, snapshot_tree, tree_changes
 
 RELINK = importlib.import_module("smart_drive.core.relink")
 
@@ -273,6 +275,10 @@ class TestSmartOrganizeUnknownAgents(FakeMachineTestCase):
     UNKNOWN = {"busy_apps": [], "busy_apps_unknown": True, "changed": []}
     CLEAR = {"busy_apps": [], "busy_apps_unknown": False, "changed": []}
 
+    def setUp(self) -> None:
+        super().setUp()
+        self.before = snapshot_tree(self.drive)
+
     def _guided(
         self,
         answers: List[str],
@@ -312,6 +318,12 @@ class TestSmartOrganizeUnknownAgents(FakeMachineTestCase):
         self.assertTrue((self.project / "pyproject.toml").is_file())
         self.assertFalse((self.drive / "03_Development_Projects" / "my_service").exists())
 
+    def _assert_nothing_written(self) -> None:
+        """A run that ends before YES leaves the drive as it was: no log, no .smart_drive/ folder, no byte changed."""
+        self.assertFalse(Path(get_log_path(str(self.drive))).exists())
+        self.assertFalse((self.drive / ".smart_drive").exists())
+        self.assertEqual(tree_changes(self.before, snapshot_tree(self.drive)), ([], [], []), "the drive was changed")
+
     def test_an_unreadable_list_stops_at_step_2_and_a_recheck_goes_on_to_the_yes_prompt(self) -> None:
         rc, out, prompts, seen = self._guided(["", "no"], [self.UNKNOWN, self.CLEAR])
 
@@ -330,7 +342,7 @@ class TestSmartOrganizeUnknownAgents(FakeMachineTestCase):
         self.assertLess(out.index(t("step2_unknown_title", "en")), out.index(t("step2_clear", "en")))
         self.assertIn(t("cancelled", "en"), out)
         self._assert_nothing_moved()
-        self.assertIn("BUSY_APPS | unknown", self._log())
+        self._assert_nothing_written()
 
     def test_q_at_the_unknown_prompt_cancels_and_nothing_moves(self) -> None:
         rc, out, prompts, seen = self._guided(["q"], [self.UNKNOWN])
@@ -341,7 +353,7 @@ class TestSmartOrganizeUnknownAgents(FakeMachineTestCase):
         self.assertNotIn(t("step2_clear", "en"), out)
         self.assertEqual(prompts, [t("step2_busy_prompt", "en")], "no YES prompt after Q")
         self._assert_nothing_moved()
-        self.assertIn("CANCELLED_AT_BUSY_APPS | unknown", self._log())
+        self._assert_nothing_written()
 
     def test_c_continues_anyway_without_the_all_clear_line(self) -> None:
         rc, out, prompts, seen = self._guided(["c", "no"], [self.UNKNOWN])
@@ -351,6 +363,7 @@ class TestSmartOrganizeUnknownAgents(FakeMachineTestCase):
         self.assertEqual(prompts, [t("step2_busy_prompt", "en"), t("step3_confirm_prompt", "en", count=1)])
         self.assertNotIn(t("step2_clear", "en"), out)
         self._assert_nothing_moved()
+        self._assert_nothing_written()
 
     def test_the_prompt_comes_back_while_the_list_stays_unreadable(self) -> None:
         rc, out, prompts, seen = self._guided(["", "", "q"], [self.UNKNOWN])
@@ -359,6 +372,7 @@ class TestSmartOrganizeUnknownAgents(FakeMachineTestCase):
         self.assertEqual(out.count(t("step2_unknown_title", "en")), 3)
         self.assertEqual(seen, [True, True, True])
         self._assert_nothing_moved()
+        self._assert_nothing_written()
 
     def test_open_agents_keep_their_own_message_and_unknown_does_not_replace_it(self) -> None:
         busy = {"busy_apps": ["Cursor"], "busy_apps_unknown": False, "changed": []}
@@ -367,7 +381,8 @@ class TestSmartOrganizeUnknownAgents(FakeMachineTestCase):
         self.assertEqual(rc, 0, out)
         self.assertIn(t("step2_busy_title", "en", apps="Cursor"), out)
         self.assertNotIn(t("step2_unknown_title", "en"), out)
-        self.assertIn("BUSY_APPS | Cursor", self._log())
+        self._assert_nothing_moved()
+        self._assert_nothing_written()
 
     def test_a_recheck_that_finds_an_open_agent_after_an_unreadable_list_asks_again(self) -> None:
         busy = {"busy_apps": ["Cursor"], "busy_apps_unknown": False, "changed": []}
@@ -377,6 +392,7 @@ class TestSmartOrganizeUnknownAgents(FakeMachineTestCase):
         self.assertLess(out.index(t("step2_unknown_title", "en")), out.index(t("step2_busy_title", "en", apps="Cursor")))
         self.assertEqual(prompts, [t("step2_busy_prompt", "en")] * 2)
         self._assert_nothing_moved()
+        self._assert_nothing_written()
 
     def test_the_vietnamese_flow_uses_the_vietnamese_messages(self) -> None:
         rc, out, prompts, seen = self._guided(["q"], [self.UNKNOWN], lang="vi")
@@ -395,6 +411,7 @@ class TestSmartOrganizeUnknownAgents(FakeMachineTestCase):
         self.assertIn(t("step2_unknown_title", "en"), out)
         self.assertEqual(prompts, [t("step2_busy_prompt", "en")])
         self._assert_nothing_moved()
+        self._assert_nothing_written()
 
         self.processes.return_value = set()
         rc, out, prompts, seen = self._guided(["no"])
@@ -402,6 +419,34 @@ class TestSmartOrganizeUnknownAgents(FakeMachineTestCase):
         self.assertNotIn(t("step2_unknown_title", "en"), out)
         self.assertIn(t("step2_clear", "en"), out)
         self.assertEqual(prompts, [t("step3_confirm_prompt", "en", count=1)])
+        self._assert_nothing_written()
+
+    def test_a_confirmed_run_logs_the_unreadable_list_before_it_moves(self) -> None:
+        rc, out, prompts, seen = self._guided(["", "YES", ""], [self.UNKNOWN, self.CLEAR])
+
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(out.count(t("step2_unknown_title", "en")), 1)
+        self.assertTrue((self.drive / "03_Development_Projects" / "my_service" / "pyproject.toml").is_file())
+        self.assertFalse(self.project.exists())
+        log = self._log()
+        self.assertIn("BUSY_APPS | unknown", log)
+        events = organize_log_events(log)
+        self.assertEqual(events[:3], ["START", "DRY_RUN", "BUSY_APPS"])
+        self.assertEqual(events.count("BUSY_APPS"), 1, "the re-check found nothing, so the prompt came back no more")
+        self.assertLess(events.index("BUSY_APPS"), events.index("APPLY"))
+
+    def test_a_confirmed_run_logs_the_open_agents_it_went_on_without(self) -> None:
+        busy = {"busy_apps": ["Cursor"], "busy_apps_unknown": False, "changed": []}
+        rc, out, prompts, seen = self._guided(["c", "YES", ""], [busy])
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn(t("step2_busy_title", "en", apps="Cursor"), out)
+        self.assertFalse(self.project.exists())
+        log = self._log()
+        self.assertIn("BUSY_APPS | Cursor", log)
+        events = organize_log_events(log)
+        self.assertEqual(events[:3], ["START", "DRY_RUN", "BUSY_APPS"])
+        self.assertLess(events.index("BUSY_APPS"), events.index("APPLY"))
 
     def test_extract_relink_dict_carries_the_unreadable_flag_of_report_objects(self) -> None:
         report = RelinkReport(dry_run=True)

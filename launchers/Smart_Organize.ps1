@@ -63,7 +63,7 @@ if ($env:PYTHONPATH) {
 
 # Tier 4: Guided Safe Organize Flow
 # Flow: dry-run -> wait busy_apps -> type YES -> organize --apply --json -> verify (relink --dry-run, git/worktree, venv) -> R / U / Enter
-# Supports SMARTDRIVE_LANG=vi|en and read-only SD_SELFTEST=1; logs to .smart_drive/smart-organize.log
+# Supports SMARTDRIVE_LANG=vi|en and SD_SELFTEST=1 (writes nothing); logs to .smart_drive/smart-organize.log once the moves are confirmed
 if ($PythonCmd -eq "py -3") {
     & py -3 -m smart_drive.cli.smart_organize_runner @args
 } else {

@@ -296,6 +296,39 @@ def create_mock_ssd_tree(root: Path) -> Path:
 
 
 # ==============================================================================
+# Previews That Must Change Nothing: Tree Snapshots and the Guided Organizer's Log
+# ==============================================================================
+
+TreeState = Dict[str, Tuple[str, int, str]]
+
+
+def snapshot_tree(root: Path) -> TreeState:
+    """Every path below `root` with its kind, its size and, for a file, the SHA-256 of its content."""
+    state: TreeState = {}
+    for path in sorted(root.rglob("*")):
+        rel = path.relative_to(root).as_posix()
+        if path.is_dir():
+            state[rel] = ("dir", 0, "")
+        else:
+            data = path.read_bytes()
+            state[rel] = ("file", len(data), hashlib.sha256(data).hexdigest())
+    return state
+
+
+def tree_changes(before: TreeState, after: TreeState) -> Tuple[List[str], List[str], List[str]]:
+    """The paths added, removed and changed between two `snapshot_tree` results: three empty lists when nothing differs."""
+    added = sorted(set(after) - set(before))
+    removed = sorted(set(before) - set(after))
+    changed = sorted(path for path in before if path in after and before[path] != after[path])
+    return added, removed, changed
+
+
+def organize_log_events(log_text: str) -> List[str]:
+    """The events of a `smart-organize.log` in order: the line `[2026-10-21T10:00:00Z] APPLY | moved=1` gives "APPLY"."""
+    return [line.split("] ", 1)[1].split(" | ")[0] for line in log_text.splitlines() if line.strip()]
+
+
+# ==============================================================================
 # CLI Subprocess Execution Helper
 # ==============================================================================
 

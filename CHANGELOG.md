@@ -71,6 +71,14 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   1536 B read "1 KB"; the headers and the labels now give such a size in bytes (`512 B`, `1536 B`). The text header
   also says where the size came from, `Cluster Size: 4 KB (4096 B, detected)`, or `assumed` when the 512 KB exFAT
   cluster is used because the drive's own could not be read.
+- The guided organizer (`Smart_Organize.*`) appended to `<root>/.smart_drive/smart-organize.log` from its first line,
+  creating `.smart_drive/` when the drive had none, so its dry-run preview and its `SD_SELFTEST=1` / `--selftest` mode,
+  which the launchers and the docstring called read-only, left a log (START, DRY_RUN, BUSY_APPS, CANCELLED_*, END
+  nothing_to_move, SELFTEST_OK) on a drive that a preview promises not to touch. The preview now keeps its log lines in
+  memory and writes them to the log, in order and with the times they were recorded at, only once you type `YES` and
+  the moves start; from then on every event is appended as before. A run that ends before that (nothing to move, `Q`
+  while apps are open, anything but `YES`, the self-test) leaves the drive exactly as it was and, on purpose, no longer
+  leaves a trail. The banner, the launchers and both READMEs say when the log is written.
 
 ## [1.4.2] - 2026-10-21
 
