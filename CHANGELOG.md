@@ -14,6 +14,13 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   `"detected"`, or `"assumed"` when it could not be read and the 512 KB exFAT cluster is used, as in `audit --json` and
   `ssd_audit`. `audit`, `dup`, `checkup`, `organize`'s plan and the MCP tools all take that cluster size from one place
   now, `fsinfo.slack_cluster`.
+- The MCP server negotiates the protocol version in `initialize` instead of answering every client with `2024-11-05`.
+  A client that asks for `2025-11-25`, `2025-06-18`, `2025-03-26` or `2024-11-05` is answered with that revision, and
+  any other revision (a newer one this server does not know, or `2026-07-28`, which has no `initialize`) with
+  `2025-11-25`, the latest one that opens with `initialize`, as the MCP specification says. A client that names no
+  revision still gets `2024-11-05` and a reply that is the same byte for byte. The chosen revision lasts for the
+  connection and decides what `serverInfo` carries: `title` from `2025-06-18`, and `description` and `websiteUrl` (the
+  words of `server.json`) from `2025-11-25`.
 
 ### Fixed
 

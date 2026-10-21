@@ -47,9 +47,21 @@ from smart_drive.mcp.proxy import SmartDriveProxy
 from smart_drive.search.engine import SearchEngine
 from smart_drive.search.parser import apply_size_spec, parse_search_query
 
+# The MCP revisions that open with an `initialize` request, newest first: the client names the one it wants and the
+# server answers with the one it will speak for the whole process.
+LEGACY_PROTOCOL_VERSIONS: Tuple[str, ...] = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+SUPPORTED_PROTOCOL_VERSIONS: Tuple[str, ...] = LEGACY_PROTOCOL_VERSIONS
+LATEST_PROTOCOL_VERSION: str = SUPPORTED_PROTOCOL_VERSIONS[0]
+# The revision of a client that names none (an initialize without a string protocolVersion, or any request before
+# initialize): the oldest, all this server spoke before it negotiated, so such a client sees no change.
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "smart-drive"
 SERVER_VERSION = "1.4.2"
+# How MCP shows the server to people: the title from revision 2025-06-18, the description and website from 2025-11-25.
+# The same words as server.json, which the registry lists.
+SERVER_TITLE = "SmartDrive-OS"
+SERVER_DESCRIPTION = "Organize a drive without breaking coding agents: relink moved folders, clean junk, search files."
+SERVER_WEBSITE_URL = "https://github.com/DuongNAD/smart-drive-os#readme"
 
 # Sent as InitializeResult.instructions: the MCP spec puts it at the top level of the result, which is where
 # clients look for it (it was nested inside serverInfo, so no client ever saw it).
@@ -78,6 +90,40 @@ _CLIENT_ERRORS = (
 
 # A JSON-RPC batch is answered in one piece, so its size is capped (clients do not batch dozens of calls).
 MAX_BATCH_SIZE = 100
+
+
+def _is_at_least(version: str, since: str) -> bool:
+    """True when revision `version` is `since` or later; revisions are ISO dates, so strings sort in date order."""
+    return version >= since
+
+
+def negotiate_protocol_version(requested: Any) -> str:
+    """The revision to speak after an `initialize` that asked for `requested` (its `protocolVersion`).
+
+    MCP says to answer with the requested revision when it is supported and otherwise with the latest one supported.
+    The latest here is the newest that opens with `initialize`, so a client asking for "2026-07-28", which has none,
+    is answered with that. A client that names no revision (not a string) gets the oldest, as it always did.
+    """
+    if not isinstance(requested, str):
+        return PROTOCOL_VERSION
+    if requested in LEGACY_PROTOCOL_VERSIONS:
+        return requested
+    return LEGACY_PROTOCOL_VERSIONS[0]
+
+
+def server_info(version: str) -> Dict[str, Any]:
+    """The `serverInfo` of an initialize result under revision `version`; each revision only adds to the one before.
+
+    2024-11-05 has `name` and `version`, 2025-06-18 adds the display `title`, 2025-11-25 adds `description` and
+    `websiteUrl`.
+    """
+    info: Dict[str, Any] = {"name": SERVER_NAME, "version": SERVER_VERSION}
+    if _is_at_least(version, "2025-06-18"):
+        info["title"] = SERVER_TITLE
+    if _is_at_least(version, "2025-11-25"):
+        info["description"] = SERVER_DESCRIPTION
+        info["websiteUrl"] = SERVER_WEBSITE_URL
+    return info
 
 
 def _is_client_error(error: BaseException) -> bool:
@@ -647,6 +693,7 @@ class SmartDriveMCPServer:
         self.use_content_length_mode = False
         self._raw_stdout: Optional[Any] = None
         self._batch: Optional[List[Dict[str, Any]]] = None  # collects the replies of a JSON-RPC batch
+        self.protocol_version: str = PROTOCOL_VERSION  # what `initialize` negotiated; the oldest revision until then
         self.rate_limiter = SlidingWindowRateLimiter(
             max_requests=rate_limit_requests,
             window_seconds=rate_limit_window,
@@ -1554,15 +1601,13 @@ class SmartDriveMCPServer:
             self._authenticated = True
 
         if method == "initialize":
+            self.protocol_version = negotiate_protocol_version(params.get("protocolVersion"))
             resp = {
                 "jsonrpc": "2.0",
                 "id": msg_id,
                 "result": {
-                    "protocolVersion": PROTOCOL_VERSION,
-                    "serverInfo": {
-                        "name": SERVER_NAME,
-                        "version": SERVER_VERSION,
-                    },
+                    "protocolVersion": self.protocol_version,
+                    "serverInfo": server_info(self.protocol_version),
                     "capabilities": {
                         "tools": {},
                     },
@@ -1773,12 +1818,20 @@ class SmartDriveMCPServer:
 
 
 __all__ = [
+    "LATEST_PROTOCOL_VERSION",
+    "LEGACY_PROTOCOL_VERSIONS",
     "MAX_BATCH_SIZE",
     "PROTOCOL_VERSION",
+    "SERVER_DESCRIPTION",
     "SERVER_INSTRUCTIONS",
     "SERVER_NAME",
+    "SERVER_TITLE",
     "SERVER_VERSION",
+    "SERVER_WEBSITE_URL",
+    "SUPPORTED_PROTOCOL_VERSIONS",
     "SlidingWindowRateLimiter",
     "SmartDriveMCPServer",
     "TOOLS",
+    "negotiate_protocol_version",
+    "server_info",
 ]
