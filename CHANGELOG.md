@@ -7,9 +7,14 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
-Safety fixes from the product-readiness review of 1.4.1: a list of running programs that cannot be read no longer
-counts as "nothing is running", purging the quarantine keeps the recent batches, Tier 3 junk can be quarantined on its
-own, and the shipped folder lists no longer carry one user's folder name.
+## [1.4.2] - 2026-10-21
+
+Safety and packaging fixes from the product-readiness review of 1.4.1: a list of running programs that cannot be read
+no longer counts as "nothing is running", purging the quarantine keeps the recent batches, Tier 3 junk can be
+quarantined on its own, `paths --broken` no longer takes a folder inside installed packages or a folder that only has
+the right name for a moved one, and the package is ready for its first PyPI release: run it with `uvx` or `pipx`,
+register the MCP server from either, and find it in the official MCP Registry once it is published. The shipped folder
+lists no longer carry one user's folder name.
 
 ### Added
 
@@ -265,6 +270,7 @@ in the same release.
   for `wow! a!b!c`, and "Goodbye!" and the Python-missing error printed without their `!`. Delayed expansion is now off;
   only the line of `SmartDrive.bat` that shows the drive root switches it on.
 
-[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.1...main
+[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.2...main
+[1.4.2]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.4.0

@@ -10,7 +10,7 @@
 [![Privacy: 100% Local](https://img.shields.io/badge/Privacy-100%25%20Local-success?style=flat-square&logo=shield)](PRIVACY.md)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
-[![Release: v1.4.1](https://img.shields.io/badge/release-v1.4.1-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.4.1)
+[![Release: v1.4.2](https://img.shields.io/badge/release-v1.4.2-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.4.2)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 SmartDrive-OS is a zero-dependency drive operating suite and sub-10ms SQLite FTS5 search engine for external portable SSDs (exFAT 512 KB clusters) and internal secondary workstation drives (NTFS 4 KB clusters). It is built for developers, university students, and AI coding agents (Claude Code, Claude Desktop, Antigravity, Cursor, Codex, Windsurf) to organize drives without breaking agent paths, govern `.gitignore` rules, offload `C:` caches, and verify file integrity with SHA-256 snapshots. Everything runs 100% locally on the Python 3.9+ standard library (`dependencies = []`) with zero telemetry.
