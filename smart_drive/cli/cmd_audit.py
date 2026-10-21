@@ -7,8 +7,7 @@ import os
 import sys
 
 from smart_drive.core.auditor import StorageAuditor
-from smart_drive.core.config import CLUSTER_SIZE_BYTES
-from smart_drive.core.fsinfo import detect_filesystem
+from smart_drive.core.fsinfo import detect_filesystem, slack_cluster
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 
 
@@ -21,12 +20,12 @@ def cmd_audit(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{e}\n")
         return 2
 
-    fs_info = detect_filesystem(root)
-    real_cluster = fs_info.block_size if fs_info.block_size > 0 else CLUSTER_SIZE_BYTES
-    auditor = StorageAuditor(root, cluster_size=real_cluster)
+    cluster_size, cluster_size_source = slack_cluster(detect_filesystem(root))
+    auditor = StorageAuditor(root, cluster_size=cluster_size)
 
     html_arg = getattr(args, "html", None)
     report = auditor.run_audit()
+    report["cluster_size_source"] = cluster_size_source
 
     if html_arg:
         if isinstance(html_arg, str) and html_arg.strip():

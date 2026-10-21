@@ -139,7 +139,7 @@ Windows refuses to rename a folder while a process holds a handle inside it, and
 SmartDrive-OS exposes a JSON-RPC 2.0 `stdio` MCP server with **9 tools**:
 
 1. `ssd_search`: Instant FTS5 search returning compact tokens (<2,000 tokens/query). *(read-only)*
-2. `ssd_audit`: Storage breakdown and cluster slack waste analytics with compact formatting. *(read-only)*
+2. `ssd_audit`: Storage breakdown and cluster slack waste analytics at the drive's real cluster size, with compact formatting. *(read-only)*
 3. `ssd_clean`: Whitelist-protected safe junk cleaner with dry-run support. *(destructive)*
 4. `ssd_find_duplicates`: 3-phase SHA-256 duplicate detection with pagination and preview capping. *(read-only)*
 5. `ssd_update_index`: Fast incremental index synchronization (<2s). *(idempotent)*
@@ -149,8 +149,9 @@ SmartDrive-OS exposes a JSON-RPC 2.0 `stdio` MCP server with **9 tools**:
 9. `ssd_gitignore`: Stack-aware `.gitignore` governance, personal data defense, secrets audit, and safe untracking. *(idempotent)*
 
 <details>
-<summary>Tool details: sub_dir, min_size and scan_skipped</summary>
+<summary>Tool details</summary>
 
+- `ssd_audit`: cluster slack is worked out at the drive's real allocation unit, as `smart-drive audit` does (`cluster_size`; `cluster_size_source` is `detected`, or `assumed` when it cannot be read and the 512 KB exFAT cluster is used).
 - `ssd_clean`: a `sub_dir` is judged like the whole-drive scan, folders above it included: inside an installed app nothing is scanned and `scan_skipped` names the folder and why; the result also lists what was `kept` and the `protected_by_system` folders.
 - `ssd_find_duplicates`: `min_size` drops small files before anything is hashed, slack is worked out at the drive's real allocation unit (`cluster_size`), and a `sub_dir` inside an installed app or a dependency tree is not scanned (`scan_skipped`).
 
