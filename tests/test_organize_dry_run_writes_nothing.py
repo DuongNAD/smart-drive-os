@@ -147,7 +147,7 @@ class TestTheDryRunJsonSaysWhatApplyWouldWrite(_Machine):
     def test_every_key_it_had_is_still_there_and_the_shields_keep_their_type(self) -> None:
         data = self.preview(self.new_drive())
         self.assertLessEqual(DRY_RUN_KEYS, set(data))
-        self.assertEqual(set(data) - DRY_RUN_KEYS, {"anti_indexing_shields_to_create"})
+        self.assertEqual(set(data) - DRY_RUN_KEYS, {"anti_indexing_shields_to_create", "cluster_size_source"})
         shields = data["anti_indexing_shields"]
         self.assertIsInstance(shields, dict)
         self.assertEqual(list(shields), MARKERS)

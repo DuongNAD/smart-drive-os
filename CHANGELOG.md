@@ -7,6 +7,16 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `organize --json` (the dry run and `--apply`) and the MCP tool `ssd_auto_organize` (with and without `apply`) now say
+  whether the cluster size their slack figures are worked out at (`cluster_size`) was read from the drive or assumed,
+  like the other commands: `cluster_size_source` is `"detected"`, or `"assumed"` when it could not be read and the
+  512 KB exFAT cluster is used. AutoZoner, which looks the size up for both, dropped where it came from; it now keeps
+  it as `cluster_size_source`, which is `None` when its caller gives the cluster size (as `checkup` does, which reports
+  the source in its own `filesystem` block). The `ssd_auto_organize` description says what the two fields mean, and no
+  field was renamed or removed.
+
 ### Fixed
 
 - The markdown report of `audit` (`--markdown`, also when written to a file with `--export`) ended the delimiter row

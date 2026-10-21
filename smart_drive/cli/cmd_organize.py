@@ -118,6 +118,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
             print(json.dumps({
                 "status": "applied",
                 "cluster_size": zoner.cluster_size,
+                "cluster_size_source": zoner.cluster_size_source,
                 "clean": clean_summary,
                 "zoning": apply_res,
                 "protected_by_system": zoner.protected_by_system,
@@ -160,6 +161,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
         print(json.dumps({
             "status": "dry_run",
             "cluster_size": zoner.cluster_size,
+            "cluster_size_source": zoner.cluster_size_source,
             "clean_preview": clean_summary,
             "planned_actions": [a.to_dict() for a in plan],
             "protected_by_system": zoner.protected_by_system,
