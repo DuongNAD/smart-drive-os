@@ -9,6 +9,7 @@ space savings" after that; it now says what the tool returns, and a test holds i
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import importlib
 import io
@@ -34,6 +35,7 @@ from tests.helpers import SmartDriveTestCase
 # submodule. Python 3.9 resolves patch("smart_drive.cli.main.x") by walking attributes and lands on the function; 3.11+
 # imports the dotted name and lands on the module. Patching the module object itself works on both.
 CLI_MAIN = importlib.import_module("smart_drive.cli.main")
+DUPLICATES = importlib.import_module("smart_drive.core.duplicates")
 
 # Two copies of 5,000 bytes: they take two 4 KB clusters (3,192 B of slack) or one 512 KB cluster (519,288 B of it)
 PAYLOAD = b"B" * 5000
@@ -126,6 +128,25 @@ class TestDetectorCarriesItsCluster(_Drive):
     def test_the_default_is_still_the_exfat_cluster(self) -> None:
         plan = DuplicateDetector(str(self.root)).generate_reclamation_plan()
         self.assertEqual((plan["cluster_size"], plan["total_reclaimable_slack"]), (CLUSTER_SIZE_BYTES, SLACK_512K))
+
+    def test_the_module_does_not_import_the_fixed_cluster(self) -> None:
+        """duplicates.py imported CLUSTER_SIZE_BYTES and never used it, which suggested the detector still worked at the
+        fixed 512 KB, while it works at the cluster_size it is given.
+        """
+        source = Path(DUPLICATES.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=DUPLICATES.__file__)
+        # Every way the module could name the constant: a bare name, an attribute (`config.CLUSTER_SIZE_BYTES`), or an
+        # import of it, whatever it is bound to (`CLUSTER_SIZE_BYTES as FIXED` binds FIXED)
+        named = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+        named |= {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+        named |= {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in node.names
+        }
+        self.assertNotIn("CLUSTER_SIZE_BYTES", named)
+        self.assertFalse(hasattr(DUPLICATES, "CLUSTER_SIZE_BYTES"))
 
 
 class TestCheckupDup(SmartDriveTestCase):
