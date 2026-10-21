@@ -36,6 +36,9 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   one of 1536 B "1 KB". It now gives it the way the reports do (`fsinfo.cluster_size_text`: `4 KB`, `512 KB`, `512 B`,
   `1536 B`). `status` and `sentinel` always model 512 KB and read as before; `audit` and `ssd_audit` said "model 0 KB
   clusters" for a volume whose filesystem could not be identified but whose allocation unit was read as 512 B.
+- `checkup` gave the drive's cluster size in its text report (the `Filesystem:` line, `Hệ tệp & Cluster:` in
+  Vietnamese) in whole KB, so a cluster of 512 B or of 1536 B read "1 KB". It now names it the way `audit` does
+  (`fsinfo.cluster_size_text`: `4 KB`, `512 KB`, `512 B`, `1536 B`); `checkup --json` is unchanged.
 
 ## [1.4.3] - 2026-10-21
 

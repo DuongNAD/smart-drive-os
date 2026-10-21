@@ -1,0 +1,101 @@
+"""tests/test_cluster_size_wording.py - every report that names a cluster size names it the way `audit` does.
+
+Regression: `fsinfo.cluster_size_text` gives a cluster size as the reports give it: `4 KB`, `512 KB`, or `512 B` and
+`1536 B` when it is not a whole number of KB (exFAT allows clusters from 512 B up). Some commands worked that text out
+themselves, mostly by dividing by 1024, so in `checkup` a cluster of 512 B or of 1536 B read "1 KB". Each class below
+runs one of those places at such clusters and checks the line it prints.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import importlib
+import io
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+from typing import Any, Dict, List
+from unittest.mock import patch
+
+from smart_drive.cli.cmd_checkup import run_checkup
+from smart_drive.core.fsinfo import FilesystemInfo
+from smart_drive.core.system_refs import RegistryReader
+
+# The modules whose names the code under test looks up are patched through the module objects and not through dotted
+# strings: `smart_drive.cli` re-exports the `main` function, so a string target that goes through the package can end
+# at a function and not at the module.
+CLI_CHECKUP = importlib.import_module("smart_drive.cli.cmd_checkup")
+RELINK = importlib.import_module("smart_drive.core.relink")
+
+# The text each cluster has to be given. It is written out here and not taken from `cluster_size_text`, the helper under
+# test, so that a helper which goes wrong cannot make the reports agree with it.
+WORDING: Dict[int, str] = {512: "512 B", 1536: "1536 B", 4096: "4 KB", 524_288: "512 KB"}
+
+# The line of the `checkup` text report that names the filesystem and its cluster, in each language (the cluster's text
+# goes where the `{}` is)
+CHECKUP_LINES: Dict[str, str] = {
+    "vi": "  - Hệ tệp & Cluster:   exFAT (cluster {})",
+    "en": "  - Filesystem:         exFAT ({} cluster)",
+}
+
+
+def volume(path: Any, block_size: int, fs_type: str = "exfat") -> FilesystemInfo:
+    return FilesystemInfo(str(path), fs_type, block_size, str(path), "win32")
+
+
+class TestCheckupTextReport(unittest.TestCase):
+    """The text report of `checkup` gave the cluster as `size // 1024 or 1` KB: 512 B and 1536 B both read "1 KB"."""
+
+    def setUp(self) -> None:
+        self.base = Path(tempfile.mkdtemp(prefix="sd_cluster_wording_")).resolve()
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.root = self.base / "drive"
+        self.root.mkdir()
+        (self.root / "notes.txt").write_bytes(b"x" * 20)
+        # What the broken-path scan of `checkup` reads off the machine: an empty home, an empty temp folder and no
+        # running programs
+        self.home = self.base / "home"
+        self.app_data = self.home / "AppData" / "Roaming"
+        self.app_data.mkdir(parents=True)
+        fake_temp = self.base / "sys_temp"
+        fake_temp.mkdir()
+        for patcher in (
+            patch.object(RELINK, "_running_processes", return_value=set()),
+            patch.object(RELINK.tempfile, "gettempdir", return_value=str(fake_temp)),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def checkup(self, cluster: int, lang: str) -> Dict[str, Any]:
+        """`run_checkup` on the drive as a volume with this cluster, reporting in this language."""
+        with patch.object(CLI_CHECKUP, "detect_filesystem", return_value=volume(self.root, cluster)):
+            return run_checkup(
+                root=str(self.root),
+                lang=lang,
+                home=self.home,
+                app_data=self.app_data,
+                reader=RegistryReader(tree={}),
+                scan_c_caches=False,
+            )
+
+    def printed(self, report: Dict[str, Any]) -> List[str]:
+        """The lines `checkup` prints for this report."""
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            CLI_CHECKUP._print_checkup(report)
+        return out.getvalue().splitlines()
+
+    def test_the_filesystem_line_names_the_cluster(self) -> None:
+        for cluster, wording in WORDING.items():
+            for lang, line in CHECKUP_LINES.items():
+                with self.subTest(cluster=cluster, lang=lang):
+                    report = self.checkup(cluster, lang)
+                    self.assertEqual(report["lang"], lang)
+                    # `checkup --json` prints this report as it is: it still gives the cluster in bytes
+                    self.assertEqual(report["filesystem"]["cluster_size_bytes"], cluster)
+                    self.assertIn(line.format(wording), self.printed(report))
+
+
+if __name__ == "__main__":
+    unittest.main()
