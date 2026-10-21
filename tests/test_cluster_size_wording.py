@@ -22,7 +22,7 @@ from unittest.mock import patch
 from smart_drive.cli.cmd_checkup import run_checkup
 from smart_drive.cli.main import main
 from smart_drive.core.fsinfo import FilesystemInfo
-from smart_drive.core.health import SSDHealthReport
+from smart_drive.core.health import SSDHealthReport, evaluate_health_warnings
 from smart_drive.core.system_refs import RegistryReader
 
 # The modules whose names the code under test looks up are patched through the module objects and not through dotted
@@ -42,6 +42,10 @@ CHECKUP_LINES: Dict[str, str] = {
     "vi": "  - Hệ tệp & Cluster:   exFAT (cluster {})",
     "en": "  - Filesystem:         exFAT ({} cluster)",
 }
+
+# The exFAT notice of `health` is for clusters of 64 KB and more: what it has to call the ones tried here (66,048 B is
+# 64 KB and 512 B)
+NOTICE_WORDING: Dict[int, str] = {65_536: "64 KB", 66_048: "66048 B", 524_288: "512 KB"}
 
 
 def volume(path: Any, block_size: int, fs_type: str = "exfat") -> FilesystemInfo:
@@ -135,6 +139,38 @@ class TestHealthCommand(unittest.TestCase):
         for cluster in WORDING:
             with self.subTest(cluster=cluster):
                 self.assertEqual(json.loads(self.health(cluster, "--json"))["cluster_size_bytes"], cluster)
+
+
+class TestHealthClusterNotice(unittest.TestCase):
+    """The exFAT notice of `health` wrote the cluster as `size // 1024` and "KB" with no space: "512KB clusters".
+
+    A cluster that is not a whole number of KB lost what was left over (66,048 B read "64KB"). The notice only appears
+    for clusters of 64 KB and more, so a cluster of 512 B or of 1536 B never reaches it.
+    """
+
+    def warnings(self, cluster: int) -> List[str]:
+        """What `evaluate_health_warnings` says about an exFAT volume with this cluster and plenty of free space."""
+        return evaluate_health_warnings(
+            free_percent=70.0,
+            free_bytes=1400 * 1024 ** 3,
+            total_bytes=2000 * 1024 ** 3,
+            trim_enabled=True,
+            filesystem="exFAT",
+            cluster_size_bytes=cluster,
+        )
+
+    def test_the_notice_names_the_cluster(self) -> None:
+        for cluster, wording in NOTICE_WORDING.items():
+            with self.subTest(cluster=cluster):
+                warnings = self.warnings(cluster)
+                self.assertEqual(len(warnings), 1, warnings)
+                prefix = f"NOTICE: Drive is formatted as exFAT with {wording} clusters. "
+                self.assertTrue(warnings[0].startswith(prefix), warnings[0])
+
+    def test_a_cluster_below_64_kb_has_no_notice(self) -> None:
+        for cluster in (512, 1536, 4096, 32_768):
+            with self.subTest(cluster=cluster):
+                self.assertEqual(self.warnings(cluster), [])
 
 
 if __name__ == "__main__":

@@ -181,7 +181,7 @@ class TestHealthWarnings(SmartDriveTestCase):
         )
         self.assertEqual(len(warnings), 1)
         self.assertIn("NOTICE", warnings[0])
-        self.assertIn("512KB", warnings[0])
+        self.assertIn("exFAT with 512 KB clusters.", warnings[0])
         self.assertIn("slack", warnings[0].lower())
 
     def test_multiple_simultaneous_warnings(self) -> None:

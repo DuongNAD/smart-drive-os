@@ -36,7 +36,7 @@ from smart_drive.core.drive_detector import (
     verify_trim_support,
     Win32DriveBackend,
 )
-from smart_drive.core.fsinfo import detect_filesystem
+from smart_drive.core.fsinfo import cluster_size_text, detect_filesystem
 
 
 # ==============================================================================
@@ -189,7 +189,7 @@ def evaluate_health_warnings(
     # 3. exFAT large cluster slack notice
     if filesystem.upper() == "EXFAT" and cluster_size_bytes >= 65536:
         warnings.append(
-            f"NOTICE: Drive is formatted as exFAT with {cluster_size_bytes // 1024}KB clusters. "
+            f"NOTICE: Drive is formatted as exFAT with {cluster_size_text(cluster_size_bytes)} clusters. "
             f"Storing numerous small files (e.g. build caches) will waste significant disk space in cluster slack."
         )
 
