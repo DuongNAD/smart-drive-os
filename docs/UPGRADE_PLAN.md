@@ -590,6 +590,45 @@ Chạy thủ công trước mỗi bản phát hành; vượt ngân sách thì s�
   thật trên `E:` với daemon đang bật. Còn: phần xem trước của `Smart_Organize` và dry-run của MCP `ssd_auto_organize` chưa liệt
   kê daemon sẽ dừng; chưa thử lại nếu IDE bật lại daemon giữa lúc dừng và lúc đổi tên.
 
+#### A7. Giao thức MCP: thương lượng phiên bản và bản 2026-07-28, không bỏ client cũ
+`server.py` trả `protocolVersion: "2024-11-05"` cho mọi `initialize` (thử 2026-10-21: xin `2025-06-18` vẫn nhận `2024-11-05`).
+Đã đọc changelog trên modelcontextprotocol.io (2026-10-21); chỉ ghi phần chạm tới máy chủ stdio chỉ có công cụ:
+- **2025-03-26**: thêm JSON-RPC batch (máy chủ PHẢI nhận, `initialize` không nằm trong batch) và `ToolAnnotations` (`title`,
+  bốn hint). OAuth, Streamable HTTP, audio, completions không áp dụng.
+- **2025-06-18**: bỏ batch; kết quả có cấu trúc (`structuredContent`, nên kèm JSON đó trong `text`; có `outputSchema` thì kết
+  quả PHẢI khớp); `title` cho tên hiển thị (công cụ, `serverInfo`); quy tắc khóa `_meta`; phải tôn trọng phiên bản đã thương
+  lượng (SHOULD thành MUST). Elicitation, resource link, header `MCP-Protocol-Version` (chỉ HTTP) không áp dụng.
+- **2025-11-25**: `serverInfo` có thêm `description`, `websiteUrl`, `icons`; quy ước tên công cụ (tên hiện tại đã đạt); JSON
+  Schema 2020-12 mặc định (schema hiện tại hợp lệ); lỗi đầu vào trả bằng `isError` (đã vậy); log ra stderr. Tasks (thử nghiệm),
+  elicitation URL, sampling có tool không áp dụng.
+- **2026-07-28 (hiện hành)**: bỏ `initialize`, giao thức không trạng thái: mỗi request mang `io.modelcontextprotocol/protocolVersion`
+  và `io.modelcontextprotocol/clientCapabilities` trong `params._meta` (thiếu → `-32602`, bản không hỗ trợ → `-32022` kèm
+  `data: {supported, requested}`); máy chủ PHẢI có `server/discover`; mọi result có `resultType: "complete"` và nên có
+  `_meta["io.modelcontextprotocol/serverInfo"]`; `tools/list` và `server/discover` PHẢI có `ttlMs`, `cacheScope`; bỏ `ping`;
+  Logging, Roots, Sampling deprecated; mã `-32000…-32019` là vùng cũ, giữ cho mã đã dùng. Máy chủ "dual-era" được phép phục
+  vụ cả hai: request mang `_meta` mới theo 2026-07-28, `initialize` chọn bản cũ cho cả tiến trình stdio; client hai thời kỳ dò
+  bằng `server/discover` và lùi về `initialize` khi gặp lỗi không phải lỗi 2026-07-28.
+
+**Quyết định** (mỗi ý một commit có test):
+1. `initialize` thương lượng trong `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`: bản có trong danh sách → trả đúng bản
+   đó; bản lạ (cả `2026-07-28`, vốn không có `initialize`) → `2025-11-25`, bản mới nhất như đặc tả nói; không gửi bản nào →
+   `2024-11-05`, thứ máy chủ luôn trả. Bản đã chọn áp cho cả tiến trình; trước `initialize` vẫn cư xử như `2024-11-05`.
+2. Chỉ thêm, không bớt: với `2024-11-05` mọi câu trả lời giữ nguyên từng byte. Từ `2025-03-26` thêm `annotations.title`; từ
+   `2025-06-18` thêm `title` (công cụ, `serverInfo`) và `structuredContent` cho kết quả thành công; từ `2025-11-25` thêm
+   `serverInfo.description`, `websiteUrl` (lấy từ `server.json`). Giữ các hint ở cấp cao nhất của công cụ (test M8ven ghim) và
+   `isError` cho công cụ không tồn tại (đặc tả gọi là lỗi `-32602`, nhưng test ghim và mô hình đọc được để tự sửa).
+3. Batch: đã thương lượng `2025-06-18` trở lên, hoặc batch có request mang `_meta` 2026-07-28 → từ chối cả batch bằng một lỗi
+   `-32600`; `2024-11-05`, `2025-03-26` và trước `initialize` vẫn trả lời như cũ.
+4. Phục vụ 2026-07-28 song song: request mang `_meta` mới được trả lời theo bản đó, không đổi bản đã thương lượng của tiến trình;
+   `server/discover` không cần token (như `initialize`); `supportedVersions` và `supported` chỉ ghi bản dùng được trong `_meta`
+   (`2026-07-28`; bản cũ đi qua `initialize`, như SDK TypeScript v2); `ttlMs` 300000, `cacheScope` `"public"` (danh sách công cụ
+   chỉ đổi khi nâng cấp gói); `ping` → `-32601`.
+5. Không làm: `outputSchema` (kết quả đổi hình theo tham số như `compact` và theo lỗi, schema chính xác là một MUST khó giữ),
+   `icons`, tasks, logging, resources. Token tùy chọn (`--require-auth`) vẫn mở khóa theo tiến trình, kể cả request 2026-07-28.
+
+Test: `initialize` với từng bản và một bản tương lai; `tools/list` và một `tools/call` theo từng bản; request 2026-07-28 hợp lệ và
+sai; chạy máy chủ thật qua stdin/stdout từ thư mục tạm với HOME tạm như `packaging/smoke_test.py`. README ghi các bản hỗ trợ.
+
 ### 6.2 Giai đoạn B — Tăng tốc có chọn lọc (chỉ khi số đo vượt ngân sách A5)
 
 1. **Song song bằng Python trước**: `hashlib` nhả GIL với khối dữ liệu lớn, nên `ThreadPoolExecutor` cho `dup` (băm) và cho
