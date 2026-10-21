@@ -590,7 +590,7 @@ Chạy thủ công trước mỗi bản phát hành; vượt ngân sách thì s�
   thật trên `E:` với daemon đang bật. Còn: phần xem trước của `Smart_Organize` và dry-run của MCP `ssd_auto_organize` chưa liệt
   kê daemon sẽ dừng; chưa thử lại nếu IDE bật lại daemon giữa lúc dừng và lúc đổi tên.
 
-#### A7. Giao thức MCP: thương lượng phiên bản và bản 2026-07-28, không bỏ client cũ
+#### A7. Giao thức MCP: thương lượng phiên bản và bản 2026-07-28, không bỏ client cũ ✅
 `server.py` trả `protocolVersion: "2024-11-05"` cho mọi `initialize` (thử 2026-10-21: xin `2025-06-18` vẫn nhận `2024-11-05`).
 Đã đọc changelog trên modelcontextprotocol.io (2026-10-21); chỉ ghi phần chạm tới máy chủ stdio chỉ có công cụ:
 - **2025-03-26**: thêm JSON-RPC batch (máy chủ PHẢI nhận, `initialize` không nằm trong batch) và `ToolAnnotations` (`title`,
@@ -628,6 +628,14 @@ Chạy thủ công trước mỗi bản phát hành; vượt ngân sách thì s�
 
 Test: `initialize` với từng bản và một bản tương lai; `tools/list` và một `tools/call` theo từng bản; request 2026-07-28 hợp lệ và
 sai; chạy máy chủ thật qua stdin/stdout từ thư mục tạm với HOME tạm như `packaging/smoke_test.py`. README ghi các bản hỗ trợ.
+
+**Đã làm** (sau 1.4.2, chưa phát hành): năm ý trên là `1d67d24`, `be32cee`, `ba0e647`, `45d2f29`, test qua stdio `b925b3a`, README
+`9b679b7`. Máy chủ của commit gốc và bản mới chạy qua stdin/stdout với cùng các phiên 2024-11-05 và chưa `initialize` (có batch,
+khung Content-Length, lỗi parse) cho ra giống từng byte, trừ `server/discover` không có `_meta` (`-32601` thành `-32602`); một
+script riêng đối chiếu mọi câu trả lời 2026-07-28 với schema của đặc tả. Bộ test từ 2016 lên 2099 passed (85 skipped). Còn: các test
+mới chưa chạy trên CI macOS/Linux và Python 3.9 (máy này chỉ có Windows, 3.13); `packaging/smoke_test.py` vẫn chỉ thử 2024-11-05;
+từ 2025-06-18 mỗi kết quả có cả text lẫn `structuredContent` (Claude Code hiển thị `structuredContent` thay cho text, issue #54450;
+client đưa cả hai cho mô hình sẽ tốn gấp đôi token); docstring đầu `server.py` vẫn ghi 8 công cụ.
 
 ### 6.2 Giai đoạn B — Tăng tốc có chọn lọc (chỉ khi số đo vượt ngân sách A5)
 
