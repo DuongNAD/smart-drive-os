@@ -3,20 +3,24 @@
 Regression: `fsinfo.cluster_size_text` gives a cluster size as the reports give it: `4 KB`, `512 KB`, or `512 B` and
 `1536 B` when it is not a whole number of KB (exFAT allows clusters from 512 B up). Some commands worked that text out
 themselves, mostly by dividing by 1024, so in `checkup` a cluster of 512 B or of 1536 B read "1 KB". Each class below
-runs one of those places at such clusters and checks the line it prints.
+runs one of those places at such clusters and checks the line it prints. The last one reads the source of
+`smart_drive` and fails when a cluster size is divided by 1024, or tested for a whole number of KB, anywhere but in
+`fsinfo`, so that no place can go back to a text of its own.
 """
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import importlib
 import io
 import json
+import re
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterator, List
 from unittest.mock import patch
 
 from smart_drive.cli.cmd_checkup import run_checkup
@@ -35,6 +39,7 @@ CLI_AUDIT = importlib.import_module("smart_drive.cli.cmd_audit")
 CLI_CHECKUP = importlib.import_module("smart_drive.cli.cmd_checkup")
 CLI_HEALTH = importlib.import_module("smart_drive.cli.cmd_health")
 CLI_SENTINEL = importlib.import_module("smart_drive.cli.cmd_sentinel")
+DOCTOR = importlib.import_module("smart_drive.core.doctor")
 RELINK = importlib.import_module("smart_drive.core.relink")
 SENTINEL = importlib.import_module("smart_drive.core.sentinel")
 
@@ -53,9 +58,45 @@ CHECKUP_LINES: Dict[str, str] = {
 # 64 KB and 512 B)
 NOTICE_WORDING: Dict[int, str] = {65_536: "64 KB", 66_048: "66048 B", 524_288: "512 KB"}
 
+# The source of the package, and the one module that may work a cluster size out as text
+PACKAGE = Path(__file__).resolve().parent.parent / "smart_drive"
+HOME_OF_THE_RULE = PACKAGE / "core" / "fsinfo.py"  # `cluster_size_text` and `FilesystemInfo.summary` live there
+
+# A name that holds a cluster size. Only lower-case names count: CLUSTER_SIZE_BYTES, the fixed 512 KB model that
+# `status` and `sentinel` print, is always a whole number of KB.
+CLUSTER_NAME = re.compile(r"cluster|block_size|allocation_unit|^unit$")
+
 
 def volume(path: Any, block_size: int, fs_type: str = "exfat") -> FilesystemInfo:
     return FilesystemInfo(str(path), fs_type, block_size, str(path), "win32")
+
+
+def names_in(node: ast.AST) -> Iterator[str]:
+    """The names written in ``node``: variables, attributes and strings (a dict key such as 'cluster_size_bytes')."""
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Name):
+            yield sub.id
+        elif isinstance(sub, ast.Attribute):
+            yield sub.attr
+        elif isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+            yield sub.value
+
+
+def spelled_out(source: str) -> List[int]:
+    """The lines where a cluster size is turned into text by hand.
+
+    That is: divided by 1024, or tested for a whole number of KB.
+    """
+    lines: List[int] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.BinOp) and isinstance(node.right, ast.Constant) and node.right.value == 1024:
+            if isinstance(node.op, ast.Mod):  # the test for a whole number of KB, whatever the size is called
+                lines.append(node.lineno)
+            elif isinstance(node.op, (ast.FloorDiv, ast.Div)) and any(
+                name.islower() and CLUSTER_NAME.search(name) for name in names_in(node.left)
+            ):
+                lines.append(node.lineno)
+    return sorted(set(lines))
 
 
 class TestCheckupTextReport(unittest.TestCase):
@@ -272,6 +313,57 @@ class TestAuditHtmlReport(unittest.TestCase):
             with self.subTest(cluster=cluster):
                 html = StorageAuditor(str(self.root)).generate_html_report({"cluster_size": cluster})
                 self.assertIn(f"Cluster size: {wording} ({cluster:,} B)", html)
+
+
+class TestDoctorAllocationUnit(unittest.TestCase):
+    """`doctor` had a copy of `cluster_size_text` of its own (`_unit_text`); it uses the helper now.
+
+    Its report reads as before, which this pins: the copy and the helper gave the same text for these clusters.
+    """
+
+    def test_the_filesystem_row_names_the_allocation_unit(self) -> None:
+        for cluster, wording in WORDING.items():
+            filesystem = {"name": "exFAT", "allocation_unit_bytes": cluster, "cluster_size_source": "detected"}
+            report = {"filesystem": filesystem}  # (the other sections are missing, and the renderers cope with that)
+            for kind, render in (("text", DOCTOR.render_text), ("markdown", DOCTOR.render_markdown)):
+                with self.subTest(cluster=cluster, report=kind):
+                    self.assertIn(f"allocation unit {wording} (detected)", render(report))
+
+
+class TestOneHelperNamesTheClusterSize(unittest.TestCase):
+    """Several places turned a cluster size into text by hand, and each copy was wrong for a size another got right.
+
+    `cluster_size_text` does it for all of them now. This reads the source of the package and fails on a cluster size
+    that is divided by 1024, or tested for a whole number of KB, anywhere but in `fsinfo`.
+    """
+
+    def test_no_module_but_fsinfo_works_the_text_out_itself(self) -> None:
+        found: List[str] = []
+        for path in sorted(PACKAGE.rglob("*.py")):
+            if path != HOME_OF_THE_RULE:
+                where = path.relative_to(PACKAGE.parent).as_posix()
+                found += [f"{where}:{line}" for line in spelled_out(path.read_text(encoding="utf-8"))]
+        self.assertEqual(found, [])
+
+    def test_the_guard_finds_what_it_looks_for(self) -> None:
+        cases = {
+            # what the places did, and what the copy of the helper in `doctor` did
+            "f\"{fs['cluster_size_bytes'] // 1024 or 1} KB\"": [1],
+            "x = report.cluster_size_bytes // 1024 if report.cluster_size_bytes >= 1024 else 0": [1],
+            "w = f'on {self.cluster_size_bytes // 1024}KB clusters'": [1],
+            "kb = f'{cluster_size / 1024:.1f}'": [1],
+            "t = f'{size // 1024} KB' if size % 1024 == 0 else f'{size} B'": [1],
+            "u = f', {unit // 1024} KB allocation unit'": [1],
+            # what is not a cluster size: the fixed 512 KB model, other sizes, the helper itself
+            "s = f'({CLUSTER_SIZE_BYTES // 1024} KB)'": [],
+            "v = value / 1024": [],
+            "b = f'{b / 1024:.2f} KB'": [],
+            "c = cluster_size_text(cluster_size)": [],
+            "d = cluster_size // 512": [],
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                self.assertEqual(spelled_out(source), expected)
 
 
 if __name__ == "__main__":
