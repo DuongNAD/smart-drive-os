@@ -34,7 +34,6 @@ from typing import Any, Callable, Deque, Dict, FrozenSet, Iterator, List, Option
 from smart_drive.core.learning_units import is_in_learning_unit
 from smart_drive.core.config import (
     CLUSTER_SIZE,
-    CLUSTER_SIZE_BYTES,
     DEFAULT_EXCLUDE_DIRS,
     SCAN_SKIPPED_DEPENDENCY_TREE,
     SCAN_SKIPPED_PROTECTED_BY_SYSTEM,

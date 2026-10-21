@@ -17,6 +17,13 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   the source in its own `filesystem` block). The `ssd_auto_organize` description says what the two fields mean, and no
   field was renamed or removed.
 
+### Removed
+
+- The unused import of `CLUSTER_SIZE_BYTES`, the fixed 512 KB exFAT cluster, from `smart_drive.core.duplicates`. The
+  duplicate detector works its slack out at the `cluster_size` it is given (the drive's real one in `dup`, `checkup`
+  and `ssd_find_duplicates`), so the import only suggested it still used the fixed size. The name was never in the
+  module's `__all__` and nothing took it from there; it is defined in `smart_drive.core.config`.
+
 ### Fixed
 
 - The markdown report of `audit` (`--markdown`, also when written to a file with `--export`) ended the delimiter row
