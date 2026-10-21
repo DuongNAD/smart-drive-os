@@ -148,7 +148,9 @@ def run_checkup(
     ref_index = SystemRefIndex.collect(home=home, reader=reader, shortcut_roots=[root_abs])
 
     # 6. Tier 1-2 reclaimable junk (dry-run only; nothing inside a folder the system depends on)
-    detector = JunkDetector(root_abs, max_tier=JunkTier.TIER_2_DEV_CACHE, system_refs=ref_index)
+    detector = JunkDetector(
+        root_abs, max_tier=JunkTier.TIER_2_DEV_CACHE, cluster_size=real_cluster, system_refs=ref_index
+    )
     junk_items = detector.find_junk()
     junk_count = len(junk_items)
     junk_bytes = sum(int(getattr(j, "size", 0) or (j.get("size", 0) if isinstance(j, dict) else 0)) for j in junk_items)

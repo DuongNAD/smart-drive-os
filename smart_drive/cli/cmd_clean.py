@@ -8,7 +8,8 @@ import os
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
-from smart_drive.core.config import JunkTier
+from smart_drive.core.config import CLUSTER_SIZE_BYTES, JunkTier
+from smart_drive.core.fsinfo import detect_filesystem, slack_cluster
 from smart_drive.core.junk_detector import (
     KEPT_DEPENDENCY_TREE,
     KEPT_GIT_TRACKED,
@@ -32,15 +33,17 @@ def _purge(
     junk_items: List[Any],
     log_path: Optional[str],
     quarantine: bool = True,
+    cluster_size: int = CLUSTER_SIZE_BYTES,
 ) -> Tuple[int, List[Dict[str, Any]], Optional[str]]:
     """Deletes or quarantines the detected junk through the PurgeEngine (all its safety guards apply).
 
     Returns (deleted_count, one result dict per item, batch_id). Each result carries the engine's own status:
     DELETED, QUARANTINED, BLOCKED (the safety guard refused: expected, not an error) or FAILED (the OS refused).
     Shared by the text and JSON output modes so that `--apply` does the same thing whichever way the
-    result is printed.
+    result is printed. ``cluster_size`` is the allocation unit the audit log's allocated sizes are worked out at: the
+    one the junk was sized at.
     """
-    purge_engine = PurgeEngine(root, dry_run=False, quarantine=quarantine)
+    purge_engine = PurgeEngine(root, dry_run=False, cluster_size=cluster_size, quarantine=quarantine)
     deleted_count = 0
     results: List[Dict[str, Any]] = []
     for j in junk_items:
@@ -212,7 +215,10 @@ def cmd_clean(args: argparse.Namespace) -> int:
     raw_tier = only_tier or getattr(args, "tier", 1)
     max_tier = tier_map.get(raw_tier, JunkTier.TIER_1_SAFE)
 
-    detector = JunkDetector(root, max_tier=max_tier)
+    # allocated_size of the junk is worked out at the volume's own allocation unit (as `audit` does), 512 KB exFAT only
+    # when it cannot be read; the JSON says which
+    cluster_size, cluster_size_source = slack_cluster(detect_filesystem(root))
+    detector = JunkDetector(root, max_tier=max_tier, cluster_size=cluster_size)
     junk_items = detector.find_junk()
     if only_tier:
         junk_items = [j for j in junk_items if int(j.tier) == only_tier]
@@ -229,6 +235,8 @@ def cmd_clean(args: argparse.Namespace) -> int:
             "dry_run": is_dry_run,
             "quarantine": quarantine,
             "only_tier": only_tier,
+            "cluster_size": cluster_size,
+            "cluster_size_source": cluster_size_source,
             "junk_count": len(junk_items),
             "junk_items": junk_dicts,
             "total_reclaimable_bytes": sum(j["size"] for j in junk_items),
@@ -239,7 +247,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
         if not is_dry_run:
             # `--apply --json` used to print dry_run=false and return without deleting anything.
             _, results, batch_id = _unpack_purge_result(
-                _purge(root, junk_items, log_path, quarantine=quarantine)
+                _purge(root, junk_items, log_path, quarantine=quarantine, cluster_size=cluster_size)
             )
             _, blocked_count, failed_count = _tally(results)
             deleted_count, freed_bytes, quarantined_count, quarantined_bytes = _tally_space(results)
@@ -296,7 +304,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
         return 0
 
     _, results, batch_id = _unpack_purge_result(
-        _purge(root, junk_items, log_path, quarantine=quarantine)
+        _purge(root, junk_items, log_path, quarantine=quarantine, cluster_size=cluster_size)
     )
     _, blocked_count, failed_count = _tally(results)
     deleted_count, freed_bytes, quarantined_count, quarantined_bytes = _tally_space(results)

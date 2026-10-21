@@ -4,7 +4,7 @@ Autonomous drive management and high-speed search suite for Kingston XS2000 SSD.
 Provides subcommands:
 - init: Initialize workspace with preset profile, taxonomies, shields, and manifests.
 - status: Inspect SSD mount, geometry, shields, and taxonomies.
-- audit: Storage breakdown and 512KB cluster slack metrics.
+- audit: Storage breakdown and cluster slack metrics at the drive's real cluster size.
 - clean: Detect and safely purge system junk (mandatory dry-run safeguard).
 - search: Sub-10ms multi-criteria search and query parsing.
 - organize: Autonomous drive auto-zoning, cleaning & rebalancing.
@@ -66,7 +66,7 @@ from smart_drive.cli.cmd_snapshot import cmd_snapshot
 from smart_drive.cli.cmd_status import cmd_status
 from smart_drive.cli.cmd_undo import cmd_undo
 from smart_drive.core.duplicates import DuplicateDetector
-from smart_drive.core.fsinfo import detect_filesystem, slack_cluster
+from smart_drive.core.fsinfo import cluster_size_text, detect_filesystem, slack_cluster
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
 from smart_drive.indexer.db import DatabaseManager
 from smart_drive.indexer.manager import IndexManager
@@ -125,9 +125,8 @@ def cmd_dup(args: argparse.Namespace) -> int:
     print(f"Found {plan.get('duplicate_group_count', 0)} duplicate groups ({plan.get('duplicate_file_count', 0)} files)")
     print(f"Reclaimable Logical Space: {plan.get('total_reclaimable_bytes', 0) / (1024*1024):.2f} MB")
     cluster = plan.get("cluster_size", real_cluster)
-    cluster_text = f"{cluster // 1024} KB" if cluster >= 1024 and cluster % 1024 == 0 else f"{cluster} B"
     slack_mb = plan.get("total_reclaimable_slack", 0) / (1024 * 1024)
-    print(f"Reclaimable Cluster Slack: {slack_mb:.2f} MB (at {cluster_text} clusters)")
+    print(f"Reclaimable Cluster Slack: {slack_mb:.2f} MB (at {cluster_size_text(cluster)} clusters)")
     print(
         f"Scanned {plan.get('files_scanned', 0):,} files in {plan.get('folders_scanned', 0):,} folders "
         f"in {plan.get('elapsed_seconds', 0):.1f} s; not entered: {plan.get('skipped_dependency_dirs', 0):,} "

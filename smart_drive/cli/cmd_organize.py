@@ -70,11 +70,12 @@ def cmd_organize(args: argparse.Namespace) -> int:
     # 2. Safe Tier 1 Clean only if explicitly requested (--clean)
     clean_summary = None
     if getattr(args, "clean", False):
-        detector = JunkDetector(root, max_tier=JunkTier.TIER_1_SAFE)
+        # reclaimed_slack_bytes is worked out at the cluster size this command's plan reports (`cluster_size`)
+        detector = JunkDetector(root, max_tier=JunkTier.TIER_1_SAFE, cluster_size=zoner.cluster_size)
         junk_list = detector.find_junk()
         if junk_list:
             guard = SecurityGuard(drive_root=root)
-            engine = PurgeEngine(guard)
+            engine = PurgeEngine(guard, cluster_size=zoner.cluster_size)
             dry_run = not apply_mode
             res = engine.purge_batch(junk_list, dry_run=dry_run)
             clean_summary = {

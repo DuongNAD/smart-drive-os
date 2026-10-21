@@ -230,6 +230,11 @@ def slack_cluster(info: FilesystemInfo) -> Tuple[int, str]:
     return CLUSTER_SIZE_BYTES, CLUSTER_SIZE_ASSUMED
 
 
+def cluster_size_text(cluster_size: int) -> str:
+    """A cluster size as the text reports give it: '4 KB', '512 KB', or '1536 B' when it is not a whole number of KB."""
+    return f"{cluster_size // 1024} KB" if cluster_size >= 1024 and cluster_size % 1024 == 0 else f"{cluster_size} B"
+
+
 def slack_model_note(info: FilesystemInfo, model_cluster_size: int) -> Optional[str]:
     """Explains when the modelled cluster size is not this volume's real one; None when it is."""
     model = f"{model_cluster_size // 1024} KB"
@@ -250,6 +255,7 @@ __all__ = [
     "CLUSTER_SIZE_DETECTED",
     "FilesystemInfo",
     "best_mount",
+    "cluster_size_text",
     "detect_filesystem",
     "normalize_fs_name",
     "parse_mount_output",

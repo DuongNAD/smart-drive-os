@@ -3,7 +3,7 @@
 Provides autonomous AI coding agents with 8 high-performance tools:
 1. ssd_search: Instant sub-10ms multi-criteria search over 500,000+ files.
 2. ssd_audit: Storage allocation breakdown and cluster slack metrics at the drive's real cluster size.
-3. ssd_clean: Safe junk cleaner (Tier 1 safe by default, dry-run or apply mode).
+3. ssd_clean: Safe junk cleaner (Tier 1 safe by default, dry-run or apply mode), sized at the drive's real cluster size.
 4. ssd_find_duplicates: 3-phase duplicate detection and space reclamation plan.
 5. ssd_update_index: Fast incremental mtime/size search index synchronization.
 6. ssd_check_safety: exFAT compatibility guard (illegal chars, symlinks, whitelist).
@@ -262,7 +262,12 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "ssd_clean",
-        "description": "Identifies and purges system junk files (.DS_Store, Thumbs.db, temp caches). Enforces mandatory whitelist protection.",
+        "description": (
+            "Identifies and purges system junk files (.DS_Store, Thumbs.db, temp caches). Enforces mandatory whitelist "
+            "protection. nominal_bytes_reclaimed is what the junk holds and slack_bytes_reclaimed the space it takes on "
+            "the drive, worked out at the drive's real cluster size (cluster_size; cluster_size_source is 'detected', "
+            "or 'assumed' when it could not be read and the 512KB exFAT cluster was used)."
+        ),
         "annotations": {
             "readOnlyHint": False,
             "destructiveHint": True,
@@ -988,13 +993,17 @@ class SmartDriveMCPServer:
         tier_map = {1: JunkTier.TIER_1_SAFE, 2: JunkTier.TIER_2_DEV_CACHE, 3: JunkTier.TIER_3_SENSITIVE}
         max_tier = tier_map.get(tier_val, JunkTier.TIER_1_SAFE)
 
+        # Sizes are worked out at the allocation unit of the folder cleaned, as ssd_audit does: the volume's own, 512 KB
+        # exFAT only when it cannot be read. The result says which, so that an agent can tell.
+        cluster_size, cluster_size_source = slack_cluster(detect_filesystem(target_root))
+
         # The detector works from the storage root and is told where to start, so that a sub-folder is judged by the
         # folders above it (an installed app, a dependency tree) as the scan of the whole drive judges it
-        detector = JunkDetector(self._resolve_safe_path(None), max_tier=max_tier)
+        detector = JunkDetector(self._resolve_safe_path(None), max_tier=max_tier, cluster_size=cluster_size)
         junk_items = detector.find_junk(sub_path=target_root)
 
         guard = SecurityGuard(drive_root=self._ensure_root())
-        purge_engine = PurgeEngine(guard, dry_run=dry_run)
+        purge_engine = PurgeEngine(guard, dry_run=dry_run, cluster_size=cluster_size)
         summary = purge_engine.purge_batch(junk_items, dry_run=dry_run)
 
         result = {
@@ -1008,6 +1017,8 @@ class SmartDriveMCPServer:
             "quarantined_count": summary.quarantined_count,
             "quarantined_bytes": summary.quarantined_bytes,
             "batch_id": summary.batch_id,
+            "cluster_size": cluster_size,
+            "cluster_size_source": cluster_size_source,
             "nominal_bytes_reclaimed": summary.nominal_bytes_reclaimed,
             "slack_bytes_reclaimed": summary.allocated_bytes_reclaimed,
             # What looked like junk and was kept (by reason), the folders the system depends on, and the folder that
@@ -1248,10 +1259,10 @@ class SmartDriveMCPServer:
         clean_mode = self._parse_bool(args.get("clean"), default=False)
         if clean_mode:
             try:
-                detector = JunkDetector(root, max_tier=JunkTier.TIER_1_SAFE)
+                detector = JunkDetector(root, max_tier=JunkTier.TIER_1_SAFE, cluster_size=zoner.cluster_size)
                 junk_items = detector.find_junk()
                 guard = SecurityGuard(drive_root=root)
-                purge_engine = PurgeEngine(guard, dry_run=not apply_mode)
+                purge_engine = PurgeEngine(guard, dry_run=not apply_mode, cluster_size=zoner.cluster_size)
                 purge_engine.purge_batch(junk_items, dry_run=not apply_mode)
             except Exception as e:
                 logger.warning("Error running clean in auto_organize: %s", e)

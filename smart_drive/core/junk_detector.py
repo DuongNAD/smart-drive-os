@@ -200,7 +200,8 @@ class JunkDetector:
     3. Windows Thumbs.db, ehthumbs, and $RECYCLE.BIN detection.
     4. Anti-indexing shield protection (.metadata_never_index, no_log).
     5. Inviolable root file and root directory protection.
-    6. Hardware-accurate 512KB cluster allocation math.
+    6. Cluster allocation math at the ``cluster_size`` the caller gives (default: the 512KB exFAT cluster); the commands
+       and tools pass the volume's own, from ``fsinfo.slack_cluster``.
     7. Entries that only look like junk are kept, and counted by reason in ``kept``: Tier 2-3 matches inside
        dependency trees (node_modules, site-packages...) are installed packages, not leftovers, and nothing
        of any tier is reported inside a folder that Windows or an installed application depends on (the same
