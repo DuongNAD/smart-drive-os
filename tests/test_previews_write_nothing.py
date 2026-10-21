@@ -12,7 +12,10 @@ been typed and the moves start; a run that ends before that (nothing to move, `Q
 This file keeps the whole promise: every CLI preview, every MCP tool that previews and every way the guided organizer can
 end before the moves runs on a fresh drive of its own (loose folders worth organizing, junk of every tier, duplicate
 files, a repository, no `.smart_drive/`), and a command that writes anything there fails its own subtest. `sentinel`
-without `--no-heal` is not a preview: it heals the anti-indexing markers, by design.
+without `--no-heal` is not a preview: it heals the anti-indexing markers, by design. The repository of those drives
+is only git-looking (a `.git/HEAD`), so the commands that run git are run again on a real repository whose index is
+stale: `sentinel` and `ssd_status` rewrote `.git/index` there, because their `git status` did not turn optional
+locks off.
 
 `checkup` is the other command that writes, on purpose: its last report, `.smart_drive/checkup.json`, which the next
 run reads to show how the score moved. Its help called it "Read-only" and the README said it leaves your files alone,
@@ -31,6 +34,8 @@ import io
 import json
 import os
 import shutil
+import subprocess
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 import unittest
@@ -42,6 +47,7 @@ from smart_drive.cli.smart_organize_runner import OrganizeLog, append_organize_l
 from smart_drive.core.relink import record_moves
 from smart_drive.core.system_refs import RegistryReader, SystemRefIndex
 from smart_drive.mcp.server import SmartDriveMCPServer
+from tests.fsmonitor_helpers import ENV as GIT_ENV, GIT, git
 from tests.helpers import SmartDriveTestCase, TreeState, organize_log_events, snapshot_tree, tree_changes
 
 # `smart_drive.cli` re-exports the `main` function, so the attribute `smart_drive.cli.main` is that function and not the
@@ -77,7 +83,8 @@ DRIVE_FILES: Dict[str, Union[str, bytes]] = {
     # Two identical files, for `dup`
     "random_folder/copy.bin": b"D" * 5000,
     "my_service/copy.bin": b"D" * 5000,
-    # Looks like a git repository to `sentinel`, `repos` and `gitignore` (git itself cannot read it: it has no objects)
+    # Looks like a git repository to `sentinel`, `repos` and `gitignore` (git itself cannot read it: it has no objects;
+    # `TestARealRepositoryIsLeftAlone` makes it a real one)
     "tools_repo/.git/HEAD": "ref: refs/heads/main\n",
     "tools_repo/README.md": "# tools\n",
 }
@@ -367,6 +374,61 @@ class TestCheckupWritesOnlyItsLastReport(_Machine):
         before = snapshot_tree(drive)
         self.checkup(drive)
         self.assertEqual(tree_changes(before, snapshot_tree(drive)), ([CHECKUP_FILE], [], []))
+
+
+@unittest.skipUnless(GIT, "needs git on PATH")
+class TestARealRepositoryIsLeftAlone(_Machine):
+    """`git status` refreshes the index it reads and writes it back, unless optional locks are off.
+
+    A repository whose files differ in timestamps from what its index recorded (a clone copied to another computer or
+    drive letter, files touched by a tool) is the usual case on a portable drive, so every command that looks at a
+    repository must leave `.git/index` alone. The repository of the other drives of this file holds a `.git/HEAD` and
+    nothing else, which git cannot read, so it could not show this: the drive here has a real one.
+    """
+
+    def stale_drive(self) -> Path:
+        """A fresh drive whose `tools_repo` is a real repository with a stale index: git must look at every file again."""
+        drive = self.new_drive()
+        repo = drive / "tools_repo"
+        shutil.rmtree(repo / ".git")
+        git(repo, "init")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-m", "init")
+        later = time.time() + 3600
+        for tracked in repo.iterdir():
+            if tracked.is_file():
+                os.utime(tracked, (later, later))
+        return drive
+
+    def test_git_status_by_itself_rewrites_the_index_of_that_drive(self) -> None:
+        """The control: without the guard the drive does what this class is about, so that "unchanged" means something."""
+        drive = self.stale_drive()
+        before = snapshot_tree(drive)
+        env = {key: value for key, value in GIT_ENV.items() if key != "GIT_OPTIONAL_LOCKS"}
+        command = ["git", "-c", "core.fsmonitor=false", "-C", str(drive / "tools_repo"), "status", "--porcelain"]
+        subprocess.run(command, env=env, capture_output=True, check=True, timeout=60)
+        self.assertEqual(tree_changes(before, snapshot_tree(drive)), ([], [], ["tools_repo/.git/index"]))
+
+    def test_the_commands_that_look_at_a_repository_leave_it_byte_for_byte_as_it_was(self) -> None:
+        runs: List[Tuple[str, Callable[[Path], Any]]] = [
+            ("sentinel --no-heal", lambda d: self.run_cli("sentinel", "--root", str(d), "--no-heal", codes=(0, 1))),
+            ("sentinel --no-heal --json", lambda d: self.run_cli("sentinel", "--root", str(d), "--no-heal", "--json", codes=(0, 1))),
+            ("repos", lambda d: self.run_cli("repos", str(d), "--root", str(d))),
+            ("gitignore audit", lambda d: self.run_cli("gitignore", "audit", "--root", str(d))),
+            ("gitignore apply REPO", lambda d: self.run_cli("gitignore", "--root", str(d), "apply", str(d / "tools_repo"))),
+            ("organize", lambda d: self.run_cli("organize", "--root", str(d))),
+            ("clean --tier 2", lambda d: self.run_cli("clean", "--root", str(d), "--tier", "2")),
+            ("ssd_status", lambda d: self.call_tool(d, "ssd_status")),
+            ("ssd_gitignore audit", lambda d: self.call_tool(d, "ssd_gitignore", action="audit")),
+            ("ssd_auto_organize", lambda d: self.call_tool(d, "ssd_auto_organize", apply=False)),
+            ("ssd_clean", lambda d: self.call_tool(d, "ssd_clean", dry_run=True, tier=2)),
+        ]
+        for label, run in runs:
+            with self.subTest(command=label):
+                drive = self.stale_drive()
+                before = snapshot_tree(drive)
+                run(drive)
+                self.assertUnchanged(before, snapshot_tree(drive))
 
 
 class TestGuidedOrganizerWritesNothingBeforeYes(_Machine):
