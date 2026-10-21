@@ -38,6 +38,14 @@ All notable changes to SmartDrive-OS are written down here. The format follows
   revision `initialize` chose. A `server/discover` sent without the `_meta` entries now gets `-32602` instead of
   `-32601`.
 
+### Changed
+
+- The MCP server no longer answers JSON-RPC batches (an array of requests) once the client has negotiated `2025-06-18`
+  or later, the revisions of the protocol that took them out, nor a batch that holds a `2026-07-28` request in any
+  state. It writes one `-32600` error saying to send each request as a message of its own, and none of the requests in
+  the batch runs. Batches are still answered with an array under `2024-11-05` (which is plain JSON-RPC 2.0), under
+  `2025-03-26`, and from a client that never sent `initialize`.
+
 ### Fixed
 
 - The MCP tool `ssd_audit` worked out cluster slack at an assumed 512 KB exFAT cluster on every drive, so on a 4 KB NTFS
