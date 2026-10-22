@@ -8,7 +8,7 @@
 [![PyPI](https://img.shields.io/pypi/v/smart-drive-os)](https://pypi.org/project/smart-drive-os/)
 [![Python versions](https://img.shields.io/pypi/pyversions/smart-drive-os)](https://pypi.org/project/smart-drive-os/)
 [![CI](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/DuongNAD/smart-drive-os/actions/workflows/tests.yml)
-[![Release: v1.4.3](https://img.shields.io/badge/release-v1.4.3-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.4.3)
+[![Release: v1.4.4](https://img.shields.io/badge/release-v1.4.4-blue.svg)](https://github.com/DuongNAD/smart-drive-os/releases/tag/v1.4.4)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Privacy: 100% Local](https://img.shields.io/badge/Privacy-100%25%20Local-success?style=flat-square&logo=shield)](PRIVACY.md)
 [![M8ven Score](https://m8ven.ai/badge/mcp/duongnad-smart-drive-os-1kxkwu)](https://m8ven.ai/mcp/duongnad-smart-drive-os)
