@@ -19,6 +19,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -816,7 +817,7 @@ class TestTier4RealWorldWorkflows(BaseE2ETestCase):
         1. Agent config registration
         2. MCP session initialization & capabilities negotiation
         3. Index update & status check
-        4. Sub-10ms multi-criteria search
+        4. Multi-criteria search (its speed: TestSsdSearchSpeed)
         5. Storage audit & slack analysis
         6. Pre-action safety check
         7. Junk clean (preview -> apply)
@@ -857,7 +858,9 @@ class TestTier4RealWorldWorkflows(BaseE2ETestCase):
         search_resp = self.server.handle_request(search_req)
         search_data = json.loads(search_resp["result"]["content"][0]["text"])
         self.assertGreaterEqual(search_data["total_count"], 1)
-        self.assertLessEqual(search_data["elapsed_ms"], 50.0, "Search query must be fast (<50ms in testing)")
+        # The speed is judged by TestSsdSearchSpeed on the best of several calls: this single call is the first after
+        # setUp and at the mercy of the machine (66 ms once on a busy one).
+        self.assertGreaterEqual(search_data["elapsed_ms"], 0.0)
 
         # Step 5: Agent audits storage allocation & cluster slack
         audit_req = {
@@ -941,6 +944,55 @@ class TestTier4RealWorldWorkflows(BaseE2ETestCase):
         # 4. Subsequent protected request succeeds
         resp4 = auth_server.handle_request({"jsonrpc": "2.0", "id": 4, "method": "tools/list"})
         self.assertIn("tools", resp4["result"])
+
+
+# ==============================================================================
+# ssd_search Speed
+# ==============================================================================
+
+class TestSsdSearchSpeed(BaseE2ETestCase):
+    """ssd_search keeps the promise of the README and the MCP instructions (<10 ms) on its best of several calls.
+
+    Interference only ever adds time, so one wall-clock reading says more about the machine than about the search:
+    with the CPU three times oversubscribed, single calls took over 1 s while the best of 15 stayed under 3 ms. A
+    slower search path makes every call slower, the best one too, while a busy machine delays some calls but hardly
+    ever all of them.
+    """
+
+    CALLS = 15
+    BEST_CALL_LIMIT_MS = 10.0
+
+    def test_ssd_search_best_of_15_calls_is_under_10_ms(self) -> None:
+        """The fastest of 15 identical searches answers in under 10 ms, and every one of them returns real matches."""
+        request = {
+            "jsonrpc": "2.0",
+            "id": 103,
+            "method": "tools/call",
+            "params": {"name": "ssd_search", "arguments": {"query": "", "limit": 10, "compact": True}},
+        }
+        call_ms: list[float] = []
+        for _ in range(self.CALLS):
+            # handle_request also writes the reply to stdout, as it does on the wire: a StringIO keeps it off the
+            # test run's console, and console I/O out of the timing.
+            with contextlib.redirect_stdout(io.StringIO()):
+                start = time.perf_counter()
+                response = self.server.handle_request(request)
+                wall_ms = (time.perf_counter() - start) * 1000.0
+            call_ms.append(wall_ms)
+
+            self.assertNotIn("isError", response["result"])
+            data = json.loads(response["result"]["content"][0]["text"])
+            self.assertGreaterEqual(data["total_count"], 1)
+            # elapsed_ms is the engine's reading of part of this call: never above the whole call (+0.01 for rounding).
+            self.assertLessEqual(data["elapsed_ms"], wall_ms + 0.01)
+
+        best = min(call_ms)
+        self.assertLessEqual(
+            best,
+            self.BEST_CALL_LIMIT_MS,
+            f"ssd_search took {best:.2f} ms on its best of {self.CALLS} calls; "
+            f"every call (ms): {', '.join(f'{ms:.1f}' for ms in call_ms)}",
+        )
 
 
 if __name__ == "__main__":
