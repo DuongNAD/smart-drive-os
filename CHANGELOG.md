@@ -7,6 +7,14 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-10-22
+
+Small fixes after 1.4.3. Every report now names a cluster that is not a whole number of KB in bytes (`checkup`,
+`health`, `sentinel`, the HTML report of `audit`, `doctor` and the exFAT slack guard said "0 KB", "1 KB" or "0.5 KB"
+for a 512 B or 1536 B cluster), `organize --json` and `ssd_auto_organize` say where their cluster size came from,
+the micro-file table of the markdown audit report renders again, and the speed test of `ssd_search` judges the best
+of 15 calls, so a busy machine no longer fails the test suite now and then.
+
 ### Added
 
 - `organize --json` (the dry run and `--apply`) and the MCP tool `ssd_auto_organize` (with and without `apply`) now say
@@ -486,7 +494,8 @@ in the same release.
   for `wow! a!b!c`, and "Goodbye!" and the Python-missing error printed without their `!`. Delayed expansion is now off;
   only the line of `SmartDrive.bat` that shows the drive root switches it on.
 
-[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.3...main
+[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.4...main
+[1.4.4]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.0...v1.4.1

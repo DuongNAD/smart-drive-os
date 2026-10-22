@@ -60,7 +60,7 @@ LATEST_PROTOCOL_VERSION: str = SUPPORTED_PROTOCOL_VERSIONS[0]
 # initialize): the oldest, all this server spoke before it negotiated, so such a client sees no change.
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "smart-drive"
-SERVER_VERSION = "1.4.3"
+SERVER_VERSION = "1.4.4"
 # How MCP shows the server to people: the title from revision 2025-06-18, the description and website from 2025-11-25.
 # The same words as server.json, which the registry lists.
 SERVER_TITLE = "SmartDrive-OS"
