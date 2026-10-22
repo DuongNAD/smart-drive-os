@@ -64,6 +64,12 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 - The HTML report of `audit --html` gave its cluster size in tenths of a KB (`Cluster: 0.5 KB (512 B)`,
   `1.5 KB (1,536 B)`, and 1,000 B rounded to "1 KB"), while the text and markdown reports of the same audit say
   `512 B` and `1536 B`. It now names it the way they do (`Cluster: 512 B (512 B)`, `Cluster: 4 KB (4,096 B)`).
+- The test suite no longer fails now and then on a busy machine. The agent-workflow test
+  (`test_tier4_autonomous_agent_full_session_lifecycle`) held one `ssd_search` call, the first after the index is
+  built, to 50 ms; it took 66 ms once on a busy machine, and 150 to 300 ms in 3 of 30 runs with the CPU twice
+  oversubscribed. That test now checks what the search returns, and a new test, `TestSsdSearchSpeed`, holds
+  `ssd_search` to the README's 10 ms on the best of 15 calls: interference only adds time, so a busy machine does not
+  fail it, while a slower search path still does.
 
 ## [1.4.3] - 2026-10-21
 
