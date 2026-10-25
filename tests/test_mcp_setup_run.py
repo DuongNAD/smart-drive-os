@@ -68,6 +68,8 @@ class TestRunSetup(TempRootCase):
 
         register = run.matching("register")
         self.assertEqual(len(register), 1)
+        reg_env = next(env for argv, env in run.calls if "register" in argv)
+        self.assertEqual(reg_env.get("CONSTELLATION_CLAUDE_CMD"), "__constellation_direct_sync__")
         argv = register[0]
         self.assertEqual(set(argv[3:-2]), set(MEMBER_NAMES) | {SELF_NAME})
         self.assertEqual(argv[-2:], ["--agents=claude,cursor", "--json"])

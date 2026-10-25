@@ -551,7 +551,11 @@ def _first_json(text: str) -> Any:
 
 
 def _constellation(host: Host, node: str, script: Path, argv: List[str]) -> Tuple[int, Any, str]:
-    code, out, err = host.run([node, str(script), *argv], CONSTELLATION_TIMEOUT, host.env)
+    env = dict(host.env)
+    # Force Constellation to use its direct atomic ~/.claude.json sync instead of mixing `claude mcp add`
+    # subprocesses (which fail on `-m smart_drive`) with a stale pre-loop in-memory JSON snapshot.
+    env.setdefault("CONSTELLATION_CLAUDE_CMD", "__constellation_direct_sync__")
+    code, out, err = host.run([node, str(script), *argv], CONSTELLATION_TIMEOUT, env)
     return code, _first_json(out), (err.strip() or out.strip())
 
 
