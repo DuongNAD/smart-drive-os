@@ -598,6 +598,37 @@ class TestInstallMethod(unittest.TestCase):
         self.assertIn(result["install_method"], {"source", "uvx", "pipx", "uv tool", "pip"})
         self.assertIsInstance(result["install_detail"], str)
 
+    def test_checkout_egg_info_is_skipped_when_finding_distribution(self) -> None:
+        checkout = self.base / "my_checkout"
+        egg_info = checkout / "smart_drive_os.egg-info"
+        egg_info.mkdir(parents=True)
+        site_dist_path = self.base / "site-packages" / "smart_drive_os-1.4.4.dist-info"
+        site_dist_path.mkdir(parents=True)
+
+        class PathFakeDist(FakeDist):
+            def __init__(self, path: Path, version: str, files: Optional[Dict[str, str]] = None) -> None:
+                super().__init__(version=version, files=files)
+                self._path = path
+                self.metadata = {"Name": "smart-drive-os"}
+
+        egg_dist = PathFakeDist(egg_info, "1.1.0")
+        site_dist = PathFakeDist(
+            site_dist_path,
+            "1.4.4",
+            {"direct_url.json": json.dumps({"url": checkout.as_uri(), "dir_info": {"editable": True}})},
+        )
+        with patch("importlib.metadata.distribution", return_value=egg_dist), \
+                patch("importlib.metadata.distributions", return_value=[egg_dist, site_dist]):
+            result = install_method(checkout / "smart_drive", self.base / "py", self.base / "py")
+        self.assertEqual(self.kind(result), ("source", "editable install of this checkout"))
+        self.assertEqual(result["installed_version"], "1.4.4")
+
+        with patch("importlib.metadata.distribution", return_value=egg_dist), \
+                patch("importlib.metadata.distributions", return_value=[egg_dist]):
+            result_uninstalled = install_method(checkout / "smart_drive", self.base / "py", self.base / "py")
+        self.assertEqual(self.kind(result_uninstalled), ("source", "checkout run directly (not installed)"))
+        self.assertIsNone(result_uninstalled["installed_version"])
+
 
 class TestSystemNames(unittest.TestCase):
     def test_windows_11_is_told_by_its_build(self) -> None:
@@ -1012,6 +1043,30 @@ class TestMcpEntries(unittest.TestCase):
         self.assertIs(same({"command": PYTHON}, expected), False)
         self.assertIs(same({"command": 3, "args": []}, expected), False)
         self.assertIsNone(same(launch_entry(PYTHON), None))
+        checkout_dir = self.base / "ssd_checkout"
+        checkout_dir.mkdir(parents=True, exist_ok=True)
+        other_dir = self.base / "other_checkout"
+        other_dir.mkdir(parents=True, exist_ok=True)
+        expected_with_pypath = {
+            "command": PYTHON,
+            "args": ["-m", "smart_drive", "mcp"],
+            "env": {"PYTHONIOENCODING": "utf-8", "PYTHONPATH": str(checkout_dir)},
+        }
+        self.assertIs(same(launch_entry(PYTHON), expected_with_pypath), False)
+        self.assertIs(
+            same(
+                {"command": PYTHON, "args": ["-m", "smart_drive", "mcp"], "env": {"PYTHONPATH": str(other_dir)}},
+                expected_with_pypath,
+            ),
+            False,
+        )
+        self.assertIs(
+            same(
+                {"command": PYTHON, "args": ["-m", "smart_drive", "mcp"], "env": {"PYTHONPATH": str(checkout_dir)}},
+                expected_with_pypath,
+            ),
+            True,
+        )
 
     def test_a_project_only_registration_has_no_user_scope(self) -> None:
         path = self.base / ".claude.json"

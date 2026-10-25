@@ -360,9 +360,34 @@ def _same_path(first: str, second: str) -> bool:
 _LOOK_UP = object()  # install_method(dist=...) default: ask importlib.metadata
 
 
-def _find_distribution() -> Any:
+def _is_checkout_egg_info(dist: Any, checkout: Optional[Path]) -> bool:
+    """True when `dist` is an `.egg-info` folder sitting directly inside `checkout` (lacks PEP 610 direct_url.json)."""
+    if checkout is None:
+        return False
+    dist_path = getattr(dist, "_path", None)
+    if dist_path is None:
+        return False
     try:
-        return importlib.metadata.distribution(DIST_NAME)
+        path = Path(str(dist_path))
+        return path.name.lower().endswith(".egg-info") and _same_path(str(path.parent), str(checkout))
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _find_distribution(checkout: Optional[Path] = None) -> Any:
+    try:
+        dist = importlib.metadata.distribution(DIST_NAME)
+        if not _is_checkout_egg_info(dist, checkout):
+            return dist
+        for candidate in importlib.metadata.distributions():
+            try:
+                name = candidate.metadata["Name"]
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(name, str) and name.lower().replace("_", "-") == DIST_NAME:
+                if not _is_checkout_egg_info(candidate, checkout):
+                    return candidate
+        return None
     except Exception:  # noqa: BLE001 - not installed (PackageNotFoundError) or damaged metadata
         return None
 
@@ -422,11 +447,12 @@ def install_method(
     package = Path(package_dir) if package_dir is not None else Path(smart_drive.__file__).resolve().parent
     env_prefix = Path(sys.prefix if prefix is None else prefix)
     env_base = Path(sys.base_prefix if base_prefix is None else base_prefix)
+    in_site_packages = any(part.lower() in ("site-packages", "dist-packages") for part in package.parts)
     if dist is _LOOK_UP:
-        dist = _find_distribution()
+        dist = _find_distribution(None if in_site_packages else package.parent)
     direct_url = _direct_url(dist) if dist is not None else {}
 
-    if not any(part.lower() in ("site-packages", "dist-packages") for part in package.parts):
+    if not in_site_packages:
         if dist is None:
             method, detail = "source", "checkout run directly (not installed)"
         elif _is_editable_install_of(direct_url, package.parent):
@@ -737,10 +763,19 @@ def _is_this_install(entry: Dict[str, Any], expected: Optional[Dict[str, Any]]) 
     command, args = entry.get("command"), entry.get("args")
     if not isinstance(command, str) or not isinstance(args, list):
         return False
-    return (
-        os.path.normcase(command) == os.path.normcase(str(expected.get("command")))
-        and args == list(expected.get("args") or [])
-    )
+    if (
+        os.path.normcase(command) != os.path.normcase(str(expected.get("command")))
+        and not _same_path(command, str(expected.get("command")))
+    ) or args != list(expected.get("args") or []):
+        return False
+    expected_env = expected.get("env")
+    expected_py_path = expected_env.get("PYTHONPATH") if isinstance(expected_env, dict) else None
+    if isinstance(expected_py_path, str) and expected_py_path:
+        entry_env = entry.get("env")
+        entry_py_path = entry_env.get("PYTHONPATH") if isinstance(entry_env, dict) else None
+        if not isinstance(entry_py_path, str) or not _same_path(entry_py_path, expected_py_path):
+            return False
+    return True
 
 
 def _registered(
