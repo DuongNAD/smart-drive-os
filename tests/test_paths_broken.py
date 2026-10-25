@@ -437,6 +437,22 @@ class TestPathsBroken(SmartDriveTestCase):
         self.assertNotIn(f"{old}: not found", text)
         self.assertNotIn("paths --broken --fix", text)
 
+    @unittest.skipIf(sys.platform == "win32", "POSIX root anchor test")
+    def test_10_macos_cryptex_ephemeral_path_entries_are_ignored(self) -> None:
+        cryptex_paths = [
+            "/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin",
+            "/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin",
+            "/private/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin",
+        ]
+        reader = RegistryReader(tree={r"HKCU\Environment": {"Path": ";".join(cryptex_paths)}})
+        report = inspect_broken_paths(
+            root=str(self.drive),
+            home=self.fake_home,
+            app_data=self.fake_appdata,
+            reader=reader,
+        )
+        self.assertEqual(report["path_entries"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

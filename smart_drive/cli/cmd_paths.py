@@ -63,6 +63,12 @@ def _locate_missing_target(
         return None
     if anchor == "/" and not _exists(Path("/" + names[0])):
         return None
+    lower_head = [n.lower() for n in names[:4]]
+    if anchor == "/" and (
+        lower_head[:3] == ["var", "run", "com.apple.security.cryptexd"]
+        or lower_head[:4] == ["private", "var", "run", "com.apple.security.cryptexd"]
+    ):
+        return None
 
     k = len(names) - 1
     while k > 0 and not _exists(Path(_join_split(anchor, names[:k]))):
