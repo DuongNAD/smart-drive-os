@@ -392,5 +392,20 @@ class TestRegisteredEntryFromPersistentEnvironments(_EnvironmentCase):
                 self.assertNotIn("path", manifest)
 
 
+    def test_antigravity_registration_updates_existing_companion_configs(self) -> None:
+        fake_home = self.tmp / "home"
+        primary = fake_home / ".gemini" / "antigravity" / "mcp_config.json"
+        companion = fake_home / ".gemini" / "config" / "mcp_config.json"
+        companion.parent.mkdir(parents=True, exist_ok=True)
+        companion.write_text(json.dumps({"mcpServers": {"smart-drive": {"command": "old"}}}), encoding="utf-8")
+        agent_configs = {"antigravity": primary}
+        with patch.object(registrar, "get_agent_config_paths", return_value=agent_configs):
+            results = registrar.register_ide_configs(flags={"antigravity": True})
+        self.assertEqual(results, {"antigravity": True})
+        primary_data = json.loads(primary.read_text(encoding="utf-8"))
+        companion_data = json.loads(companion.read_text(encoding="utf-8"))
+        self.assertEqual(primary_data["mcpServers"]["smart-drive"], companion_data["mcpServers"]["smart-drive"])
+
+
 if __name__ == "__main__":
     unittest.main()

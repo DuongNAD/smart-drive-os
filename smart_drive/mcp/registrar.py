@@ -366,6 +366,28 @@ def register_ide_configs(
                 save_json_config(path, cfg)
                 results[ide_name] = True
 
+                # If registering Antigravity under ~/.gemini/antigravity, also sync companion ~/.gemini/{config,antigravity-ide}/mcp_config.json if present
+                if (
+                    ide_name == "antigravity"
+                    and path.name == "mcp_config.json"
+                    and path.parent.name == "antigravity"
+                    and path.parent.parent.name == ".gemini"
+                ):
+                    gemini_dir = path.parent.parent
+                    for extra_ag in (
+                        gemini_dir / "config" / "mcp_config.json",
+                        gemini_dir / "antigravity-ide" / "mcp_config.json",
+                    ):
+                        if extra_ag.is_file():
+                            try:
+                                ag_cfg = load_json_config(extra_ag, strict=True)
+                                if "mcpServers" not in ag_cfg or not isinstance(ag_cfg["mcpServers"], dict):
+                                    ag_cfg["mcpServers"] = {}
+                                ag_cfg["mcpServers"]["smart-drive"] = entry
+                                save_json_config(extra_ag, ag_cfg)
+                            except Exception:
+                                pass
+
                 # If registering Claude, also update ~/.claude.json if present
                 if ide_name == "claude":
                     claude_code_path = config_paths.get("claude_code")

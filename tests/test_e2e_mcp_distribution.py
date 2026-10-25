@@ -397,6 +397,8 @@ class TestTier1FeatureCoverage(BaseE2ETestCase):
 
         disallowed_imports: list[tuple[str, str]] = []
         for py_path in smart_drive_dir.rglob("*.py"):
+            if py_path.name.startswith("._"):
+                continue
             try:
                 tree = ast.parse(py_path.read_text(encoding="utf-8"), filename=str(py_path))
             except (SyntaxError, UnicodeDecodeError, OSError) as e:

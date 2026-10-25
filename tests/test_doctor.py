@@ -1162,6 +1162,20 @@ class TestAgentDetection(unittest.TestCase):
         agents = self.agents(environ={"ANTIGRAVITY_HOME": str(custom), "GEMINI_HOME": str(custom)})
         self.assertEqual(agents["Antigravity"]["mcp"], {"status": "no config file"})
 
+    def test_antigravity_checks_companion_configs_and_surfaces_stale_entry(self) -> None:
+        write_json(
+            self.machine.home / ".gemini" / "antigravity" / "mcp_config.json",
+            {"mcpServers": {"smart-drive": launch_entry()}},
+        )
+        stale = launch_entry(command="/other/python")
+        write_json(
+            self.machine.home / ".gemini" / "config" / "mcp_config.json",
+            {"mcpServers": {"smart-drive": stale}},
+        )
+        agents = self.agents()
+        self.assertEqual(agents["Antigravity"]["mcp"]["status"], "registered")
+        self.assertFalse(agents["Antigravity"]["mcp"]["matches_this_install"])
+
     def test_without_a_given_home_the_override_names_the_antigravity_folder(self) -> None:
         custom = self.machine.base / "custom_antigravity"
         write_json(custom / "mcp_config.json", {"mcpServers": {"smart-drive": launch_entry()}})

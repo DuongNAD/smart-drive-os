@@ -678,6 +678,15 @@ def _agents_of(machine: _Machine) -> List[_Agent]:
     home, app = machine.home, machine.app_data
     override = (machine.environ.get("ANTIGRAVITY_HOME") or machine.environ.get("GEMINI_HOME")) if machine.use_env else None
     antigravity = Path(override) if override else home / ".gemini" / "antigravity"
+    antigravity_configs = (
+        [antigravity / "mcp_config.json"]
+        if override
+        else [
+            antigravity / "mcp_config.json",
+            home / ".gemini" / "config" / "mcp_config.json",
+            home / ".gemini" / "antigravity-ide" / "mcp_config.json",
+        ]
+    )
     claude_dirs = [app / "Claude"]
     if sys.platform == "win32":
         claude_dirs += relink._msix_claude_dirs(machine.local_app_data)  # the Microsoft Store build keeps its own copy
@@ -695,7 +704,7 @@ def _agents_of(machine: _Machine) -> List[_Agent]:
         _Agent("Windsurf", dirs=[windsurf, app / app_dir.get("Windsurf", "Windsurf")], programs=["windsurf"],
                configs=[windsurf / "mcp_config.json"], kind="json"),
         _Agent("Antigravity", dirs=[antigravity, app / app_dir.get("Antigravity", "Antigravity")],
-               programs=["antigravity"], configs=[antigravity / "mcp_config.json"], kind="json"),
+               programs=["antigravity"], configs=antigravity_configs, kind="json"),
         _Agent("Gemini CLI", files=[home / ".gemini" / "settings.json"], programs=["gemini"],
                configs=[home / ".gemini" / "settings.json"], kind="json"),
         _Agent("VS Code", dirs=[app / app_dir.get("VS Code", "Code")], programs=["code"]),
@@ -870,7 +879,14 @@ def _check_mcp(agent: _Agent, machine: _Machine) -> Dict[str, Any]:
         return _check_claude_code(agent.configs[0], machine)
     check = _check_toml_config if agent.kind == "toml" else _check_json_config
     results = [check(path, "user", machine) for path in agent.configs]
-    return min(results, key=lambda result: _STATUS_RANK.index(result["status"]))
+    return min(
+        results,
+        key=lambda result: (
+            _STATUS_RANK.index(result["status"]),
+            result.get("command_found") is not False,
+            result.get("matches_this_install") is not False,
+        ),
+    )
 
 
 def _collect_agent(agent: _Agent, machine: _Machine) -> Dict[str, Any]:
