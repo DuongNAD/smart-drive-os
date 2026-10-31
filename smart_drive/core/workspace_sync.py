@@ -162,12 +162,13 @@ class WorkspaceSynchronizer:
                     continue
 
                 for old_abs, new_abs, old_norm, new_norm in norm_moves:
-                    is_absolute = os.path.isabs(orig_path_str)
+                    native_path_str = orig_path_str.replace("\\", os.sep).replace("/", os.sep)
+                    is_absolute = os.path.isabs(native_path_str)
                     uses_forward = "/" in orig_path_str or ("\\" not in orig_path_str and not is_absolute)
                     had_leading_dot = orig_path_str.startswith("./") or orig_path_str.startswith(".\\")
 
                     if is_absolute:
-                        entry_abs = os.path.abspath(orig_path_str)
+                        entry_abs = os.path.abspath(native_path_str)
                         entry_norm = os.path.normcase(entry_abs)
 
                         if entry_norm == old_norm:
@@ -191,7 +192,7 @@ class WorkspaceSynchronizer:
 
                     else:
                         # Relative path resolved from the workspace file directory
-                        entry_abs = os.path.abspath(os.path.join(ws_dir, orig_path_str))
+                        entry_abs = os.path.abspath(os.path.join(ws_dir, native_path_str))
                         entry_norm = os.path.normcase(entry_abs)
 
                         if entry_norm == old_norm:

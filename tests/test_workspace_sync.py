@@ -146,6 +146,36 @@ class TestWorkspaceSyncUnit(SmartDriveTestCase):
         self.assertEqual(updated_paths[0], new_p1.replace("\\", "/"))
         self.assertEqual(updated_paths[1], new_p2.replace("/", "\\"))
 
+    def test_sync_workspaces_relative_backslash_paths(self) -> None:
+        """Preserves backslash formatting for relative paths across all OS platforms."""
+        ws_file = self.dev_dir / "RelativeBackslash.code-workspace"
+        orig_data = {
+            "folders": [
+                {"path": ".\\plasmid_relay"},
+                {"path": "reflex_bench\\core"},
+            ]
+        }
+        ws_file.write_text(json.dumps(orig_data, indent=2), encoding="utf-8")
+
+        sync = WorkspaceSynchronizer(str(self.root))
+        moves = [
+            (
+                str(self.dev_dir / "plasmid_relay"),
+                str(self.dev_dir / "02_Wave_Incubator" / "plasmid_relay"),
+            ),
+            (
+                str(self.dev_dir / "reflex_bench"),
+                str(self.dev_dir / "01_Active_Focus" / "reflex_bench"),
+            ),
+        ]
+        res = sync.sync_workspaces(moves)
+        self.assertEqual(res["updated_count"], 1)
+
+        updated_data = json.loads(ws_file.read_text(encoding="utf-8"))
+        updated_paths = [f["path"] for f in updated_data["folders"]]
+        self.assertEqual(updated_paths[0], ".\\02_Wave_Incubator\\plasmid_relay")
+        self.assertEqual(updated_paths[1], "01_Active_Focus\\reflex_bench\\core")
+
     def test_no_changes_creates_no_backup(self) -> None:
         """When workspace does not reference moved folders, no write or backup occurs."""
         ws_file = self.dev_dir / "Unrelated.code-workspace"
