@@ -7,6 +7,17 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+## [1.4.5] - 2026-10-31
+
+Reliability and platform fixes across environment diagnosis, path auditing, MCP client registration, and Constellation setup.
+
+### Fixed
+
+- `doctor`: Skip source-tree `.egg-info` directories when looking up installed package distributions with `importlib.metadata`. A local `.egg-info` from an editable build previously shadowed the actual `.dist-info` in `site-packages` and caused a false-positive "another installed copy exists" warning. Also verify `PYTHONPATH` in `_is_this_install` when running from a source checkout.
+- `paths`: Ignore macOS cryptex ephemeral system entries in `PATH` when auditing broken paths with `paths --broken`.
+- `mcp`: Detect and update companion Google Antigravity `mcp_config.json` locations during MCP registration and doctor diagnostics.
+- `setup`: Ensure direct atomic synchronization of `~/.claude.json` during Constellation MCP registration to prevent race conditions or incomplete configuration updates.
+
 ## [1.4.4] - 2026-10-22
 
 Small fixes after 1.4.3. Every report now names a cluster that is not a whole number of KB in bytes (`checkup`,
@@ -494,7 +505,8 @@ in the same release.
   for `wow! a!b!c`, and "Goodbye!" and the Python-missing error printed without their `!`. Delayed expansion is now off;
   only the line of `SmartDrive.bat` that shows the drive root switches it on.
 
-[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.4...main
+[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.5...main
+[1.4.5]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.1...v1.4.2
