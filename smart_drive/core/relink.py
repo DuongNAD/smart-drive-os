@@ -2886,7 +2886,7 @@ def last_moves(root: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-UNDOABLE_TOOLS = frozenset({"organize", "classify"})
+UNDOABLE_TOOLS = frozenset({"organize", "classify", "projects", "stage"})
 
 
 def last_undoable_moves(root: str) -> Optional[Dict[str, Any]]:

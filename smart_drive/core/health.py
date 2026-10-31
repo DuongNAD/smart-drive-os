@@ -68,6 +68,8 @@ class SSDHealthReport:
     free_percent: float
     cluster_size_bytes: int
     warnings: List[str] = field(default_factory=list)
+    unorganized_dev_projects: int = 0
+    wip_overload: bool = False
 
     @property
     def used_bytes(self) -> int:
@@ -106,6 +108,8 @@ class SSDHealthReport:
             "free_percent": round(self.free_percent, 2),
             "cluster_size_bytes": self.cluster_size_bytes,
             "warnings": list(self.warnings),
+            "unorganized_dev_projects": self.unorganized_dev_projects,
+            "wip_overload": self.wip_overload,
         }
 
 
@@ -145,8 +149,69 @@ def parse_trim_output(raw_output: str) -> Tuple[Optional[bool], str]:
 
 
 # ==============================================================================
-# 3. WARNING EVALUATION ENGINE
+# 3. WARNING EVALUATION ENGINE & DEV PROJECTS INSPECTION
 # ==============================================================================
+
+DEV_ZONE_CONTAINER_NAMES: FrozenSet[str] = frozenset({
+    "01_active_focus",
+    "02_wave_incubator",
+    "03_mcp_agents",
+    "04_hackathons_pitch",
+    "99_archive_dormant",
+    "99_archive",
+})
+
+
+def inspect_dev_projects_health(root_path: Optional[str]) -> Tuple[int, bool]:
+    """Inspects 03_Development_Projects for unorganized loose projects and WIP overload.
+
+    Returns:
+        (unorganized_dev_projects, wip_overload)
+        - unorganized_dev_projects: count of projects directly at root of 03_Development_Projects
+        - wip_overload: True if count of projects in 01_Active_Focus > 3, False otherwise.
+    """
+    if not root_path:
+        return 0, False
+
+    try:
+        norm_root = os.path.abspath(root_path)
+    except Exception:
+        return 0, False
+
+    base = os.path.basename(os.path.normpath(norm_root))
+    if base == "03_Development_Projects":
+        dev_dir = norm_root
+    else:
+        cand = os.path.join(norm_root, "03_Development_Projects")
+        dev_dir = cand if os.path.isdir(cand) else None
+
+    if not dev_dir or not os.path.isdir(dev_dir):
+        return 0, False
+
+    # 1. Unorganized projects directly under 03_Development_Projects
+    unorganized_count = 0
+    try:
+        for entry in os.scandir(dev_dir):
+            if entry.is_dir() and not entry.name.startswith("."):
+                if entry.name.lower() not in DEV_ZONE_CONTAINER_NAMES:
+                    unorganized_count += 1
+    except (OSError, PermissionError):
+        pass
+
+    # 2. WIP overload in 01_Active_Focus (> 3 projects)
+    active_dir = os.path.join(dev_dir, "01_Active_Focus")
+    active_count = 0
+    if os.path.isdir(active_dir):
+        try:
+            for entry in os.scandir(active_dir):
+                if entry.is_dir() and not entry.name.startswith("."):
+                    active_count += 1
+        except (OSError, PermissionError):
+            pass
+
+    wip_overload = active_count > 3
+    return unorganized_count, wip_overload
+
 
 def evaluate_health_warnings(
     free_percent: float,
@@ -155,6 +220,8 @@ def evaluate_health_warnings(
     trim_enabled: Optional[bool],
     filesystem: str,
     cluster_size_bytes: int,
+    unorganized_dev_projects: int = 0,
+    wip_overload: bool = False,
 ) -> List[str]:
     """Evaluates storage capacity, TRIM status, and geometry to generate actionable warnings.
 
@@ -163,6 +230,8 @@ def evaluate_health_warnings(
     - Free Space < 15%: Warning that reserve is low and write amplification will increase
     - TRIM disabled (trim_enabled is False): Warning that endurance/performance will degrade
     - Large cluster size on exFAT (>= 64KB): Slack space advisory
+    - WIP overload in 01_Active_Focus (> 3 projects active)
+    - Unorganized development projects (> 5 loose projects in 03_Development_Projects)
     """
     warnings: List[str] = []
 
@@ -193,6 +262,20 @@ def evaluate_health_warnings(
             f"Storing numerous small files (e.g. build caches) will waste significant disk space in cluster slack."
         )
 
+    # 4. WIP overload notice
+    if wip_overload:
+        warnings.append(
+            "WARNING: WIP overload detected in 03_Development_Projects/01_Active_Focus (> 3 active projects). "
+            "Stage inactive projects via 'smart-drive stage <project> incubator --apply'."
+        )
+
+    # 5. Unorganized dev projects notice
+    if unorganized_dev_projects > 5:
+        warnings.append(
+            f"WARNING: Found {unorganized_dev_projects} unorganized development projects directly under "
+            "03_Development_Projects. Organize them into lifecycle zones via 'smart-drive projects --organize'."
+        )
+
     return warnings
 
 
@@ -212,6 +295,8 @@ def _empty_report(label: str, message: str, warning: str) -> SSDHealthReport:
         free_percent=0.0,
         cluster_size_bytes=0,
         warnings=[warning],
+        unorganized_dev_projects=0,
+        wip_overload=False,
     )
 
 
@@ -223,8 +308,10 @@ def _check_path_health(path: str) -> SSDHealthReport:
     except OSError as exc:
         return _empty_report(path, f"Cannot read capacity: {exc}", f"Failed to inspect '{path}': {exc}")
     free_percent = round(usage.free / usage.total * 100.0, 2) if usage.total else 0.0
+    mount_or_path = info.mount_point or path
+    unorg_dev, wip_ov = inspect_dev_projects_health(mount_or_path)
     return SSDHealthReport(
-        drive_letter=info.mount_point or path,
+        drive_letter=mount_or_path,
         filesystem=info.display_name,
         trim_enabled=None,
         trim_status_message="TRIM is not queried on this OS",
@@ -239,7 +326,11 @@ def _check_path_health(path: str) -> SSDHealthReport:
             trim_enabled=None,
             filesystem=info.display_name,
             cluster_size_bytes=info.block_size,
+            unorganized_dev_projects=unorg_dev,
+            wip_overload=wip_ov,
         ),
+        unorganized_dev_projects=unorg_dev,
+        wip_overload=wip_ov,
     )
 
 
@@ -357,7 +448,12 @@ def check_drive_health(
         trim_enabled = trim_info.get("enabled")
         trim_status_msg = trim_info.get("message", "TRIM query completed")
 
-    # Step 5: Evaluate warnings
+    # Step 5: Evaluate warnings & dev projects inspection
+    target_path = target_letter
+    if sys.platform == "win32" and len(target_letter) == 2 and target_letter[1] == ":":
+        target_path = f"{target_letter}\\"
+    unorg_dev, wip_ov = inspect_dev_projects_health(target_path)
+
     fs_str = info.filesystem.value if hasattr(info.filesystem, "value") else str(info.filesystem)
     free_pct = round(info.free_percent, 2)
     warnings = evaluate_health_warnings(
@@ -367,6 +463,8 @@ def check_drive_health(
         trim_enabled=trim_enabled,
         filesystem=fs_str,
         cluster_size_bytes=info.cluster_size_bytes,
+        unorganized_dev_projects=unorg_dev,
+        wip_overload=wip_ov,
     )
 
     return SSDHealthReport(
@@ -379,6 +477,8 @@ def check_drive_health(
         free_percent=free_pct,
         cluster_size_bytes=info.cluster_size_bytes,
         warnings=warnings,
+        unorganized_dev_projects=unorg_dev,
+        wip_overload=wip_ov,
     )
 
 
@@ -386,5 +486,6 @@ __all__ = [
     "SSDHealthReport",
     "check_drive_health",
     "evaluate_health_warnings",
+    "inspect_dev_projects_health",
     "parse_trim_output",
 ]

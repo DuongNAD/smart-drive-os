@@ -556,6 +556,11 @@ TOOLS: List[Dict[str, Any]] = [
                     "type": "boolean",
                     "description": "If true, also scans and purges Tier 1 safe system junk.",
                 },
+                "subzone_projects": {
+                    "type": "boolean",
+                    "description": "If true, also classifies and organizes projects inside 03_Development_Projects into lifecycle zones with full relinking.",
+                    "default": False,
+                },
             },
         },
     },
@@ -1404,6 +1409,7 @@ class SmartDriveMCPServer:
         plan = zoner.generate_plan()
         apply_mode = self._parse_bool(args.get("apply"), default=False)
         clean_mode = self._parse_bool(args.get("clean"), default=False)
+        subzone_projects = self._parse_bool(args.get("subzone_projects"), default=False)
         if clean_mode:
             try:
                 detector = JunkDetector(root, max_tier=JunkTier.TIER_1_SAFE, cluster_size=zoner.cluster_size)
@@ -1413,10 +1419,79 @@ class SmartDriveMCPServer:
                 purge_engine.purge_batch(junk_items, dry_run=not apply_mode)
             except Exception as e:
                 logger.warning("Error running clean in auto_organize: %s", e)
+
+        # Optional project sub-zoning in 03_Development_Projects
+        dev_planned_moves: List[Tuple[str, str, Any]] = []
+        dev_pinned: List[Dict[str, Any]] = []
+        if subzone_projects:
+            try:
+                from smart_drive.core.project_classifier import ProjectClassifier
+
+                dev_projects_dir = os.path.join(root, "03_Development_Projects")
+                if os.path.basename(os.path.normpath(root)) == "03_Development_Projects":
+                    dev_projects_dir = root
+
+                if os.path.isdir(dev_projects_dir):
+                    classifier = ProjectClassifier(root)
+                    proj_results = classifier.scan_all_projects(dev_projects_dir)
+                    for r in proj_results:
+                        if r.current_zone == r.suggested_zone:
+                            continue
+                        if r.protected_by_mcp or r.protected_by_system:
+                            dev_pinned.append({
+                                "project": r.project_name,
+                                "current_zone": r.current_zone,
+                                "suggested_zone": r.suggested_zone,
+                                "reason": r.reason,
+                            })
+                            continue
+                        target_subzone = os.path.join(dev_projects_dir, r.suggested_zone)
+                        dest_path = os.path.join(target_subzone, r.project_name)
+                        if os.path.normcase(os.path.abspath(r.project_path)) == os.path.normcase(os.path.abspath(dest_path)):
+                            continue
+                        dev_planned_moves.append((r.project_path, dest_path, r))
+            except Exception as exc:
+                logger.warning("Error planning project sub-zoning: %s", exc)
+
         if apply_mode:
             created_shields = ensure_anti_indexing_markers(root)
             res = zoner.apply_plan(plan)
             relinked = after_moves(root, [(m["src"], m["dest"]) for m in res["moved"]], "organize")
+
+            subzone_res = None
+            if subzone_projects:
+                from smart_drive.core.auto_zoner import _move
+                from smart_drive.core.workspace_sync import WorkspaceSynchronizer
+
+                moved_dev: List[Tuple[str, str]] = []
+                dev_errors: List[Dict[str, Any]] = []
+                for src, dest, _ in dev_planned_moves:
+                    try:
+                        os.makedirs(os.path.dirname(dest), exist_ok=True)
+                        _move(src, dest)
+                        moved_dev.append((src, dest))
+                    except Exception as err:
+                        dev_errors.append({"src": src, "dest": dest, "error": str(err)})
+
+                dev_relinked = None
+                dev_ws_sync = None
+                if moved_dev:
+                    dev_relinked = after_moves(root, moved_dev, tool="projects")
+                    try:
+                        dev_ws_sync = WorkspaceSynchronizer(root).sync_all(moved_dev)
+                    except Exception:
+                        dev_ws_sync = None
+
+                subzone_res = {
+                    "status": "applied",
+                    "moved_count": len(moved_dev),
+                    "moves": [{"src": s, "dest": d} for s, d in moved_dev],
+                    "errors": dev_errors,
+                    "pinned_projects": dev_pinned,
+                    "relink": dev_relinked.to_dict() if dev_relinked else None,
+                    "workspace_sync": dev_ws_sync,
+                }
+
             db_path = self.get_db_path()
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
             db = DatabaseManager(db_path)
@@ -1427,7 +1502,7 @@ class SmartDriveMCPServer:
             finally:
                 db.close()
 
-            return {
+            applied_dict: Dict[str, Any] = {
                 "status": "applied",
                 "cluster_size": zoner.cluster_size,
                 "cluster_size_source": zoner.cluster_size_source,
@@ -1437,8 +1512,12 @@ class SmartDriveMCPServer:
                 "shields_created": created_shields,
                 "index_sync": dataclasses.asdict(inc_stats),
             }
+            if subzone_projects and subzone_res is not None:
+                applied_dict["subzone_projects"] = subzone_res
+            return applied_dict
+
         preview = relink([(a.src_path, a.dest_path) for a in plan], root=root, dry_run=True) if plan else None
-        return {
+        dry_dict: Dict[str, Any] = {
             "status": "dry_run",
             "cluster_size": zoner.cluster_size,
             "cluster_size_source": zoner.cluster_size_source,
@@ -1447,6 +1526,27 @@ class SmartDriveMCPServer:
             "protected_by_system": zoner.protected_by_system,
             "relink_preview": preview.to_dict() if preview else None,
         }
+        if subzone_projects:
+            dev_move_pairs = [(src, dest) for src, dest, _ in dev_planned_moves]
+            dev_preview = relink(dev_move_pairs, root=root, dry_run=True) if dev_move_pairs else None
+            dry_dict["subzone_projects"] = {
+                "status": "dry_run",
+                "planned_count": len(dev_planned_moves),
+                "planned_moves": [
+                    {
+                        "project": r.project_name,
+                        "src": src,
+                        "dest": dest,
+                        "current_zone": r.current_zone,
+                        "target_zone": r.suggested_zone,
+                        "reason": r.reason,
+                    }
+                    for src, dest, r in dev_planned_moves
+                ],
+                "pinned_projects": dev_pinned,
+                "relink_preview": dev_preview.to_dict() if dev_preview else None,
+            }
+        return dry_dict
 
     def handle_ssd_gitignore(self, args: Dict[str, Any]) -> Dict[str, Any]:
         from smart_drive.core.gitignore import (

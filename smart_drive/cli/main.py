@@ -20,6 +20,8 @@ Provides subcommands:
 - repos: Duplicate git clones in one place, and sync state of portable-SSD mirrors (read-only).
 - relink: Rewrite project and MCP server paths remembered by coding agents after folders move.
 - doctor: Read-only, offline environment report for bug reports (--report prints Markdown to paste into an issue).
+- projects: Inspect and organize projects in 03_Development_Projects across lifecycle zones.
+- stage: Transition a project to a new lifecycle stage (active, incubator, mcp, hackathon, archive).
 """
 
 from __future__ import annotations
@@ -59,6 +61,7 @@ from smart_drive.cli.cmd_offload import cmd_offload
 from smart_drive.cli.cmd_organize import cmd_organize
 from smart_drive.cli.cmd_path_check import cmd_path_check
 from smart_drive.cli.cmd_paths import cmd_paths
+from smart_drive.cli.cmd_projects import cmd_projects, cmd_stage
 from smart_drive.cli.cmd_relink import cmd_relink
 from smart_drive.cli.cmd_repos import cmd_repos
 from smart_drive.cli.cmd_search import cmd_search
@@ -682,6 +685,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Verify Python CLI script paths on system PATH",
     )
 
+    # 26. projects
+    projects_help = (
+        "Inspect and organize development projects in 03_Development_Projects across lifecycle zones"
+    )
+    p_projects = subparsers.add_parser("projects", help=projects_help, description=projects_help)
+    p_projects.add_argument("--root", help="Root directory of the SSD")
+    p_projects.add_argument("--json", action="store_true", help="Output project report in JSON format")
+    p_projects.add_argument("--organize", action="store_true", help="Organize projects into canonical lifecycle zones")
+    p_projects.add_argument("--dry-run", action="store_true", help="Preview planned relocations without moving files (default)")
+    p_projects.add_argument("--apply", action="store_true", help="Execute project relocation and relink coding agents")
+    p_projects.add_argument(
+        "--wait",
+        nargs="?",
+        const=30.0,
+        default=None,
+        type=float,
+        metavar="MINUTES",
+        help="Wait up to MINUTES (default: 30) for open coding agents to close before relinking",
+    )
+
+    # 27. stage
+    stage_help = (
+        "Transition a project to a new lifecycle stage (active, incubator, mcp, hackathon, archive)"
+    )
+    p_stage = subparsers.add_parser("stage", help=stage_help, description=stage_help)
+    p_stage.add_argument("project_name", help="Name of the project directory to stage")
+    p_stage.add_argument("stage", help="Target lifecycle stage (active, incubator, mcp, hackathon, archive)")
+    p_stage.add_argument("--root", help="Root directory of the SSD")
+    p_stage.add_argument("--apply", action="store_true", help="Execute folder move to target lifecycle zone and relink agents")
+    p_stage.add_argument("--dry-run", action="store_true", help="Preview staging action without modifying any files")
+    p_stage.add_argument(
+        "--wait",
+        nargs="?",
+        const=30.0,
+        default=None,
+        type=float,
+        metavar="MINUTES",
+        help="Wait up to MINUTES (default: 30) for open coding agents to close before relinking",
+    )
+    p_stage.add_argument("--json", action="store_true", help="Output staging report in JSON format")
+
     return parser
 
 
@@ -725,6 +769,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         "self-path-check": cmd_path_check,
         "path-check": cmd_path_check,
         "self_path_check": cmd_path_check,
+        "projects": cmd_projects,
+        "stage": cmd_stage,
     }
 
     handler = dispatch.get(args.subcommand)

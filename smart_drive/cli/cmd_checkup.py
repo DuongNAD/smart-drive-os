@@ -24,7 +24,7 @@ from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.config import JunkTier, verify_anti_indexing_markers
 from smart_drive.core.duplicates import DuplicateDetector
 from smart_drive.core.fsinfo import cluster_size_text, detect_filesystem, slack_cluster
-from smart_drive.core.health import check_drive_health
+from smart_drive.core.health import check_drive_health, inspect_dev_projects_health
 from smart_drive.core.junk_detector import JunkDetector
 from smart_drive.core.offloader import get_scan_summary
 from smart_drive.core.purge_engine import list_quarantine_batches
@@ -149,6 +149,18 @@ def run_checkup(
 
     shields_map = verify_anti_indexing_markers(root_abs)
     shields_ok = all(shields_map.values())
+
+    # 3b. Development projects sub-zoning & WIP inspection
+    unorganized_dev_projects, wip_overload = inspect_dev_projects_health(root_abs)
+    active_focus_dir = os.path.join(root_abs, "03_Development_Projects", "01_Active_Focus")
+    active_dev_count = 0
+    if os.path.isdir(active_focus_dir):
+        try:
+            active_dev_count = sum(
+                1 for e in os.scandir(active_focus_dir) if e.is_dir() and not e.name.startswith(".")
+            )
+        except (OSError, PermissionError):
+            pass
 
     # 4. Storage auditor summary
     auditor = StorageAuditor(root_abs, cluster_size=real_cluster)
@@ -334,6 +346,37 @@ def run_checkup(
             "command": "smart-drive organize --apply",
         })
 
+    if wip_overload:
+        if resolved_lang == "vi":
+            title = f"Quá tải WIP trong 01_Active_Focus ({active_dev_count} dự án đang mở)"
+            desc = "Nhà phát triển độc lập chỉ nên mở tối đa 3 dự án active cùng lúc để duy trì tốc độ."
+        else:
+            title = f"WIP overload in 01_Active_Focus ({active_dev_count} active projects)"
+            desc = "Solo developers should focus on at most 3 active projects at a time to maintain velocity."
+        candidate_steps.append({
+            "priority": 88,
+            "category": "wip_overload",
+            "title": title,
+            "description": desc,
+            "command": "smart-drive stage <project> incubator --apply",
+        })
+
+    if unorganized_dev_projects > 5:
+        if resolved_lang == "vi":
+            title = f"Phân tầng {unorganized_dev_projects} dự án trong 03_Development_Projects"
+            desc = "Phân loại các dự án vào các phân khu vòng đời (Active Focus, Incubator, MCP, Hackathons, Archive)."
+        else:
+            title = f"Organize {unorganized_dev_projects} development projects into lifecycle zones"
+            desc = "Classify development projects into canonical lifecycle zones and relink IDEs."
+        candidate_steps.append({
+            "priority": 85,
+            "category": "unorganized_dev_projects",
+            "title": title,
+            "description": desc,
+            "command": "smart-drive projects --organize",
+            "apply_command": "smart-drive projects --organize --apply",
+        })
+
     if not shields_ok:
         if resolved_lang == "vi":
             title = "Khôi phục khiên chống lập chỉ mục nền (.metadata_never_index)"
@@ -486,6 +529,8 @@ def run_checkup(
             "trim_status_message": trim_msg,
             "anti_indexing_shields_ok": shields_ok,
             "anti_indexing_shields": shields_map,
+            "unorganized_dev_projects": unorganized_dev_projects,
+            "wip_overload": wip_overload,
         },
         "storage": {
             "total_files": audit_rep["total_files"],
@@ -526,6 +571,8 @@ def run_checkup(
             "reclaimable_bytes": c_reclaimable_bytes,
         },
         "duplicates": dup_summary,
+        "unorganized_dev_projects": unorganized_dev_projects,
+        "wip_overload": wip_overload,
         "next_steps": next_steps,
     }
 
