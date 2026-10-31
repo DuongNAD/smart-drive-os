@@ -679,3 +679,24 @@ registry, `state.vscdb`); CI ba hệ điều hành; ký số `.exe`.
 | A | PR sửa lỗi sau chạy thử đã vào `main` | A1 đạt trên máy thật, A2–A6 xong hoặc được người dùng hoãn |
 | B | Một số đo ở A5 vượt ngân sách | Số đo trở lại trong ngân sách, kết quả JSON không đổi |
 | C | Người dùng quyết định làm sản phẩm chạy nền hoặc có giao diện | Bản mới qua bộ test hộp đen và hai lần phát hành song song |
+
+
+### 6.5 Giai đoạn D (v1.5) — Quản trị Vòng đời & Phân tầng Dự án trong `03_Development_Projects`
+
+> Chi tiết thiết kế kiến trúc, cấu trúc dữ liệu và hợp đồng CLI/MCP xem thêm tại [`docs/PROJECT_ZONING_UPGRADE.md`](PROJECT_ZONING_UPGRADE.md).
+
+**Vấn đề thực tế (đã kiểm chứng trên ổ `D:\` ngày 2026-10-31):**
+- Ở phân vùng `02_Learning_Knowledge`, `AcademicClassifier` (`smart_drive/core/academic_classifier.py`) đã phân luồng chi tiết theo học kỳ, mã môn FPTU (`PRN211`, `DBI202`...) và bài lab.
+- Ngược lại, ở phân vùng `03_Development_Projects`, `AutoZoner.classify_item` (`smart_drive/core/auto_zoner.py:367-389`) hiện chỉ kiểm tra `PROJECT_INDICATORS` (`.git`, `package.json`, `pyproject.toml`...) rồi đưa **mọi dự án về cùng một cấp phẳng** `03_Development_Projects/<base_name>`.
+- Khi số lượng dự án vượt quá 10–15 thư mục (gồm dự án nghiên cứu nhiều đợt Wave 1–2–3, hệ thống MCP server đang chạy như `ai_agents/*_mcp`, bài thi Hackathon/Pitching đã kết thúc, và các repo ngủ đông), người dùng gặp hai vấn đề:
+  1. **Quá tải nhận thức (WIP Overload):** Mở `03_Development_Projects` thấy hàng chục thư mục ngang hàng, không phân biệt được dự án nào đang làm chính (`Active`), dự án nào đang ấp ủ chờ mô-đun (`Incubator`), dự án nào là hạ tầng MCP (`MCP/Core`), và dự án nào đã xong (`Archive`).
+  2. **Ngại tự dời tay vào thư mục con:** Nếu tự tạo thư mục con (`01_Active`, `02_Incubator`, `99_Archive`) rồi kéo thả bằng Explorer, toàn bộ đường dẫn tuyệt đối trong IDE (`state.vscdb`, `storage.json`, `recentProjects.xml`), coding agent (`~/.claude.json`, `mcp_config.json`), `.venv` và git worktree sẽ bị đứt — dù `SmartDrive-OS` vốn đã có sẵn bộ `relink` (`smart_drive/core/relink.py`) và nhật ký hoàn tác `moves.jsonl`.
+
+**Danh sách hạng mục nâng cấp (D1–D4):**
+- **D1. Bộ phân loại dự án `ProjectClassifier` (`smart_drive/core/project_classifier.py`):** Phân loại dự án trong `03_Development_Projects` thành 5 phân khu vòng đời (`01_Active_Focus`, `02_Wave_Incubator`, `03_MCP_Agents`, `04_Hackathons_Pitch`, `99_Archive_Dormant`); tôn trọng nhãn thủ công trong `.smart_drive_stage` / `.project.json`; bảo vệ cứng các MCP server đang được khai báo trong cấu hình agent (`protected_by_mcp`).
+- **D2. Lệnh CLI `smart-drive projects` và `smart-drive stage` (`smart_drive/cli/cmd_projects.py`):**
+  - `smart-drive projects`: bảng tổng quan chỉ đọc về trạng thái vòng đời, lần commit/sửa cuối, trạng thái Git (`uncommitted`/`unpushed`), dung lượng + slack, và các IDE/MCP đang tham chiếu.
+  - `smart-drive projects --organize [--apply] [--wait]`: quy hoạch tự động bên trong `03_Development_Projects` kèm `relink` toàn bộ IDE/agent/`.venv` và ghi nhật ký `.smart_drive/moves.jsonl` để `smart-drive undo --apply` hoàn tác 1 chạm.
+  - `smart-drive stage <project> <active|incubator|mcp|hackathon|archive> [--apply] [--wait]`: chuyển giai đoạn 1 chạm cho một dự án cụ thể, tự động dời thư mục + `relink` + ghi `.smart_drive_stage`.
+- **D3. Kiểm soát giới hạn WIP (`checkup`) & đồng bộ `.code-workspace` (`smart_drive/core/workspace_sync.py`):** Nhắc nhở trong `smart-drive checkup` khi số dự án `Active` vượt ngưỡng WIP (mặc định > 3) hoặc có nhiều dự án ngủ đông chưa lưu trữ; tự động cập nhật đường dẫn trong các file `.code-workspace` và `ROADMAP_KANBAN.md` khi dự án đổi giai đoạn.
+- **D4. Mở rộng MCP (`subzone_projects` trong `ssd_auto_organize`):** Thêm tùy chọn `subzone_projects: bool = False` (mặc định `False` để bảo toàn hợp đồng cũ) giúp coding agent có thể xem trước và thực thi quy hoạch vòng đời dự án trong `03_Development_Projects`.
