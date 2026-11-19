@@ -14,11 +14,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, FrozenSet, List, Optional
 
 from smart_drive.core.config import CLUSTER_SIZE_BYTES
 from smart_drive.core.exfat_compat import ExFatEngine
@@ -186,13 +187,93 @@ def check_exfat_safety(root: str) -> Dict[str, Any]:
     }
 
 
+_CACHE_TAG_FILE = "cachedir.tag"
+_CACHE_TAG_SIGNATURE = b"Signature: 8a477f597d28d172789f06886806bc55"
+
+_GIT_SCAN_IGNORED_DIRS: FrozenSet[str] = frozenset({
+    "node_modules", "vendor", ".venv", "venv", "target", "dist", "build",
+    "__pycache__", ".cache", ".ruff_cache", ".pytest_cache", ".mypy_cache",
+    ".tox", ".nox", ".next", ".nuxt", ".svelte-kit", ".turbo", ".gradle",
+    "site-packages", ".smart_drive", ".smart_drive_manager", ".trash",
+    ".trashes", "$recycle.bin", "system volume information", ".agents",
+})
+
+
+def _has_valid_cachedir_tag(dirpath: str) -> bool:
+    """Returns True if dirpath directly contains a valid CACHEDIR.TAG signature file."""
+    tag_path = os.path.join(dirpath, "CACHEDIR.TAG")
+    try:
+        with open(tag_path, "rb") as handle:
+            return handle.read(len(_CACHE_TAG_SIGNATURE)) == _CACHE_TAG_SIGNATURE
+    except OSError:
+        return False
+
+
+def check_disk_capacity(
+    root: str,
+    warn_free_percent: float = 15.0,
+    critical_free_percent: float = 5.0,
+) -> Dict[str, Any]:
+    """Checks free/used volume capacity at `root` using `shutil.disk_usage`."""
+    try:
+        usage = shutil.disk_usage(root)
+        total_bytes = int(usage.total)
+        free_bytes = int(usage.free)
+    except OSError:
+        return {
+            "status": "unknown",
+            "total_bytes": 0,
+            "used_bytes": 0,
+            "free_bytes": 0,
+            "free_percent": 0.0,
+            "used_percent": 0.0,
+            "is_critical": False,
+            "warning": None,
+        }
+
+    used_bytes = max(0, total_bytes - free_bytes)
+    free_percent = round((free_bytes / total_bytes) * 100.0, 2) if total_bytes > 0 else 0.0
+    used_percent = round(100.0 - free_percent, 2) if total_bytes > 0 else 0.0
+
+    is_critical = total_bytes > 0 and free_percent < critical_free_percent
+    is_warning = total_bytes > 0 and not is_critical and free_percent < warn_free_percent
+
+    if total_bytes <= 0:
+        status = "unknown"
+        warning: Optional[str] = None
+    elif is_critical:
+        status = "critical"
+        warning = (
+            f"CRITICAL: Disk free space is critically low ({free_bytes / (1024 ** 3):.1f} GB / "
+            f"{total_bytes / (1024 ** 3):.1f} GB, {free_percent:.1f}% free). "
+            "Run 'smart-drive bloat' and 'smart-drive clean --tier 2' to reclaim space."
+        )
+    elif is_warning:
+        status = "warning"
+        warning = (
+            f"WARNING: Disk free space is low ({free_bytes / (1024 ** 3):.1f} GB / "
+            f"{total_bytes / (1024 ** 3):.1f} GB, {free_percent:.1f}% free). "
+            "Consider running 'smart-drive bloat' or 'smart-drive clean --tier 2'."
+        )
+    else:
+        status = "ok"
+        warning = None
+
+    return {
+        "status": status,
+        "total_bytes": total_bytes,
+        "used_bytes": used_bytes,
+        "free_bytes": free_bytes,
+        "free_percent": free_percent,
+        "used_percent": used_percent,
+        "is_critical": is_critical,
+        "warning": warning,
+    }
+
+
 def check_git_repositories(root: str, max_depth: int = 4) -> Dict[str, Any]:
     """Inspects git repositories across the drive up to max_depth."""
     repos_found: List[str] = []
-    ignored_dir_names = {
-        "node_modules", "vendor", ".venv", ".cache", ".ruff_cache",
-        ".pytest_cache", ".Trash", "$RECYCLE.BIN", ".agents",
-    }
 
     try:
         for dirpath, dirnames, filenames in os.walk(root):
@@ -201,12 +282,17 @@ def check_git_repositories(root: str, max_depth: int = 4) -> Dict[str, Any]:
 
             dirnames[:] = [
                 d for d in dirnames
-                if d not in ignored_dir_names and not d.startswith("._")
+                if d.lower() not in _GIT_SCAN_IGNORED_DIRS and not d.startswith("._")
             ]
 
-            if ".git" in dirnames:
+            has_dot_git = ".git" in dirnames or ".git" in filenames
+            if has_dot_git:
                 repos_found.append(dirpath)
-                dirnames.remove(".git")
+                if ".git" in dirnames:
+                    dirnames.remove(".git")
+            elif any(f.lower() == _CACHE_TAG_FILE for f in filenames) and _has_valid_cachedir_tag(dirpath):
+                dirnames.clear()
+                continue
 
             if depth >= max_depth:
                 dirnames.clear()
@@ -331,15 +417,21 @@ class SentinelEngine:
             })
 
         shields_info = check_and_heal_shields(target_root, auto_heal=auto_heal)
+        capacity_info = check_disk_capacity(target_root)
         db_info = check_search_database(target_root)
         safety_info = check_exfat_safety(target_root)
         git_info = check_git_repositories(target_root)
+
+        warnings: List[str] = []
+        if capacity_info.get("warning"):
+            warnings.append(str(capacity_info["warning"]))
 
         is_healthy = (
             is_mounted
             and shields_info["all_healthy"]
             and safety_info["is_safe"]
             and (not db_info["exists"] or db_info["healthy"])
+            and not bool(capacity_info.get("is_critical", False))
         )
 
         status_str = "healthy" if is_healthy else "unhealthy"
@@ -355,6 +447,8 @@ class SentinelEngine:
             "status": status_str,
             "is_healthy": is_healthy,
             "drive_root": target_root,
+            "capacity": capacity_info,
+            "warnings": warnings,
             "mount": {
                 "is_mounted": True,
                 "filesystem": fs_info.display_name,
@@ -378,6 +472,7 @@ class SentinelEngine:
 
 __all__ = [
     "check_and_heal_shields",
+    "check_disk_capacity",
     "check_search_database",
     "check_exfat_safety",
     "check_git_repositories",

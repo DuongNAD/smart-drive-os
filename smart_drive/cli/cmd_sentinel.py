@@ -41,6 +41,26 @@ def format_ansi_report(report: dict, color: bool = True) -> str:
     if mount.get("slack_model_note"):
         lines.append(f"    - Note: {mount['slack_model_note']}")
 
+    cap = report.get("capacity") or {}
+    if cap.get("total_bytes", 0) > 0:
+        cap_status = cap.get("status", "ok")
+        if cap_status == "critical":
+            cap_badge = f"{C_RED}✗{C_RESET}"
+        elif cap_status == "warning":
+            cap_badge = f"{C_YELLOW}!{C_RESET}"
+        else:
+            cap_badge = f"{C_GREEN}✓{C_RESET}"
+        free_gb = cap.get("free_bytes", 0) / (1024 ** 3)
+        total_gb = cap.get("total_bytes", 0) / (1024 ** 3)
+        used_pct = cap.get("used_percent", 0.0)
+        free_pct = cap.get("free_percent", 0.0)
+        lines.append(
+            f"[{cap_badge}] Disk Capacity: {free_gb:.1f} GB free / {total_gb:.1f} GB total "
+            f"({free_pct:.1f}% free, {used_pct:.1f}% used)"
+        )
+        if cap.get("warning"):
+            lines.append(f"    - {cap['warning']}")
+
     shields_info = report.get("anti_indexing_shields", {})
     if shields_info.get("all_healthy"):
         heal_msg = " (auto-healed)" if shields_info.get("auto_healed") else ""

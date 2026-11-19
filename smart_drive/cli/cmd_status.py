@@ -17,7 +17,7 @@ from smart_drive.core.config import (
 from smart_drive.core.fsinfo import detect_filesystem, slack_model_note
 from smart_drive.core.learning_units import get_learning_summary
 from smart_drive.core.root import DriveRootNotFound, resolve_drive_root
-from smart_drive.core.sentinel import get_default_db_path
+from smart_drive.core.sentinel import check_disk_capacity, get_default_db_path
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -51,6 +51,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     fs_info = detect_filesystem(root)
     fs_note = slack_model_note(fs_info, CLUSTER_SIZE_BYTES)
+    capacity_info = check_disk_capacity(root)
     learning_info = get_learning_summary(root, db_path=db_path)
 
     if getattr(args, "json", False):
@@ -60,6 +61,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             "cluster_size_bytes": CLUSTER_SIZE_BYTES,
             "cluster_size_kb": CLUSTER_SIZE_BYTES // 1024,
             "filesystem": fs_info.to_dict(),
+            "capacity": capacity_info,
             "slack_model_note": fs_note,
             "database": {
                 "path": db_path,
@@ -77,6 +79,16 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"SmartDrive-OS Status: Ready (Root: {root})")
     print(f"Cluster Size: {CLUSTER_SIZE_BYTES:,} bytes ({CLUSTER_SIZE_BYTES // 1024} KB)")
     print(f"Filesystem: {fs_info.summary()}")
+    if capacity_info.get("total_bytes", 0) > 0:
+        free_gb = capacity_info["free_bytes"] / (1024 ** 3)
+        total_gb = capacity_info["total_bytes"] / (1024 ** 3)
+        print(
+            f"Disk Capacity: {free_gb:.1f} GB free / {total_gb:.1f} GB total "
+            f"({capacity_info['free_percent']:.1f}% free, {capacity_info['used_percent']:.1f}% used) "
+            f"[{capacity_info['status'].upper()}]"
+        )
+        if capacity_info.get("warning"):
+            print(f"  ! {capacity_info['warning']}")
     if fs_note:
         print(f"Note: {fs_note}")
     print(f"Search Database: {'Ready (' + str(db_size // 1024) + ' KB)' if db_exists else 'Not found'}")

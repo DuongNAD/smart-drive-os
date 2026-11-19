@@ -13,10 +13,15 @@ Tests Tiers 1, 2, 3:
 from __future__ import annotations
 
 import importlib.util
+import io
+import json
 import os
 import sys
 import unittest
+from collections import namedtuple
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 # Add project root to sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +33,7 @@ try:
         HealthReport,
         SentinelEngine,
         check_and_heal_shields,
+        check_disk_capacity,
         check_exfat_safety,
         check_git_repositories,
         check_search_database,
@@ -160,6 +166,67 @@ class TestSentinelEngineExecution(SmartDriveTestCase):
 
         self.assertFalse(report.get("is_healthy", True))
         self.assertFalse(report.get("is_mounted", True))
+
+
+class TestSentinelCapacityAndGitPruning(SmartDriveTestCase):
+    """Capacity alerts and build-tree pruning during git discovery."""
+
+    _Usage = namedtuple("usage", ["total", "used", "free"])
+
+    def test_capacity_thresholds_and_sentinel_health(self) -> None:
+        mock_root = self.create_mock_drive()
+        engine = SentinelEngine(str(mock_root))
+
+        total = 1000 * (1024 ** 3)
+        # Critical (<5% free) marks Sentinel unhealthy
+        with patch("smart_drive.core.sentinel.shutil.disk_usage", return_value=self._Usage(total, total - 30 * (1024 ** 3), 30 * (1024 ** 3))):
+            rep = engine.run_health_check()
+            self.assertEqual(rep["capacity"]["status"], "critical")
+            self.assertFalse(rep.is_healthy)
+            self.assertEqual(rep.status, "unhealthy")
+            self.assertTrue(rep["warnings"])
+
+        # Warning (5%-15% free) adds warning while remaining healthy
+        with patch("smart_drive.core.sentinel.shutil.disk_usage", return_value=self._Usage(total, total - 100 * (1024 ** 3), 100 * (1024 ** 3))):
+            rep = engine.run_health_check()
+            self.assertEqual(rep["capacity"]["status"], "warning")
+            self.assertTrue(rep.is_healthy)
+            self.assertTrue(rep["warnings"])
+
+        # Healthy (>=15% free) leaves warnings clear
+        with patch("smart_drive.core.sentinel.shutil.disk_usage", return_value=self._Usage(total, total - 400 * (1024 ** 3), 400 * (1024 ** 3))):
+            rep = engine.run_health_check()
+            self.assertEqual(rep["capacity"]["status"], "ok")
+            self.assertTrue(rep.is_healthy)
+            self.assertEqual(rep["warnings"], [])
+
+    def test_check_git_repositories_prunes_build_and_cachedir_tag_trees(self) -> None:
+        root = self.test_dir / "git_prune_drive"
+        (root / "real_repo" / ".git").mkdir(parents=True)
+        (root / "target" / "nested_repo" / ".git").mkdir(parents=True)
+        (root / "venv" / "pkg_repo" / ".git").mkdir(parents=True)
+        (root / "build" / "sub_repo" / ".git").mkdir(parents=True)
+        (root / "custom_target").mkdir(parents=True)
+        (root / "custom_target" / "CACHEDIR.TAG").write_bytes(
+            b"Signature: 8a477f597d28d172789f06886806bc55\n"
+        )
+        (root / "custom_target" / "sub_repo" / ".git").mkdir(parents=True)
+
+        res = check_git_repositories(str(root), max_depth=4)
+        paths = [d["path"] for d in res["details"]]
+        self.assertEqual(paths, ["real_repo"])
+
+    def test_status_json_includes_capacity(self) -> None:
+        from smart_drive.cli.main import main as cli_main
+
+        mock_root = self.create_mock_drive()
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = cli_main(["status", "--root", str(mock_root), "--json"])
+        self.assertEqual(rc, 0)
+        data = json.loads(out.getvalue())
+        self.assertIn("capacity", data)
+        self.assertGreater(data["capacity"]["total_bytes"], 0)
 
 
 if __name__ == "__main__":
