@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from smart_drive.core.exfat_shield import (
     SHIELD_ENV_SPECS,
+    _Win32UserEnvStore,
     apply_exfat_shield,
     audit_exfat_shield,
     recommend_cache_base,
@@ -223,6 +224,38 @@ class TestExfatShield(unittest.TestCase):
             hf_res = offload_cache("huggingface", target_exfat, dry_run=False, force=False)
             self.assertEqual(hf_res["status"], "success")
             self.assertEqual(hf_res["warnings"], [])
+
+    def test_win32_user_env_store_reads_value_count_not_subkey_count(self) -> None:
+        """QueryInfoKey returns (subkey_count, value_count, mtime); subkey_count is typically 0."""
+        import sys
+        import types
+
+        class FakeKey:
+            def __enter__(self) -> "FakeKey":
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+        fake_winreg = types.SimpleNamespace(
+            HKEY_CURRENT_USER="HKCU",
+            KEY_READ=1,
+            OpenKey=lambda hive, subkey, res, sam: FakeKey(),
+            QueryInfoKey=lambda key: (0, 2, 12345),
+            EnumValue=lambda key, idx: [
+                ("CARGO_TARGET_DIR", r"E:\.smart_drive_caches\cargo-target", 1),
+                ("RUFF_CACHE_DIR", r"E:\.smart_drive_caches\ruff-cache", 1),
+            ][idx],
+        )
+        with patch.object(sys, "platform", "win32"), patch.dict(sys.modules, {"winreg": fake_winreg}):
+            got = _Win32UserEnvStore().get_all()
+        self.assertEqual(
+            got,
+            {
+                "CARGO_TARGET_DIR": r"E:\.smart_drive_caches\cargo-target",
+                "RUFF_CACHE_DIR": r"E:\.smart_drive_caches\ruff-cache",
+            },
+        )
 
 
 if __name__ == "__main__":

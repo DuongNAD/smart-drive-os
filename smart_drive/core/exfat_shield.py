@@ -123,8 +123,9 @@ class _Win32UserEnvStore:
         out: Dict[str, str] = {}
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self._SUBKEY, 0, winreg.KEY_READ) as key:
-                count, _, _ = winreg.QueryInfoKey(key)
-                for idx in range(count):
+                # QueryInfoKey returns (subkey_count, value_count, last_modified_ns).
+                _, value_count, _ = winreg.QueryInfoKey(key)
+                for idx in range(value_count):
                     try:
                         name, val, _ = winreg.EnumValue(key, idx)
                         if isinstance(name, str) and isinstance(val, str):
