@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,7 +21,25 @@ from smart_drive.core.system_refs import SystemRefIndex
 
 
 class TestProcessExecutableHelpers(unittest.TestCase):
-    def test_executables_under_path_is_exact_and_case_insensitive(self) -> None:
+    def test_executables_under_path_matches_exact_directory_boundary(self) -> None:
+        base = Path(tempfile.mkdtemp(prefix="sd_proc_helper_")).resolve()
+        self.addCleanup(shutil.rmtree, base, ignore_errors=True)
+        target = base / "App" / "Target"
+        inside = target / "Release" / "server"
+        sibling = base / "App" / "Target2" / "Release" / "other"
+        unrelated = base / "System" / "cmd"
+        running = [str(inside), str(sibling), str(unrelated)]
+
+        self.assertEqual(executables_under_path(str(target), running_exes=running), [str(inside)])
+        self.assertEqual(executables_under_path(str(inside), running_exes=running), [str(inside)])
+        # Sibling directory sharing a string prefix must NOT match
+        self.assertEqual(executables_under_path(str(target), running_exes=[str(sibling)]), [])
+
+    @unittest.skipUnless(
+        sys.platform == "win32",
+        "Windows drive-letter paths and case-insensitivity apply on Windows only",
+    )
+    def test_executables_under_path_windows_long_prefix_and_case_insensitive(self) -> None:
         running = [
             r"\\?\D:\App\Target\Release\server.exe",
             r"D:\App\Target2\Release\other.exe",
