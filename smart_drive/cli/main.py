@@ -48,6 +48,7 @@ if sys.platform == "win32":
 
 from smart_drive.cli.cmd_audit import cmd_audit
 from smart_drive.cli.cmd_backup import cmd_backup
+from smart_drive.cli.cmd_bloat import cmd_bloat
 from smart_drive.cli.cmd_checkup import cmd_checkup
 from smart_drive.cli.cmd_classify import cmd_classify
 from smart_drive.cli.cmd_clean import cmd_clean
@@ -726,6 +727,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_stage.add_argument("--json", action="store_true", help="Output staging report in JSON format")
 
+    # 28. bloat
+    p_bloat = subparsers.add_parser(
+        "bloat",
+        help="Scan dev-artifact bloat (Cargo target, node_modules, vendor, .venv, web caches, toolchain docs) and reclaim safely",
+    )
+    p_bloat.add_argument("--root", help="Root directory of the SSD")
+    p_bloat.add_argument(
+        "--kind",
+        default=None,
+        help="Comma-separated kinds filter (rust-target,node-modules,composer-vendor,python-venv,web-build,toolchain-docs)",
+    )
+    p_bloat.add_argument(
+        "--min-mb",
+        type=float,
+        default=0.0,
+        help="Minimum physical allocated size in MB (default: 0)",
+    )
+    p_bloat.add_argument("--clean", action="store_true", help="Preview (or with --apply delete) reclaimable bloat items")
+    p_bloat.add_argument("--apply", action="store_true", help="With --clean: permanently delete reclaimable items")
+    p_bloat.add_argument("--json", action="store_true", help="Output bloat report in JSON format")
+
     return parser
 
 
@@ -771,6 +793,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "self_path_check": cmd_path_check,
         "projects": cmd_projects,
         "stage": cmd_stage,
+        "bloat": cmd_bloat,
     }
 
     handler = dispatch.get(args.subcommand)
