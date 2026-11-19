@@ -22,6 +22,8 @@ Provides subcommands:
 - doctor: Read-only, offline environment report for bug reports (--report prints Markdown to paste into an issue).
 - projects: Inspect and organize projects in 03_Development_Projects across lifecycle zones.
 - stage: Transition a project to a new lifecycle stage (active, incubator, mcp, hackathon, archive).
+- bloat: Scan dev-artifact bloat (Cargo target, node_modules, vendor, .venv, web caches, toolchain docs) and reclaim safely.
+- shield: Audit and configure persistent NTFS build-cache redirection to prevent large-cluster exFAT bloat.
 """
 
 from __future__ import annotations

@@ -7,6 +7,19 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `smart-drive bloat`: Dev-artifact bloat scanner and safe dry-run/apply reclaimer for `rust-target`, `node-modules`, `composer-vendor`, `python-venv`, `web-build`, and `toolchain-docs`, computing real-cluster physical allocated size (including directory cluster overhead) while automatically preserving release binaries, git-tracked trees, registered MCP server runtimes, and live running executables.
+- `smart-drive shield`: Large-cluster exFAT build-cache shield that audits and persistently redirects user build/package cache environment variables (`CARGO_TARGET_DIR`, `RUFF_CACHE_DIR`, `MYPY_CACHE_DIR`, `UV_CACHE_DIR`, `PIP_CACHE_DIR`, `npm_config_cache`, `PNPM_STORE_DIR`) to a 4 KB NTFS/local cache folder (with `NotContentIndexed` attribute and reversible `shield_manifest.json` via `--revert`), dry-run by default.
+- `offload`: Refuses offloading high-micro-file developer caches (`uv`, `pip`, `cargo`, `npm`, `pnpm`, `yarn`, `ruff`, `mypy`, `playwright`, `huggingface`) onto large-cluster (>= 64 KB) exFAT targets unless `--force` is passed.
+- `sentinel` / `status`: Reports volume disk capacity (total, used, free, utilization percent) with warning (>= 80% used) and critical (>= 90% used) health alerts, reports exFAT shield protection status in `sentinel`, and prunes heavy build/dependency subtrees during git repository scanning.
+- `audit` / `ssd_audit` / `checkup`: Accounts for directory cluster allocation overhead (`dir_count`, `dir_allocated_bytes`), exposes an additive `dev_bloat` summary (top dev-artifact bloat items), and surfaces exFAT build-cache shield status and next-step guidance in `checkup`.
+
+### Fixed
+
+- `clean`: Protects registered MCP server package paths (reading agent MCP configs) and currently running executables/working directories from accidental cleanup, reporting skipped items with explicit protection reasons.
+- `shield`: Fixed Win32 `_Win32UserEnvStore.get_all()` unpacking `winreg.QueryInfoKey()` to read `value_count` (index 1) rather than `subkey_count` (index 0).
+
 ## [1.4.5] - 2026-10-31
 
 Reliability and platform fixes across environment diagnosis, path auditing, MCP client registration, and Constellation setup.
