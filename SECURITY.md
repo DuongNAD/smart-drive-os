@@ -24,8 +24,8 @@ Fixes are released for the latest minor version only.
 
 | Version | Supported |
 |---|---|
-| 1.4.x | ✅ |
-| older than 1.4 | ❌ (upgrade: `pipx upgrade smart-drive-os` or `pip install -U smart-drive-os`) |
+| 1.5.x | ✅ |
+| older than 1.5 | ❌ (upgrade: `pipx upgrade smart-drive-os` or `pip install -U smart-drive-os`) |
 
 ## What counts as a security issue
 

@@ -7,8 +7,13 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-19
+
+Large-cluster exFAT bloat prevention and reclamation (`bloat`, `shield`), project lifecycle sub-zoning (`projects`, `stage`), cleaner protections for running executables and registered MCP servers, volume capacity monitoring, and directory-cluster overhead accounting.
+
 ### Added
 
+- `smart-drive projects` / `smart-drive stage`: Phase D project sub-zoning and lifecycle management (`ProjectClassifier` for 5 lifecycle zones in `03_Development_Projects`, `WorkspaceSynchronizer` for `.code-workspace` & `ROADMAP_KANBAN.md` with `.bak.smart-drive` backups, optional `subzone_projects` parameter in `ssd_auto_organize`, WIP overload and unorganized project warnings in `checkup`, and `undo` support for `projects`/`stage` moves).
 - `smart-drive bloat`: Dev-artifact bloat scanner and safe dry-run/apply reclaimer for `rust-target`, `node-modules`, `composer-vendor`, `python-venv`, `web-build`, and `toolchain-docs`, computing real-cluster physical allocated size (including directory cluster overhead) while automatically preserving release binaries, git-tracked trees, registered MCP server runtimes, and live running executables.
 - `smart-drive shield`: Large-cluster exFAT build-cache shield that audits and persistently redirects user build/package cache environment variables (`CARGO_TARGET_DIR`, `RUFF_CACHE_DIR`, `MYPY_CACHE_DIR`, `UV_CACHE_DIR`, `PIP_CACHE_DIR`, `npm_config_cache`, `PNPM_STORE_DIR`) to a 4 KB NTFS/local cache folder (with `NotContentIndexed` attribute and reversible `shield_manifest.json` via `--revert`), dry-run by default.
 - `offload`: Refuses offloading high-micro-file developer caches (`uv`, `pip`, `cargo`, `npm`, `pnpm`, `yarn`, `ruff`, `mypy`, `playwright`, `huggingface`) onto large-cluster (>= 64 KB) exFAT targets unless `--force` is passed.
@@ -19,6 +24,7 @@ All notable changes to SmartDrive-OS are written down here. The format follows
 
 - `clean`: Protects registered MCP server package paths (reading agent MCP configs) and currently running executables/working directories from accidental cleanup, reporting skipped items with explicit protection reasons.
 - `shield`: Fixed Win32 `_Win32UserEnvStore.get_all()` unpacking `winreg.QueryInfoKey()` to read `value_count` (index 1) rather than `subkey_count` (index 0).
+- `workspace`: Normalized path separators before resolving paths in `WorkspaceSynchronizer`.
 
 ## [1.4.5] - 2026-10-31
 
@@ -518,7 +524,8 @@ in the same release.
   for `wow! a!b!c`, and "Goodbye!" and the Python-missing error printed without their `!`. Delayed expansion is now off;
   only the line of `SmartDrive.bat` that shows the drive root switches it on.
 
-[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.5...main
+[Unreleased]: https://github.com/DuongNAD/smart-drive-os/compare/v1.5.0...main
+[1.5.0]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.5...v1.5.0
 [1.4.5]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.4...v1.4.5
 [1.4.4]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.3...v1.4.4
 [1.4.3]: https://github.com/DuongNAD/smart-drive-os/compare/v1.4.2...v1.4.3
