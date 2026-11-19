@@ -38,6 +38,7 @@ from smart_drive.core.config import (
 )
 from smart_drive.core.git_locks import NO_FSMONITOR
 from smart_drive.core.learning_units import find_unit_root
+from smart_drive.core.processes import executables_under_path, running_executable_paths
 from smart_drive.core.scanner import FastDirectoryScanner, ScanEntry, ScanOptions, measure_tree
 from smart_drive.core.system_refs import (
     SystemRef,
@@ -49,6 +50,8 @@ from smart_drive.core.system_refs import (
 # Why an entry that looks like junk was kept (JunkDetector.kept maps each reason to how many entries it kept)
 KEPT_DEPENDENCY_TREE = "dependency_tree"  # inside node_modules, site-packages...: installed packages, not leftovers
 KEPT_SYSTEM_REFERENCED = "system_referenced"  # in a folder Windows or an installed application depends on
+KEPT_MCP_SERVER = "mcp_server"  # entrypoint/bundle referenced by a registered MCP server config
+KEPT_ACTIVE_PROCESS = "active_process"  # holds a currently executing process binary
 KEPT_NOT_PROJECT_ROOT = "not_project_root"  # a build/dist/.cache folder with no project manifest beside it
 KEPT_GIT_TRACKED = "git_tracked"  # git tracks files in it: it is part of a repository, not an untracked leftover
 KEPT_GIT_UNVERIFIED = "git_unverified"  # inside a git work tree that git could not be asked about
@@ -65,6 +68,126 @@ _GIT_ENV_UNSET = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"
 def _path_parts(path: str) -> Tuple[str, ...]:
     """A path as lowercase components, whichever separator it uses; how SystemRefIndex compares paths."""
     return tuple(part.lower() for part in path.strip().strip('"').replace("/", "\\").split("\\") if part and part != ".")
+
+
+def _norm_abs_case(path: str) -> str:
+    cleaned = str(path).strip().strip('"')
+    if cleaned.startswith("\\\\?\\") and not cleaned.startswith("\\\\?\\UNC\\"):
+        cleaned = cleaned[4:]
+    try:
+        resolved = os.path.realpath(os.path.abspath(cleaned))
+    except (OSError, ValueError):
+        resolved = os.path.abspath(cleaned)
+    return os.path.normcase(resolved).rstrip("\\/")
+
+
+def _is_under_root(candidate_norm: str, root_norm: str) -> bool:
+    if not candidate_norm or not root_norm or candidate_norm == root_norm:
+        return False
+    prefix = root_norm if root_norm.endswith(os.sep) else root_norm + os.sep
+    return candidate_norm.startswith(prefix)
+
+
+def _extract_mcp_paths_from_dict(data: Any, out: Set[str]) -> None:
+    if not isinstance(data, dict):
+        return
+    server_maps: List[Any] = [data.get("mcpServers"), data.get("servers")]
+    nested_mcp = data.get("mcp")
+    if isinstance(nested_mcp, dict):
+        server_maps.append(nested_mcp.get("servers"))
+
+    for srv_map in server_maps:
+        if not isinstance(srv_map, dict):
+            continue
+        for srv_conf in srv_map.values():
+            if not isinstance(srv_conf, dict):
+                continue
+            cwd_raw = srv_conf.get("cwd")
+            cwd_abs: Optional[str] = None
+            if isinstance(cwd_raw, str) and cwd_raw.strip() and os.path.isabs(cwd_raw.strip()):
+                cwd_abs = os.path.abspath(cwd_raw.strip())
+
+            extracted_specific = False
+            cmd_raw = srv_conf.get("command")
+            if isinstance(cmd_raw, str) and cmd_raw.strip():
+                cmd_str = cmd_raw.strip()
+                if os.path.isabs(cmd_str):
+                    out.add(os.path.abspath(cmd_str))
+                    extracted_specific = True
+                elif cwd_abs and ("/" in cmd_str or "\\" in cmd_str):
+                    out.add(os.path.abspath(os.path.join(cwd_abs, cmd_str)))
+                    extracted_specific = True
+
+            args_raw = srv_conf.get("args")
+            if isinstance(args_raw, list):
+                for arg in args_raw:
+                    if not isinstance(arg, str):
+                        continue
+                    a_str = arg.strip()
+                    if not a_str or a_str.startswith("-"):
+                        continue
+                    has_sep = "/" in a_str or "\\" in a_str
+                    has_ext = os.path.splitext(a_str)[1].lower() in {
+                        ".js", ".mjs", ".cjs", ".ts", ".py", ".exe", ".bat", ".cmd", ".ps1", ".sh"
+                    }
+                    if os.path.isabs(a_str):
+                        out.add(os.path.abspath(a_str))
+                        extracted_specific = True
+                    elif cwd_abs and (has_sep or has_ext):
+                        out.add(os.path.abspath(os.path.join(cwd_abs, a_str)))
+                        extracted_specific = True
+
+            path_raw = srv_conf.get("path")
+            if isinstance(path_raw, str) and path_raw.strip() and os.path.isabs(path_raw.strip()):
+                out.add(os.path.abspath(path_raw.strip()))
+                extracted_specific = True
+
+            if not extracted_specific and cwd_abs:
+                out.add(cwd_abs)
+
+
+def collect_registered_mcp_paths(drive_root: str) -> Set[str]:
+    """Lazily collects registered MCP server entrypoints/folders scoped strictly inside ``drive_root``."""
+    import json
+
+    drive_norm = _norm_abs_case(drive_root)
+    config_paths: List[str] = []
+    seen_cfgs: Set[str] = set()
+
+    root_mcp = os.path.join(drive_root, ".mcp.json")
+    if os.path.isfile(root_mcp):
+        norm_cfg = _norm_abs_case(root_mcp)
+        seen_cfgs.add(norm_cfg)
+        config_paths.append(root_mcp)
+
+    try:
+        from smart_drive.core.relink import agent_files
+
+        for af in agent_files(root=drive_root):
+            p_str = str(af.path)
+            if p_str.lower().endswith(".json") and os.path.isfile(p_str):
+                norm_cfg = _norm_abs_case(p_str)
+                if norm_cfg not in seen_cfgs:
+                    seen_cfgs.add(norm_cfg)
+                    config_paths.append(p_str)
+    except Exception:
+        pass
+
+    raw_paths: Set[str] = set()
+    for cfg in config_paths:
+        try:
+            with open(cfg, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            _extract_mcp_paths_from_dict(data, raw_paths)
+        except Exception:
+            continue
+
+    scoped: Set[str] = set()
+    for raw in raw_paths:
+        norm = _norm_abs_case(raw)
+        if _is_under_root(norm, drive_norm):
+            scoped.add(norm)
+    return scoped
 
 
 def _holds_git_repository(folder: str) -> bool:
@@ -223,12 +346,18 @@ class JunkDetector:
         max_tier: JunkTier = JunkTier.TIER_3_SENSITIVE,
         cluster_size: int = CLUSTER_SIZE_BYTES,
         system_refs: Optional[SystemRefIndex] = None,
+        mcp_paths: Optional[Iterable[str]] = None,
+        running_exes: Optional[Iterable[str]] = None,
     ) -> None:
         self.drive_root = os.path.realpath(os.path.abspath(drive_root))
         self.max_tier = max_tier
         self.cluster_size = cluster_size
         self._name_matchers, self._always_check = self._compile_name_matchers(max_tier)
         self._system_refs: Optional[SystemRefIndex] = system_refs
+        self._mcp_paths_input: Optional[Iterable[str]] = mcp_paths
+        self._running_exes_input: Optional[Iterable[str]] = running_exes
+        self._mcp_paths_resolved: Optional[Set[str]] = None
+        self._running_exes_resolved: Optional[Set[str]] = None
         # The drive root and everything above it is never judged: a drive root on PATH would protect the whole drive
         self._root_key = os.path.normcase(self.drive_root)
         self._below_root_prefix = self._root_key if self._root_key.endswith(os.sep) else self._root_key + os.sep
@@ -440,6 +569,48 @@ class JunkDetector:
             self.protected_by_system.append(entry)
         return entry
 
+    def _get_mcp_paths(self) -> Set[str]:
+        if self._mcp_paths_resolved is None:
+            if self._mcp_paths_input is None:
+                self._mcp_paths_resolved = collect_registered_mcp_paths(self.drive_root)
+            else:
+                drive_norm = _norm_abs_case(self.drive_root)
+                self._mcp_paths_resolved = {
+                    _norm_abs_case(p)
+                    for p in self._mcp_paths_input
+                    if _is_under_root(_norm_abs_case(p), drive_norm)
+                }
+        return self._mcp_paths_resolved
+
+    def _get_running_exes(self) -> Set[str]:
+        if self._running_exes_resolved is None:
+            if self._running_exes_input is None:
+                self._running_exes_resolved = running_executable_paths()
+            else:
+                self._running_exes_resolved = {str(p) for p in self._running_exes_input if p}
+        return self._running_exes_resolved
+
+    def _is_protected_by_mcp(self, path: str, is_dir: bool) -> bool:
+        mcp_paths = self._get_mcp_paths()
+        if not mcp_paths:
+            return False
+        norm_path = _norm_abs_case(path)
+        prefix = norm_path + os.sep
+        for m in mcp_paths:
+            if m == norm_path:
+                return True
+            if is_dir and m.startswith(prefix):
+                return True
+            if norm_path.startswith(m + os.sep):
+                return True
+        return False
+
+    def _has_active_process(self, path: str) -> bool:
+        exes = self._get_running_exes()
+        if not exes:
+            return False
+        return bool(executables_under_path(path, exes))
+
     def _keep_reason(self, path: str, tier: JunkTier, is_dir: bool, rule: Optional[JunkRule] = None) -> Optional[str]:
         """Why an entry whose name matches ``rule`` (of ``tier``) is still not junk, or None when it is."""
         if tier >= JunkTier.TIER_2_DEV_CACHE and is_inside_dependency_tree(path):
@@ -449,6 +620,11 @@ class JunkDetector:
             folder, refs = dependency
             self._protected_entry(folder, refs)["kept_items"] += 1
             return KEPT_SYSTEM_REFERENCED
+        if tier >= JunkTier.TIER_2_DEV_CACHE:
+            if self._is_protected_by_mcp(path, is_dir):
+                return KEPT_MCP_SERVER
+            if self._has_active_process(path):
+                return KEPT_ACTIVE_PROCESS
         if rule is not None and rule.project_root_only and not self._has_project_manifest(os.path.dirname(path)):
             return KEPT_NOT_PROJECT_ROOT
         if tier >= JunkTier.TIER_2_DEV_CACHE:
@@ -657,8 +833,12 @@ class JunkDetector:
                     if item.is_dir:
                         # Purged as a whole and sized below: its files need not be listed one by one first.
                         scanner.skip_descent()
-                elif entry.is_dir and self._entry_kept_reason == KEPT_SYSTEM_REFERENCED:
-                    # Everything inside belongs to the same dependency, so none of it can be junk either.
+                elif entry.is_dir and self._entry_kept_reason in {
+                    KEPT_SYSTEM_REFERENCED,
+                    KEPT_MCP_SERVER,
+                    KEPT_ACTIVE_PROCESS,
+                }:
+                    # Everything inside belongs to the same protected target, so none of it may be purged.
                     scanner.skip_descent()
         else:
             stack = [scan_root]
@@ -734,6 +914,14 @@ class JunkDetector:
 
 
 __all__ = [
+    "KEPT_ACTIVE_PROCESS",
+    "KEPT_DEPENDENCY_TREE",
+    "KEPT_GIT_TRACKED",
+    "KEPT_GIT_UNVERIFIED",
+    "KEPT_MCP_SERVER",
+    "KEPT_NOT_PROJECT_ROOT",
+    "KEPT_SYSTEM_REFERENCED",
     "JunkItem",
     "JunkDetector",
+    "collect_registered_mcp_paths",
 ]

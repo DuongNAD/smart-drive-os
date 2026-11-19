@@ -11,9 +11,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from smart_drive.core.config import CLUSTER_SIZE_BYTES, JunkTier
 from smart_drive.core.fsinfo import detect_filesystem, slack_cluster
 from smart_drive.core.junk_detector import (
+    KEPT_ACTIVE_PROCESS,
     KEPT_DEPENDENCY_TREE,
     KEPT_GIT_TRACKED,
     KEPT_GIT_UNVERIFIED,
+    KEPT_MCP_SERVER,
     KEPT_NOT_PROJECT_ROOT,
     KEPT_SYSTEM_REFERENCED,
     JunkDetector,
@@ -102,6 +104,8 @@ def _tally_space(results: List[Dict[str, Any]]) -> Tuple[int, int, int, int]:
 KEPT_LABELS: Dict[str, str] = {
     KEPT_DEPENDENCY_TREE: "inside dependency folders (node_modules, site-packages...): installed packages, not leftovers",
     KEPT_SYSTEM_REFERENCED: "inside folders that Windows or an installed app depends on",
+    KEPT_MCP_SERVER: "referenced by a registered MCP server configuration",
+    KEPT_ACTIVE_PROCESS: "contains an executable currently running on this machine",
     KEPT_NOT_PROJECT_ROOT: "build/dist/.cache folders with no project file (package.json, pyproject.toml...) beside them",
     KEPT_GIT_TRACKED: "tracked by git",
     KEPT_GIT_UNVERIFIED: "inside a git repository that git could not be asked about",
