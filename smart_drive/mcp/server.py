@@ -1102,6 +1102,9 @@ class SmartDriveMCPServer:
 
         logical_bytes = report.get("total_logical_bytes", 0)
         slack_bytes = report.get("total_slack_bytes", 0)
+        dir_alloc_bytes = report.get("directory_allocated_bytes", 0)
+        est_total_alloc_bytes = report.get("estimated_total_allocated_bytes", report.get("total_allocated_bytes", 0))
+        dev_bloat_summary = report.get("dev_bloat_summary") or {}
         micro_hotspots = report.get("micro_file_hotspots", [])
         total_rec_slack = report.get("total_recoverable_slack", 0)
         learning_summary = report.get("learning_summary") or report.get("learning") or {}
@@ -1116,6 +1119,9 @@ class SmartDriveMCPServer:
             "total_directories": report.get("total_directories", 0),
             "total_logical_bytes": logical_bytes,
             "total_allocated_bytes": report.get("total_allocated_bytes", 0),
+            "directory_allocated_bytes": dir_alloc_bytes,
+            "estimated_total_allocated_bytes": est_total_alloc_bytes,
+            "dev_bloat_summary": dev_bloat_summary,
             "total_slack_bytes": slack_bytes,
             "total_slack_percentage": report.get("total_slack_percentage", 0.0),
             "taxonomies": report.get("taxonomies", {}),
@@ -1130,6 +1136,7 @@ class SmartDriveMCPServer:
             result["compact"] = True
             result["total_logical_formatted"] = format_bytes(logical_bytes)
             result["total_slack_formatted"] = format_bytes(slack_bytes)
+            result["directory_allocated_formatted"] = format_bytes(dir_alloc_bytes)
             result["total_recoverable_slack_formatted"] = format_bytes(total_rec_slack)
 
         return result

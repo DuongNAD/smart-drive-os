@@ -436,6 +436,80 @@ AuditReport = AuditResult
 # 5. STORAGE AUDITOR ENGINE
 # ==============================================================================
 
+
+def _classify_dev_bloat_node(node: DirectoryNode) -> Optional[str]:
+    low = node.name.lower()
+    if low == "node_modules":
+        return "node-modules"
+    if low == "vendor":
+        return "composer-vendor"
+    if low in (".venv", "venv"):
+        return "python-venv"
+    if low in (".next", ".nuxt", ".svelte-kit", ".turbo", ".parcel-cache"):
+        return "web-build"
+    if low in (".ruff_cache", ".mypy_cache", ".pytest_cache"):
+        return "tool-cache"
+    if low == "target":
+        return "rust-target"
+    if (low.startswith("target-") or low.endswith("-target")) and node.recursive_files >= 50:
+        return "rust-target"
+    return None
+
+
+def _summarize_dev_bloat(root_node: DirectoryNode, cluster_size: int) -> Dict[str, Any]:
+    """Pure in-memory rollup of dev-artifact bloat across `DirectoryNode` (zero extra disk I/O)."""
+    matched_items: List[Dict[str, Any]] = []
+    by_kind: Dict[str, Dict[str, int]] = {}
+    stack: List[DirectoryNode] = list(root_node.subdirs.values())
+
+    while stack:
+        node = stack.pop()
+        kind = _classify_dev_bloat_node(node)
+        if kind is not None:
+            dir_alloc = (node.recursive_dirs + 1) * cluster_size
+            phys = node.recursive_allocated + dir_alloc
+            matched_items.append({
+                "kind": kind,
+                "rel_path": node.rel_path or node.name,
+                "files": node.recursive_files,
+                "nominal_bytes": node.recursive_bytes,
+                "allocated_bytes": node.recursive_allocated,
+                "dir_allocated_bytes": dir_alloc,
+                "physical_bytes": phys,
+            })
+            bucket = by_kind.setdefault(
+                kind,
+                {
+                    "count": 0,
+                    "files": 0,
+                    "nominal_bytes": 0,
+                    "allocated_bytes": 0,
+                    "dir_allocated_bytes": 0,
+                    "physical_bytes": 0,
+                },
+            )
+            bucket["count"] += 1
+            bucket["files"] += node.recursive_files
+            bucket["nominal_bytes"] += node.recursive_bytes
+            bucket["allocated_bytes"] += node.recursive_allocated
+            bucket["dir_allocated_bytes"] += dir_alloc
+            bucket["physical_bytes"] += phys
+            continue
+        stack.extend(node.subdirs.values())
+
+    matched_items.sort(key=lambda item: item["physical_bytes"], reverse=True)
+    return {
+        "total_dirs_matched": len(matched_items),
+        "total_files": sum(i["files"] for i in matched_items),
+        "total_nominal_bytes": sum(i["nominal_bytes"] for i in matched_items),
+        "total_allocated_bytes": sum(i["allocated_bytes"] for i in matched_items),
+        "total_dir_allocated_bytes": sum(i["dir_allocated_bytes"] for i in matched_items),
+        "total_physical_bytes": sum(i["physical_bytes"] for i in matched_items),
+        "by_kind": by_kind,
+        "top_items": matched_items[:5],
+    }
+
+
 class StorageAuditor:
     """Comprehensive storage auditor and cluster slack calculator.
 
@@ -725,6 +799,9 @@ class StorageAuditor:
 
         total_recoverable_slack = sum(h["slack_bytes"] for h in micro_file_hotspots)
         learning_summary = get_learning_summary(self.root_path)
+        directory_allocated_bytes = total_directories * self.cluster_size
+        estimated_total_allocated_bytes = total_allocated_bytes + directory_allocated_bytes
+        dev_bloat_summary = _summarize_dev_bloat(root_node, self.cluster_size)
 
         report_data: Dict[str, Any] = {
             "root_path": self.root_path,
@@ -743,17 +820,23 @@ class StorageAuditor:
                 "total_directories": total_directories,
                 "total_logical_bytes": total_nominal_bytes,
                 "total_allocated_bytes": total_allocated_bytes,
+                "directory_allocated_bytes": directory_allocated_bytes,
+                "estimated_total_allocated_bytes": estimated_total_allocated_bytes,
                 "total_slack_bytes": total_slack_bytes,
                 "total_slack_percentage": round(total_slack_percentage, 2),
                 "total_slack_ratio": round(total_slack_ratio, 4),
                 "total_clusters": total_clusters,
                 "empty_files_count": empty_files_count,
+                "dev_bloat_summary": dev_bloat_summary,
             },
             "total_files": total_files,
             "total_directories": total_directories,
             "total_logical_bytes": total_nominal_bytes,
             "total_bytes": total_nominal_bytes,
             "total_allocated_bytes": total_allocated_bytes,
+            "directory_allocated_bytes": directory_allocated_bytes,
+            "estimated_total_allocated_bytes": estimated_total_allocated_bytes,
+            "dev_bloat_summary": dev_bloat_summary,
             "total_slack_bytes": total_slack_bytes,
             "total_slack_percentage": round(total_slack_percentage, 2),
             "taxonomies": {name: stat.to_dict() for name, stat in taxonomies.items()},
@@ -809,6 +892,12 @@ class StorageAuditor:
         buf.write(f"  Wasted Cluster Slack:    {format_bytes(summary.get('total_slack_bytes', 0))} ({format_percentage(summary.get('total_slack_percentage', 0.0))} waste)\n")
         buf.write(f"  Zero-Byte Files:         {format_count(summary.get('empty_files_count', 0))} (0 clusters allocated)\n")
         buf.write(f"  Allocated Clusters:      {format_count(summary.get('total_clusters', 0))} ({cluster_text} each)\n")
+        dir_alloc = int(summary.get("directory_allocated_bytes", 0) or 0)
+        if dir_alloc > 0:
+            buf.write(
+                f"  Directory Cluster Cost:  {format_bytes(dir_alloc)} "
+                f"({format_count(summary.get('total_directories', 0))} dirs x {cluster_text})\n"
+            )
         skipped_links = (data.get("scan_stats") or {}).get("symlinks_skipped", 0)
         if skipped_links:
             buf.write(f"  Symlinks Skipped:        {format_count(skipped_links)} (links are never followed or counted)\n")

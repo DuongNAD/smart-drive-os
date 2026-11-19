@@ -23,6 +23,7 @@ from smart_drive.core.auditor import StorageAuditor
 from smart_drive.core.auto_zoner import AutoZoner
 from smart_drive.core.config import JunkTier, verify_anti_indexing_markers
 from smart_drive.core.duplicates import DuplicateDetector
+from smart_drive.core.exfat_shield import audit_exfat_shield
 from smart_drive.core.fsinfo import cluster_size_text, detect_filesystem, slack_cluster
 from smart_drive.core.health import check_drive_health, inspect_dev_projects_health
 from smart_drive.core.junk_detector import JunkDetector
@@ -162,9 +163,13 @@ def run_checkup(
         except (OSError, PermissionError):
             pass
 
-    # 4. Storage auditor summary
+    # 4. Storage auditor summary & in-memory dev-bloat rollup (zero extra disk I/O)
     auditor = StorageAuditor(root_abs, cluster_size=real_cluster)
     audit_rep = auditor.run_audit()
+    dev_bloat = audit_rep.get("dev_bloat_summary") or {}
+
+    # 4b. exFAT build-cache shield audit (read-only env + volume check)
+    shield_rep = audit_exfat_shield(root_abs, fs_info=fs_info, home=home)
 
     # 5. What Windows and installed applications depend on: read once, then shared by the junk scan and AutoZoner
     ref_index = SystemRefIndex.collect(home=home, reader=reader, shortcut_roots=[root_abs])
@@ -329,6 +334,56 @@ def run_checkup(
             "description": desc,
             "command": "smart-drive clean --tier 2",
             "apply_command": "smart-drive clean --tier 2 --apply",
+        })
+
+    if shield_rep.get("needs_attention"):
+        shield_s = shield_rep.get("summary") or {}
+        rec_base = (shield_rep.get("recommended_cache_base") or {}).get("path", "")
+        if resolved_lang == "vi":
+            title = (
+                f"Chống phình ổ exFAT: {shield_s.get('unprotected_count', 0)} biến cache chưa chuyển sang NTFS"
+            )
+            desc = (
+                f"Chuyển CARGO_TARGET_DIR, RUFF_CACHE_DIR, UV/PIP/npm cache sang NTFS ({rec_base}) "
+                "để triệt tiêu lãng phí cluster slack 512 KB từ gốc."
+            )
+        else:
+            title = (
+                f"Prevent exFAT cache bloat: {shield_s.get('unprotected_count', 0)} toolchain cache var(s) unset"
+            )
+            desc = (
+                f"Redirect CARGO_TARGET_DIR, RUFF_CACHE_DIR, UV/PIP/npm caches to NTFS ({rec_base}) "
+                "to eliminate large-cluster exFAT slack waste at the source."
+            )
+        candidate_steps.append({
+            "priority": 92,
+            "category": "exfat_shield",
+            "title": title,
+            "description": desc,
+            "command": "smart-drive shield",
+            "apply_command": "smart-drive shield --apply",
+        })
+
+    dev_bloat_phys = int(dev_bloat.get("total_physical_bytes", 0) or 0)
+    dev_bloat_dirs = int(dev_bloat.get("total_dirs_matched", 0) or 0)
+    if dev_bloat_phys >= 500 * (1024 ** 2):
+        if resolved_lang == "vi":
+            title = f"Kiểm tra {dev_bloat_dirs} thư mục build/dependency phình dung lượng ({_format_bytes(dev_bloat_phys)})"
+            desc = (
+                "Quét target/, node_modules/, vendor/, .venv/ (tính cả cluster thư mục) và dọn an toàn các mục không bị khóa."
+            )
+        else:
+            title = f"Inspect {dev_bloat_dirs} bulky build/dependency tree(s) ({_format_bytes(dev_bloat_phys)})"
+            desc = (
+                "Scan Cargo target/, node_modules/, vendor/, and .venv/ (including dir clusters) and purge safe untracked items."
+            )
+        candidate_steps.append({
+            "priority": 95 if dev_bloat_phys >= 5 * (1024 ** 3) else 82,
+            "category": "dev_bloat",
+            "title": title,
+            "description": desc,
+            "command": "smart-drive bloat",
+            "apply_command": "smart-drive bloat --clean --apply",
         })
 
     if unorganized_count > 0:
@@ -537,9 +592,12 @@ def run_checkup(
             "total_dirs": audit_rep["total_directories"],
             "nominal_bytes": audit_rep["total_logical_bytes"],
             "allocated_bytes": audit_rep["total_allocated_bytes"],
+            "directory_allocated_bytes": int(audit_rep.get("directory_allocated_bytes", 0) or 0),
             "slack_bytes": audit_rep["total_slack_bytes"],
             "slack_percentage": round(float(audit_rep["total_slack_percentage"]), 2),
         },
+        "dev_bloat": dev_bloat,
+        "exfat_shield": shield_rep,
         "junk": {
             "tier_1_2_count": junk_count,
             "reclaimable_bytes": junk_bytes,
@@ -632,6 +690,21 @@ def _print_checkup(report: Dict[str, Any]) -> None:
             f"(cả máy: {broken['total_broken']}; {broken['fixable_count']} mục sửa tự động được)"
         )
         print(f"  - Được bảo vệ (OS):   {len(prot)} thư mục")
+        if (report.get("dev_bloat") or {}).get("total_dirs_matched", 0) > 0:
+            db_info = report["dev_bloat"]
+            print(
+                f"  - Dev bloat (ước):    {db_info['total_dirs_matched']} thư mục "
+                f"({_format_bytes(int(db_info.get('total_physical_bytes', 0)))})"
+            )
+        sh_info = report.get("exfat_shield") or {}
+        if sh_info.get("is_large_cluster"):
+            sh_sum = sh_info.get("summary") or {}
+            sh_label = (
+                f"CHƯA BẢO VỆ ({sh_sum.get('unprotected_count', 0)} biến chưa chuyển NTFS)"
+                if sh_info.get("needs_attention")
+                else f"ĐÃ BẢO VỆ ({sh_sum.get('protected_count', 0)} biến trỏ NTFS)"
+            )
+            print(f"  - Khiên cache exFAT:  {sh_label}")
         print("\n3 việc nên làm tiếp theo:")
     else:
         print(f"  - Filesystem:         {fs['display_name']} ({cluster_size_text(fs['cluster_size_bytes'])} cluster)")
@@ -653,6 +726,21 @@ def _print_checkup(report: Dict[str, Any]) -> None:
             f"({broken['total_broken']} on the whole computer; {broken['fixable_count']} auto-fixable)"
         )
         print(f"  - System-Protected:   {len(prot)} folder(s)")
+        if (report.get("dev_bloat") or {}).get("total_dirs_matched", 0) > 0:
+            db_info = report["dev_bloat"]
+            print(
+                f"  - Dev Bloat (est.):   {db_info['total_dirs_matched']} folder(s) "
+                f"({_format_bytes(int(db_info.get('total_physical_bytes', 0)))})"
+            )
+        sh_info = report.get("exfat_shield") or {}
+        if sh_info.get("is_large_cluster"):
+            sh_sum = sh_info.get("summary") or {}
+            sh_label = (
+                f"UNPROTECTED ({sh_sum.get('unprotected_count', 0)} unset var(s))"
+                if sh_info.get("needs_attention")
+                else f"PROTECTED ({sh_sum.get('protected_count', 0)} var(s) on NTFS)"
+            )
+            print(f"  - exFAT Cache Shield: {sh_label}")
         print("\nTop 3 recommended next steps:")
 
     for idx, step in enumerate(report["next_steps"], 1):
