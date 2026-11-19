@@ -68,6 +68,7 @@ from smart_drive.cli.cmd_repos import cmd_repos
 from smart_drive.cli.cmd_search import cmd_search
 from smart_drive.cli.cmd_sentinel import cmd_sentinel
 from smart_drive.cli.cmd_setup import cmd_setup
+from smart_drive.cli.cmd_shield import cmd_shield
 from smart_drive.cli.cmd_snapshot import cmd_snapshot
 from smart_drive.cli.cmd_status import cmd_status
 from smart_drive.cli.cmd_undo import cmd_undo
@@ -748,6 +749,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_bloat.add_argument("--apply", action="store_true", help="With --clean: permanently delete reclaimable items")
     p_bloat.add_argument("--json", action="store_true", help="Output bloat report in JSON format")
 
+    # 29. shield
+    p_shield = subparsers.add_parser(
+        "shield",
+        help="Audit and configure persistent NTFS build-cache redirection to prevent large-cluster exFAT bloat",
+    )
+    p_shield.add_argument("--root", help="Root directory of the SSD")
+    p_shield.add_argument("--cache-dir", default=None, help="Target NTFS/local directory for redirected dev caches")
+    p_shield.add_argument("--apply", action="store_true", help="Apply persistent user environment redirection (dry-run by default)")
+    p_shield.add_argument("--revert", action="store_true", help="Restore environment variables from shield_manifest.json")
+    p_shield.add_argument("--force", action="store_true", help="Also override env vars currently pointing to exFAT")
+    p_shield.add_argument("--json", action="store_true", help="Output shield report in JSON format")
+
     return parser
 
 
@@ -794,6 +807,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "projects": cmd_projects,
         "stage": cmd_stage,
         "bloat": cmd_bloat,
+        "shield": cmd_shield,
     }
 
     handler = dispatch.get(args.subcommand)

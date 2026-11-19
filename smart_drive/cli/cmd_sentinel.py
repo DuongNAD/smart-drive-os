@@ -112,6 +112,19 @@ def format_ansi_report(report: dict, color: bool = True) -> str:
     else:
         lines.append(f"[{C_GREEN}✓{C_RESET}] Git Repositories: 0 checked in root scope")
 
+    exfat_shield = report.get("exfat_shield") or {}
+    if exfat_shield.get("is_large_cluster"):
+        if exfat_shield.get("needs_attention"):
+            lines.append(
+                f"[{C_YELLOW}!{C_RESET}] exFAT Cache Shield: {exfat_shield.get('unprotected_count', 0)} unset, "
+                f"{exfat_shield.get('risk_on_exfat_count', 0)} on exFAT (run 'smart-drive shield --apply')"
+            )
+        else:
+            lines.append(
+                f"[{C_GREEN}✓{C_RESET}] exFAT Cache Shield: Protected "
+                f"({exfat_shield.get('protected_count', 0)} toolchain var(s) redirected)"
+            )
+
     lines.append(f"{C_CYAN}======================================================================{C_RESET}")
     is_healthy = report.get("is_healthy", False)
     if is_healthy:

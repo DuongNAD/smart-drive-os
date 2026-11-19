@@ -136,6 +136,8 @@ CLI_PREVIEWS: List[CliPreview] = [
     ("bloat", lambda d: ["bloat", "--root", str(d)], (0,)),
     ("bloat --json", lambda d: ["bloat", "--root", str(d), "--json"], (0,)),
     ("bloat --clean", lambda d: ["bloat", "--root", str(d), "--clean"], (0,)),
+    ("shield", lambda d: ["shield", "--root", str(d)], (0,)),
+    ("shield --json", lambda d: ["shield", "--root", str(d), "--json"], (0,)),
 ]
 
 # Every MCP tool that previews, as an agent calls it. `ssd_update_index` is not one: it builds the index.

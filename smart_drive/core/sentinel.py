@@ -23,6 +23,7 @@ from typing import Any, Dict, FrozenSet, List, Optional
 
 from smart_drive.core.config import CLUSTER_SIZE_BYTES
 from smart_drive.core.exfat_compat import ExFatEngine
+from smart_drive.core.exfat_shield import audit_exfat_shield
 from smart_drive.core.fsinfo import detect_filesystem, slack_model_note
 from smart_drive.core.git_locks import NO_FSMONITOR
 from smart_drive.core.learning_units import get_learning_summary
@@ -441,6 +442,23 @@ class SentinelEngine:
         # What the volume really is (this used to be the literal "exFAT" whatever the drive was).
         fs_info = detect_filesystem(target_root)
 
+        shield_audit = audit_exfat_shield(target_root, fs_info=fs_info)
+        shield_s = shield_audit["summary"]
+        shield_summary = {
+            "is_large_cluster": shield_audit["is_large_cluster"],
+            "needs_attention": shield_s["needs_attention"],
+            "protected_count": shield_s["protected_count"],
+            "unprotected_count": shield_s["unprotected_count"],
+            "risk_on_exfat_count": shield_s["risk_on_exfat_count"],
+            "recommended_cache_base": shield_audit["recommended_cache_base"]["path"],
+        }
+        if shield_s["needs_attention"]:
+            warnings.append(
+                f"ADVISORY: {shield_s['unprotected_count']} build-cache env var(s) unset and "
+                f"{shield_s['risk_on_exfat_count']} pointing to large-cluster exFAT; "
+                f"run 'smart-drive shield --apply' to route caches to {shield_audit['recommended_cache_base']['path']}."
+            )
+
         learning_info = get_learning_summary(target_root, db_path=db_info.get("path"))
 
         report_data = {
@@ -449,6 +467,7 @@ class SentinelEngine:
             "drive_root": target_root,
             "capacity": capacity_info,
             "warnings": warnings,
+            "exfat_shield": shield_summary,
             "mount": {
                 "is_mounted": True,
                 "filesystem": fs_info.display_name,

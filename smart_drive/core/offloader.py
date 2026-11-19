@@ -24,6 +24,7 @@ import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from smart_drive.core import processes as _processes
+from smart_drive.core.fsinfo import cluster_size_text, detect_filesystem
 from smart_drive.core.junction import (
     create_directory_junction,
     get_junction_target,
@@ -46,6 +47,7 @@ class CacheDefinition:
     description: str
     env_vars: List[str]
     relative_paths: List[Tuple[str, str]]  # list of (base_key, relative_subpath)
+    micro_file_heavy: bool = False
 
 
 @dataclass
@@ -136,6 +138,7 @@ CACHE_CATALOG: Dict[str, CacheDefinition] = {
             ("local_app_data", "pip"),
             ("user_cache", "pip"),  # macOS ~/Library/Caches/pip, Linux ~/.cache/pip
         ],
+        micro_file_heavy=True,
     ),
     "npm": CacheDefinition(
         name="npm",
@@ -148,6 +151,7 @@ CACHE_CATALOG: Dict[str, CacheDefinition] = {
             ("local_app_data", "npm-cache"),
             ("user_home", ".npm"),  # macOS and Linux
         ],
+        micro_file_heavy=True,
     ),
     "uv": CacheDefinition(
         name="uv",
@@ -160,6 +164,7 @@ CACHE_CATALOG: Dict[str, CacheDefinition] = {
             ("local_app_data", "uv"),
             ("user_cache", "uv"),  # macOS ~/Library/Caches/uv, Linux ~/.cache/uv
         ],
+        micro_file_heavy=True,
     ),
     "conda": CacheDefinition(
         name="conda",
@@ -172,6 +177,7 @@ CACHE_CATALOG: Dict[str, CacheDefinition] = {
             ("user_home", "miniconda3/pkgs"),
             ("user_home", "anaconda3/pkgs"),
         ],
+        micro_file_heavy=True,
     ),
     "gradle": CacheDefinition(
         name="gradle",
@@ -183,6 +189,7 @@ CACHE_CATALOG: Dict[str, CacheDefinition] = {
             ("user_home", ".gradle/caches"),
             ("user_home", ".gradle"),
         ],
+        micro_file_heavy=True,
     ),
     "docker_wsl": CacheDefinition(
         name="docker_wsl",
@@ -203,6 +210,7 @@ CACHE_CATALOG: Dict[str, CacheDefinition] = {
         relative_paths=[
             ("user_home", ".cargo/registry/cache"),
         ],
+        micro_file_heavy=True,
     ),
 }
 
@@ -803,6 +811,21 @@ def offload_cache(
                 "Use 'smart-drive offload --revert' first if you wish to relocate it."
             )
 
+    # 3a. Guard micro-file caches from large-cluster exFAT drives
+    exfat_warning: Optional[str] = None
+    if defn.micro_file_heavy:
+        fs_probe_path = str(offload_root if offload_root.exists() else offload_root.parent)
+        target_fs = detect_filesystem(fs_probe_path)
+        if target_fs.is_exfat and target_fs.block_size >= 65_536:
+            exfat_warning = (
+                f"exFAT cluster slack guard: '{clean_name}' stores numerous small files that waste "
+                f"severe space on {target_fs.display_name} ({cluster_size_text(target_fs.block_size)} clusters). "
+                "Keep micro-file caches on an NTFS drive or configure 'smart-drive shield --apply' instead, "
+                "or pass --force to override."
+            )
+            if not dry_run and not force:
+                raise ValueError(exfat_warning)
+
     # 3b. Check running processes associated with this cache
     blocking_procs, warnings, process_list_readable = _check_cache_processes(
         clean_name,
@@ -812,6 +835,8 @@ def offload_cache(
         force=force,
         wait_minutes=wait_minutes,
     )
+    if exfat_warning:
+        warnings.append(exfat_warning)
 
     # 4. Measure size and file count
     size_bytes, file_count = calculate_dir_size(source_path)
@@ -836,6 +861,8 @@ def offload_cache(
     if dry_run:
         dry_msg = f"[DRY-RUN] Would safely offload {format_bytes(size_bytes)} ({file_count} files) to '{target_cache_dir}' and create a {LINK_NAME}."
         dry_msg += _dry_run_block_note(clean_name, blocking_procs, process_list_readable)
+        if exfat_warning and not force:
+            dry_msg += " (would be blocked: exFAT cluster slack risk)"
         return {
             "status": "dry_run",
             "name": clean_name,
